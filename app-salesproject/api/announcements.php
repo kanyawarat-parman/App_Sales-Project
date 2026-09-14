@@ -33,6 +33,9 @@ switch ($method) {
                 requireRole(['admin', 'salesadmin']);
                 decideBid($db, $user);
                 break;
+            case 'update_unit_name':
+                updateUnitName($db, $user);
+                break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -202,6 +205,39 @@ function getDetail(PDO $db, array $user): void {
     $row['view_logs'] = $stmt3->fetchAll();
 
     jsonResponse(true, $row);
+}
+
+/** แก้ไข "ชื่อหน่วยงาน" ของประกาศ — ใช้เฉพาะงานประมูลย้อนหลังที่นำเข้าจากใบเสนอราคาเก่า (source_type='legacy_quotation')
+    เพราะตอนนำเข้าใช้ชื่อลูกค้าแทนชื่อหน่วยงานไปก่อน (ไม่มีข้อมูลจริง) ให้ sale เจ้าของงานแก้ไขเองทีหลังได้
+    จำกัดสิทธิ์เฉพาะ sale ที่เป็นเจ้าของงานเท่านั้น (ยืนยันจากผู้ใช้ 2026-09-14) — admin/salesadmin/manager แก้ไม่ได้แม้เป็นงานของ sale คนอื่น */
+function updateUnitName(PDO $db, array $user): void {
+    $body           = getJsonBody();
+    $announcementId = (int)($body['announcement_id'] ?? 0);
+    $unitName       = trim($body['unit_name'] ?? '');
+
+    if (!$announcementId) jsonResponse(false, null, 'กรุณาระบุ announcement_id', 400);
+    if ($unitName === '') jsonResponse(false, null, 'กรุณาระบุชื่อหน่วยงาน', 400);
+    if ($user['role'] !== 'sale') jsonResponse(false, null, 'เฉพาะ sale เจ้าของงานเท่านั้นที่แก้ไขได้', 403);
+
+    $stmt = $db->prepare("
+        SELECT a.source_type, pa.assigned_to
+        FROM announcements a
+        JOIN project_assignments pa ON pa.announcement_id = a.id
+        WHERE a.id = ?
+    ");
+    $stmt->execute([$announcementId]);
+    $row = $stmt->fetch();
+    if (!$row) jsonResponse(false, null, 'ไม่พบประกาศนี้', 404);
+    if ($row['source_type'] !== 'legacy_quotation') {
+        jsonResponse(false, null, 'แก้ไขชื่อหน่วยงานได้เฉพาะงานประมูลย้อนหลัง (ก่อนเริ่มระบบ) เท่านั้น', 403);
+    }
+    if ((int)$row['assigned_to'] !== (int)$user['id']) {
+        jsonResponse(false, null, 'คุณไม่ใช่เจ้าของงานนี้', 403);
+    }
+
+    $upd = $db->prepare("UPDATE announcements SET unit_name = ?, updated_at = NOW() WHERE id = ?");
+    $upd->execute([$unitName, $announcementId]);
+    jsonResponse(true, null, 'บันทึกชื่อหน่วยงานสำเร็จ');
 }
 
 function logView(PDO $db, array $user): void {

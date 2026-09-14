@@ -417,7 +417,24 @@
             <div v-if="modal.data.project_code" class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">รหัสงาน</span><span class="text-sm font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block">{{ modal.data.project_code }}</span></div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">เลขโครงการ</span><span class="text-sm text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">ชื่อโครงการ</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.project_name }}</span></div>
-            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">หน่วยงาน</span><span class="text-sm text-slate-700">{{ modal.data.unit_name }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50 items-start">
+              <span class="text-sm text-slate-400 w-32 shrink-0 pt-1.5">หน่วยงาน</span>
+              <template v-if="editingUnitName">
+                <div class="flex-1 flex gap-1.5 items-center flex-wrap">
+                  <input v-model="unitNameDraft" type="text" placeholder="ระบุชื่อหน่วยงาน"
+                    class="flex-1 min-w-[160px] border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <button @click="saveUnitName" :disabled="savingUnitName"
+                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">บันทึก</button>
+                  <button @click="editingUnitName=false" :disabled="savingUnitName"
+                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+                </div>
+              </template>
+              <template v-else>
+                <span class="text-sm text-slate-700 pt-1.5">{{ modal.data.unit_name }}</span>
+                <button v-if="canEditUnitName" @click="unitNameDraft = modal.data.unit_name || ''; editingUnitName = true"
+                  class="text-xs font-semibold text-teal-700 hover:text-teal-800 bg-transparent border-0 cursor-pointer underline underline-offset-2 pt-1.5">แก้ไข</button>
+              </template>
+            </div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-emerald-600">{{ formatPrice(modal.data.price_median) }}</span></div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">เข้าประมูล</span>
@@ -837,7 +854,14 @@ createApp({
       showClosed: false,
       view: 'kanban',
       winLossForm: { id: null, newStatus: '', reason: '', note: '', bid_amount: null },
+      editingUnitName: false,
+      savingUnitName: false,
+      unitNameDraft: '',
     };
+  },
+  watch: {
+    // ปิดโหมดแก้ไขชื่อหน่วยงานทุกครั้งที่ modal เปิด/ปิด กันค้างโหมดแก้ไขข้ามไปคนละงาน
+    'modal.type'() { this.editingUnitName = false; },
   },
   computed: {
     tabItems() {
@@ -847,6 +871,12 @@ createApp({
         { label:'ประมูล', icon:'cols3', active:true },
         { label:'ออก', icon:'logout', action:'logout' },
       ];
+    },
+    // แก้ไข "ชื่อหน่วยงาน" ได้เฉพาะ sale เจ้าของงาน และเฉพาะงานประมูลย้อนหลัง (นำเข้าจากใบเสนอราคาเก่า) เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-14)
+    canEditUnitName() {
+      return this.isSale
+        && this.modal?.data?.source_type === 'legacy_quotation'
+        && Number(this.modal?.data?.assigned_to) === Number(this.currentUser?.id);
     },
     isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
     isSale()    { return this.currentUser?.role === 'sale'; },
@@ -1089,6 +1119,24 @@ createApp({
         return row;
       });
       this.exportExcel('งานประมูล', headers, rows);
+    },
+
+    async saveUnitName() {
+      const name = this.unitNameDraft.trim();
+      if (!name) { await this.showAlert('กรุณาระบุชื่อหน่วยงาน', 'error'); return; }
+      this.savingUnitName = true;
+      const res = await apiCall('POST', 'api/announcements.php?action=update_unit_name', {
+        announcement_id: this.modal.data.announcement_id,
+        unit_name: name,
+      });
+      this.savingUnitName = false;
+      if (res.success) {
+        this.modal.data.unit_name = name;
+        this.editingUnitName = false;
+        await this.showAlert('บันทึกชื่อหน่วยงานสำเร็จ', 'success');
+      } else {
+        await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+      }
     },
 
     stageValue(key) {

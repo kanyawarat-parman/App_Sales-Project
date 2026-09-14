@@ -122,6 +122,7 @@ function getDetail(PDO $db, array $user): void {
                a.project_no, a.project_name, a.unit_name, a.announce_date, a.close_date,
                a.price_median, a.items, a.spec, a.can_bid, a.reason, a.docs_required,
                a.need_sample, a.sample_detail, a.conditions, a.url, a.keyword_match, a.filter_status,
+               a.source_type,
                u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url, u1.phone AS sale_phone,
                u2.full_name AS secretary_name
         FROM project_assignments pa
