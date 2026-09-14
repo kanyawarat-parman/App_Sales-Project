@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>งานขายตรง (Sales Hunt)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<!-- DataTables (ใช้เฉพาะมุมมองตารางของหน้านี้ — jQuery plugin ควบคุมตารางแยกจาก Vue โดยเจตนา เหมือน bid-pipeline.html/sources.html -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<style>
+  #spTable_wrapper { padding: 0 1rem 1rem; }
+  #spTable_wrapper .dataTables_length,
+  #spTable_wrapper .dataTables_filter { float: none; margin-bottom: .75rem; }
+  #spTable_wrapper .dataTables_length label,
+  #spTable_wrapper .dataTables_filter label { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: .8125rem; color: #64748b; white-space: nowrap; }
+  #spTable_wrapper .dataTables_filter input { flex: 0 0 320px; width: 320px; }
+  @media (min-width: 640px) {
+    #spTable_wrapper { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; }
+    #spTable_wrapper .dataTables_length,
+    #spTable_wrapper .dataTables_filter,
+    #spTable_wrapper .dataTables_info,
+    #spTable_wrapper .dataTables_paginate { margin-bottom: 0; }
+    #spTable_wrapper > table { width: 100%; }
+  }
+  #spTable_wrapper .dataTables_filter input,
+  #spTable_wrapper .dataTables_length select { border-radius: .5rem; border: 1px solid #e2e8f0; padding: .375rem .75rem; outline: none; }
+  #spTable_wrapper .dataTables_filter input:focus,
+  #spTable_wrapper .dataTables_length select:focus { border-color: #2dd4bf; box-shadow: 0 0 0 2px #ccfbf1; }
+  #spTable_wrapper .dataTables_info { font-size: .8125rem; color: #94a3b8; }
+  #spTable_wrapper .dataTables_paginate { display: flex; gap: .25rem; flex-wrap: wrap; }
+  #spTable_wrapper .dataTables_paginate .paginate_button.current { background: #0f766e !important; color: #fff !important; border-radius: .375rem; border: none !important; }
+  #spTable_wrapper .dataTables_paginate .paginate_button { border-radius: .375rem; padding: .25rem .6rem; }
+  #spTable thead th { background: #f8fafc; }
+  #spTable tbody tr:hover { background: #f8fafc; }
+</style>
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="sales-pipeline" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm flex-wrap min-h-[64px]">
+        <h2 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          งานขายตรง (Sales Hunt)
+        </h2>
+        <button v-if="['manager','sale'].includes(currentUser?.role)"
+          class="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer min-h-[40px]"
+          @click="openSpForm(null)">+ เพิ่มงานใหม่</button>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <!-- Stats row: แบ่งเป็น 2 กลุ่ม (label + การ์ดของกลุ่มนั้น) อยู่แถวเดียวกันในทุกขนาดจอ
+             กลุ่ม 1 (งานที่ยังไม่จบ) กว้าง 2 คอลัมน์ = งานทั้งหมด (ทุกสถานะ) + งานในมือ + Weighted Pipeline
+             กลุ่ม 2 (ผลลัพธ์ที่จบแล้ว) กว้าง 1 คอลัมน์ = รายได้ที่ได้รับ (+ Win Rate)
+             ทั้ง 2 กลุ่มสูงเท่ากันเสมอ (ไม่ใช้ items-start) เพราะกลุ่ม 2 เนื้อหายาวกว่าโดยธรรมชาติ (มี Win Rate + breakdown ตามช่วงเวลา)
+             "งานทั้งหมด (ทุกสถานะ)" ย้ายมาเป็นการ์ดแรกในกลุ่มนี้ตามคำขอผู้ใช้ (เดิมแยกเป็นแถวของตัวเองด้านบนสุด) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+          <!-- กลุ่ม: งานทั้งหมด (ทุกสถานะ) + งานที่ยังไม่จบ (คาดการณ์) — แยกป้ายกำกับ 2 อัน อยู่คนละความกว้างกัน เพราะ "งานทั้งหมด" ไม่ใช่ concept เดียวกับ "ยังไม่จบ" ป้ายจึงต้องเริ่มตรงตำแหน่งการ์ดงานในมือเท่านั้น ไม่คลุมการ์ดงานทั้งหมด -->
+          <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <!-- ป้ายย่อย: งานทั้งหมด (ทุกสถานะ) — คลุมแค่การ์ดเดียว -->
+            <div class="md:col-span-1 flex flex-col">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="text-xs font-bold text-slate-500">📊 งานทั้งหมด (ทุกสถานะ)</span>
+                <button @click="modal = {type:'sp-total-info'}"
+                  class="w-5 h-5 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[12px] font-black leading-none" title="งานทั้งหมด คืออะไร">i</button>
+              </div>
+              <div class="bg-white rounded-xl px-5 py-4 ring-1 ring-slate-100 shadow-sm flex-1">
+                <div>
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">จำนวนงานทั้งหมด</span>
+                  </div>
+                  <div class="text-[1.75rem] font-black leading-none text-purple-700">{{ spStats?.total ?? 0 }} <span class="text-sm font-semibold text-slate-400">งาน</span></div>
+                </div>
+                <div class="mt-3 pt-3 border-t border-slate-100">
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M6 12h.01M18 12h.01"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">มูลค่ารวมทั้งหมด</span>
+                  </div>
+                  <div class="text-[1.3rem] font-black leading-none text-purple-700">฿{{ spStats ? formatNumber(spStats.total_value) : '0' }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ป้ายย่อย: งานที่ยังไม่จบ (คาดการณ์) — คลุมการ์ดเดียวที่รวม งานในมือ + Weighted Pipeline (เดิม 2 การ์ดแยก) เริ่มตรงตำแหน่งการ์ดนี้ -->
+            <div class="md:col-span-2 flex flex-col">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="text-xs font-bold text-slate-500">📈 งานที่ยังไม่จบ (คาดการณ์)</span>
+                <button @click="modal = {type:'sp-forecast-info'}"
+                  class="w-5 h-5 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[12px] font-black leading-none" title="งานที่ยังไม่จบ (คาดการณ์) คืออะไร">i</button>
+              </div>
+              <div class="bg-white rounded-xl px-5 py-4 ring-1 ring-slate-100 shadow-sm flex-1">
+                <!-- งานในมือ -->
+                <div>
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">งานในมือ</span>
+                  </div>
+                  <div class="flex items-baseline gap-2">
+                    <span class="text-[1.75rem] font-black leading-none text-sky-700">{{ spStats?.active ?? 0 }}</span>
+                    <span v-if="spStats?.pipeline_value" class="text-slate-300 font-normal">/</span>
+                    <span v-if="spStats?.pipeline_value" class="text-[1.3rem] font-black leading-none text-sky-600">฿{{ formatNumber(spStats.pipeline_value) }}</span>
+                  </div>
+                  <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ไม่รวม Delivered / Lost · ข้อมูลล่าสุด ณ ตอนนี้</div>
+                  <div v-if="spStats?.new_active_7d" class="text-[.7rem] font-semibold mt-1 text-emerald-600">
+                    ▲ +{{ spStats.new_active_7d }} งาน (+฿{{ formatNumber(spStats.new_active_7d_value) }}) ใหม่ใน 7 วันที่ผ่านมา
+                  </div>
+                </div>
+                <!-- Weighted Pipeline -->
+                <div class="mt-3 pt-3 border-t border-slate-100">
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-6 3 3 4-7"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">โอกาสรายได้ในอนาคต Weighted Pipeline</span>
+                  </div>
+                  <div class="text-[1.3rem] font-black leading-none text-indigo-700">฿{{ spStats ? formatNumber(spStats.weighted_pipeline) : '0' }}</div>
+                  <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ถ่วงน้ำหนักตามโอกาสที่ sale ประเมินเอง · ข้อมูลล่าสุด ณ ตอนนี้</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- กลุ่ม: ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) -->
+          <div class="md:col-span-1 flex flex-col">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="text-xs font-bold text-slate-500">✅ ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง)</span>
+              <button @click="modal = {type:'sp-results-info'}"
+                class="w-5 h-5 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[12px] font-black leading-none" title="ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) คืออะไร">i</button>
+            </div>
+            <div class="bg-white rounded-xl px-5 py-4 ring-1 ring-slate-100 shadow-sm flex-1">
+            <!-- รายได้ที่ได้รับ + Win Rate เรียง 2 คอลัมน์ ฝั่งซ้ายรายได้ ฝั่งขวา Win Rate -->
+            <div class="grid grid-cols-2 gap-4">
+              <!-- รายได้ที่ได้รับ -->
+              <div>
+                <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                  <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M6 12h.01M18 12h.01"/></svg>
+                  <span class="text-xs text-slate-400 font-medium">รายได้ที่ได้รับ</span>
+                </div>
+                <div class="flex items-baseline gap-2 flex-wrap">
+                  <span class="text-[1.75rem] font-black leading-none text-emerald-700">{{ spStats?.delivered_count ?? 0 }}</span>
+                  <span v-if="spStats?.delivered_value" class="text-slate-300 font-normal">/</span>
+                  <span v-if="spStats?.delivered_value" class="text-[1.3rem] font-black leading-none text-emerald-600">฿{{ formatNumber(spStats.delivered_value) }}</span>
+                </div>
+                <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ส่งมอบแล้วจริง · ตลอดกาล</div>
+              </div>
+              <!-- Win Rate -->
+              <div class="text-right">
+                <div class="flex items-center justify-end gap-1.5 mb-2.5 flex-wrap">
+                  <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8M12 17v4M7 4H5a2 2 0 00-2 2v2a4 4 0 004 4h.5M17 4h2a2 2 0 012 2v2a4 4 0 01-4 4h-.5M7 4h10v4a5 5 0 01-10 0V4z"/></svg>
+                  <span class="text-xs text-slate-400 font-medium">Win Rate</span>
+                </div>
+                <div class="text-[1.75rem] font-black leading-none text-amber-600">{{ spStats?.win_rate != null ? spStats.win_rate + '%' : '-' }}</div>
+                <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ชนะ {{ spStats?.won ?? 0 }} · แพ้ {{ spStats?.lost ?? 0 }} งาน · ตลอดกาล</div>
+              </div>
+            </div>
+            <!-- Breakdown ตามช่วงเวลา -->
+            <div class="mt-2.5 pt-2.5 border-t border-slate-100 grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-baseline">
+              <span class="text-xs text-slate-400">เดือนนี้</span>
+              <span class="text-sm font-bold text-slate-700 text-right whitespace-nowrap">{{ spStats?.delivered_month?.count ?? 0 }} งาน</span>
+              <span class="text-xs text-emerald-600 font-semibold text-right whitespace-nowrap">{{ spStats?.delivered_month?.value ? '฿'+formatNumber(spStats.delivered_month.value) : '-' }}</span>
+
+              <span class="text-xs text-slate-400">ไตรมาสนี้</span>
+              <span class="text-sm font-bold text-slate-700 text-right whitespace-nowrap">{{ spStats?.delivered_quarter?.count ?? 0 }} งาน</span>
+              <span class="text-xs text-emerald-600 font-semibold text-right whitespace-nowrap">{{ spStats?.delivered_quarter?.value ? '฿'+formatNumber(spStats.delivered_quarter.value) : '-' }}</span>
+
+              <span class="text-xs text-slate-400">ปีนี้</span>
+              <span class="text-sm font-bold text-slate-700 text-right whitespace-nowrap">{{ spStats?.delivered_year?.count ?? 0 }} งาน</span>
+              <span class="text-xs text-emerald-600 font-semibold text-right whitespace-nowrap">{{ spStats?.delivered_year?.value ? '฿'+formatNumber(spStats.delivered_year.value) : '-' }}</span>
+            </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========= มุมมอง Sale ========= -->
+        <template v-if="isSale">
+
+          <!-- Toolbar -->
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4 px-4 py-3 flex items-center gap-3 flex-wrap">
+            <div class="flex gap-1 flex-wrap items-center">
+              <button class="border-[1.5px] border-slate-200 rounded-full px-3 py-1 text-sm font-semibold cursor-pointer bg-white text-slate-400 min-h-[36px] transition-all"
+                :class="{'!bg-green-600 !text-white !border-green-600': spFilter.source_type===''}"
+                @click="spFilter.source_type=''; loadSpKanban()">ทั้งหมด</button>
+              <button v-for="s in spSourceTypes" :key="s.val"
+                class="border-[1.5px] border-slate-200 rounded-full px-3 py-1 text-sm font-semibold cursor-pointer bg-white text-slate-400 min-h-[36px] transition-all"
+                :class="{'!bg-green-600 !text-white !border-green-600': spFilter.source_type===s.val}"
+                @click="spFilter.source_type=s.val; loadSpKanban()">{{ s.icon }} {{ s.label }}</button>
+            </div>
+            <select v-model="spFilter.period" @change="loadSpKanban()"
+              title="กรองเฉพาะการ์ดใน Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน"
+              class="border-[1.5px] border-slate-200 rounded-xl px-3 py-1.5 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white min-h-[36px]">
+              <option value="all">ทั้งหมด</option>
+              <option value="month">เดือนนี้</option>
+              <option value="quarter">ไตรมาสนี้</option>
+              <option value="year">ปีนี้</option>
+            </select>
+            <button @click="modal = {type:'sp-adv-filter'}"
+              class="inline-flex items-center gap-1.5 border-[1.5px] border-slate-200 rounded-xl px-3 py-1.5 text-sm font-semibold bg-white text-slate-500 hover:bg-slate-50 cursor-pointer transition-all min-h-[36px]"
+              :class="{'!border-green-400 !text-green-700 !bg-green-50': spAdvFilterCount>0}">
+              <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
+              ตัวกรองเพิ่มเติม
+              <span v-if="spAdvFilterCount" class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white text-[10px] font-bold">{{ spAdvFilterCount }}</span>
+            </button>
+            <div v-if="spLoading" class="flex items-center gap-1.5 text-xs text-slate-500 ml-auto">
+              <div class="spinner w-4 h-4" style="border-width:2px"></div> กำลังโหลด...
+            </div>
+            <span v-else class="text-sm font-semibold text-slate-400 ml-auto">{{ spStats?.total ?? 0 }} งาน</span>
+            <div class="flex gap-1">
+              <button class="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[36px] transition-all"
+                @click="spView='kanban'"
+                :class="spView==='kanban' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-200'">แยกตามสถานะ</button>
+              <button class="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[36px] transition-all"
+                @click="spView='table'"
+                :class="spView==='table' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-200'">ตาราง</button>
+            </div>
+          </div>
+
+          <!-- KANBAN VIEW (Sale) -->
+          <div v-show="spView==='kanban'" class="flex gap-3 overflow-x-auto pb-4">
+            <div v-for="stage in spStages" :key="stage.key" class="flex-shrink-0 w-56 flex flex-col">
+              <div class="text-white px-3 py-2.5 flex items-center justify-between rounded-t-xl font-semibold text-sm"
+                :style="{background:stage.color}">
+                <span class="truncate">{{ stage.label }}</span>
+                <span class="ml-1 bg-white/20 rounded-full px-2 py-0.5 text-xs shrink-0">{{ (spKanban[stage.key]||[]).length }}</span>
+              </div>
+              <div class="px-3 py-1.5 text-xs font-medium text-white/80 truncate" :style="{background:stage.darkColor}">{{ spColValue(stage.key) }}&nbsp;</div>
+              <div class="flex-1 flex flex-col gap-2 p-2 bg-slate-100 rounded-b-xl overflow-y-auto" style="min-height:200px;max-height:68vh">
+                <div v-if="!(spKanban[stage.key]||[]).length" class="text-center text-slate-400 text-xs py-8">ยังไม่มีงาน</div>
+                <div v-for="card in (spKanban[stage.key]||[])" :key="card.id"
+                  class="bg-white rounded-xl p-3 shadow-sm ring-1 ring-slate-100 hover:shadow-md transition-shadow">
+                      <div class="flex flex-wrap gap-1 mb-2">
+                        <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spSourceClass(card.source_type)">{{ card.source_label }}</span>
+                        <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spPriorityClass(card.priority)">{{ card.priority }}</span>
+                        <span v-if="card.segment" class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold bg-slate-100 text-slate-500">{{ card.segment }}</span>
+                      </div>
+                      <div v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-1">{{ card.project_code }}</div>
+                      <div class="font-bold text-[.95rem] leading-tight mb-1 text-slate-800">{{ card.title }}</div>
+                      <div class="text-[.85rem] text-slate-500 mb-1" v-if="card.client_name">{{ card.client_name }}</div>
+                      <div class="text-[1.05rem] font-black text-green-600 mb-2" v-if="card.value">฿{{ formatNumber(card.value) }}</div>
+                      <div v-if="card.next_action" class="text-[.8rem] text-blue-700 bg-blue-50 rounded-lg px-2 py-1 mb-2">{{ card.next_action }}</div>
+                      <button v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)"
+                        class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200 mb-1"
+                        @click="confirmSpMove(card, spNextStage(card.stage))">
+                        ▶ {{ spNextLabel(card.stage) }}
+                      </button>
+                      <div v-if="card.stage === 'Negotiating'" class="flex gap-1 mb-1">
+                        <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="openSpWinLoss(card, 'Deal Signed')">ปิดดีล</button>
+                        <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-red-100 text-red-700 hover:bg-red-200" @click="openSpWinLoss(card, 'Lost')">ไม่สำเร็จ</button>
+                      </div>
+                      <div v-if="card.stage === 'Deal Signed'" class="flex gap-1 mb-1">
+                        <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="confirmSpMove(card, 'Delivered')">ส่งสินค้าแล้ว</button>
+                      </div>
+                      <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 mt-1" @click="openSpForm(card)">แก้ไข</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+          <!-- TABLE VIEW (Sale) -->
+          <div v-show="spView==='table'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 gap-3 flex-wrap">
+              <span class="font-bold text-slate-700 flex items-center gap-2">
+                <span class="w-8 h-8 rounded-lg bg-green-50 text-green-700 flex items-center justify-center shrink-0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </span>
+                รายการงานขายตรงของฉัน
+              </span>
+              <button @click="exportSpTable"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Excel
+              </button>
+            </div>
+            <div class="p-4 overflow-x-auto">
+              <!-- ตารางนี้ DataTables (jQuery) เป็นผู้คุมทั้งหมด เหมือน bid-pipeline.html/sources.html — ห้ามใส่ v-for ในนี้เด็ดขาด -->
+              <table id="spTable" class="display w-full min-w-[900px] text-sm"></table>
+            </div>
+          </div>
+
+        </template>
+
+        <!-- ========= มุมมอง Admin/Secretary ========= -->
+        <template v-if="isSecretary">
+
+          <!-- Per-sale summary -->
+          <div v-if="spSaleStats.length && !spFilter.assigned_to" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4">
+            <div class="px-5 py-4 border-b border-slate-100 font-bold text-slate-700 text-base">
+              สรุปผลงานรายบุคคล
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse text-[.9rem]">
+                <thead>
+                  <tr class="bg-slate-50">
+                    <th class="px-4 py-3 text-left text-[.8rem] font-bold text-slate-500 border-b-2 border-slate-200">Sale</th>
+                    <th class="px-4 py-3 text-center text-[.8rem] font-bold text-slate-500 border-b-2 border-slate-200">Active</th>
+                    <th class="px-4 py-3 text-center text-[.8rem] font-bold text-slate-500 border-b-2 border-slate-200">ปิดแล้ว</th>
+                    <th class="px-4 py-3 text-center text-[.8rem] font-bold text-slate-500 border-b-2 border-slate-200">แพ้</th>
+                    <th class="px-4 py-3 text-right text-[.8rem] font-bold text-slate-500 border-b-2 border-slate-200">ยอดรวม (บาท)</th>
+                    <th class="px-4 py-3 text-center text-[.8rem] font-bold text-slate-500 border-b-2 border-slate-200">Win Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="s in spSaleStats" :key="s.id"
+                    @click="spFilter.assigned_to=s.id; loadSpKanban()"
+                    class="border-b border-slate-50 cursor-pointer transition-colors hover:bg-blue-50/60">
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <div class="flex items-center gap-2">
+                        <img v-if="s.photo_url" :src="s.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"/>
+                        <div v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[.8rem] font-bold shrink-0"
+                          :style="{background:s.avatar_color||'#2563eb'}">{{ avatarInitials(s.full_name) }}</div>
+                        <span class="font-semibold">{{ s.full_name }}</span>
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 text-center font-semibold text-blue-600">{{ s.active }}</td>
+                    <td class="px-4 py-3 text-center font-semibold text-green-600">{{ s.won }}</td>
+                    <td class="px-4 py-3 text-center font-semibold text-red-600">{{ s.lost }}</td>
+                    <td class="px-4 py-3 text-right font-bold text-green-600 whitespace-nowrap">{{ formatNumber(s.won_value) }}</td>
+                    <td class="px-4 py-3 text-center">
+                      <span :style="{color: (+s.won + +s.lost)>0 && +s.won/(+s.won + +s.lost)>=0.5 ? '#16a34a' : '#dc2626', fontWeight:700}">
+                        {{ (+s.won + +s.lost)>0 ? Math.round(+s.won/(+s.won + +s.lost)*100)+'%' : '-' }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Filter & View toggle row -->
+          <div class="flex items-center flex-wrap gap-2 mb-4 bg-white p-3 rounded-xl ring-1 ring-slate-100">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <label class="text-[.9rem] font-semibold text-slate-500 whitespace-nowrap">Sale:</label>
+              <div class="flex flex-wrap gap-1">
+                <button class="border-[1.5px] border-slate-200 rounded-full px-3 py-1 text-sm font-semibold cursor-pointer bg-white text-slate-400 min-h-[36px] transition-all"
+                  :class="{'!bg-blue-600 !text-white !border-blue-600': spFilter.assigned_to===''}"
+                  @click="spFilter.assigned_to=''; loadSpKanban()">ทุกคน</button>
+                <button v-for="u in salesUsers" :key="u.id"
+                  class="border-[1.5px] border-slate-200 rounded-full px-3 py-1 text-sm font-semibold cursor-pointer bg-white text-slate-400 min-h-[36px] transition-all"
+                  :class="{'!bg-blue-600 !text-white !border-blue-600': spFilter.assigned_to==u.id}"
+                  @click="spFilter.assigned_to=u.id; loadSpKanban()">{{ u.full_name.split(' ')[0] }}</button>
+              </div>
+            </div>
+            <div class="h-7 w-px bg-slate-200"></div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <label class="text-[.9rem] font-semibold text-slate-500 whitespace-nowrap">แหล่งที่มา:</label>
+              <div class="flex flex-wrap gap-1">
+                <button class="border-[1.5px] border-slate-200 rounded-full px-3 py-1 text-sm font-semibold cursor-pointer bg-white text-slate-400 min-h-[36px] transition-all"
+                  :class="{'!bg-blue-600 !text-white !border-blue-600': spFilter.source_type===''}"
+                  @click="spFilter.source_type=''; loadSpKanban()">ทั้งหมด</button>
+                <button v-for="s in spSourceTypes" :key="s.val"
+                  class="border-[1.5px] border-slate-200 rounded-full px-3 py-1 text-sm font-semibold cursor-pointer bg-white text-slate-400 min-h-[36px] transition-all"
+                  :class="{'!bg-green-600 !text-white !border-green-600': spFilter.source_type===s.val}"
+                  @click="spFilter.source_type=s.val; loadSpKanban()">{{ s.icon }} {{ s.label }}</button>
+              </div>
+            </div>
+            <div class="h-7 w-px bg-slate-200"></div>
+            <select v-model="spFilter.period" @change="loadSpKanban()"
+              class="border-[1.5px] border-slate-200 rounded-xl px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white min-h-[36px]">
+              <option value="all">ทั้งหมด</option>
+              <option value="month">เดือนนี้</option>
+              <option value="quarter">ไตรมาสนี้</option>
+              <option value="year">ปีนี้</option>
+            </select>
+            <button @click="modal = {type:'sp-adv-filter'}"
+              class="inline-flex items-center gap-1.5 border-[1.5px] border-slate-200 rounded-xl px-3 py-1.5 text-sm font-semibold bg-white text-slate-500 hover:bg-slate-50 cursor-pointer transition-all min-h-[36px]"
+              :class="{'!border-blue-400 !text-blue-700 !bg-blue-50': spAdvFilterCount>0}">
+              <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
+              ตัวกรองเพิ่มเติม
+              <span v-if="spAdvFilterCount" class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold">{{ spAdvFilterCount }}</span>
+            </button>
+            <div class="ml-auto flex gap-1">
+              <button class="px-3.5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[38px] transition-all"
+                @click="spView='kanban'"
+                :class="spView==='kanban' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'">แยกตามสถานะ</button>
+              <button class="px-3.5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[38px] transition-all"
+                @click="spView='table'"
+                :class="spView==='table' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'">ตาราง</button>
+              <button class="px-3.5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] border-slate-200 bg-white text-slate-500 min-h-[38px]"
+                @click="loadSpKanban()">↺</button>
+            </div>
+            <div v-if="spLoading" class="flex items-center gap-1.5 text-[.9rem] text-slate-500">
+              <div class="spinner w-4 h-4" style="border-width:2px"></div> กำลังโหลด...
+            </div>
+          </div>
+
+          <!-- KANBAN VIEW -->
+          <div v-show="spView==='kanban'" class="flex gap-3 overflow-x-auto pb-4">
+            <div v-for="stage in spStages" :key="stage.key" class="flex-shrink-0 w-56 flex flex-col">
+              <div class="text-white px-3 py-2.5 flex items-center justify-between rounded-t-xl font-semibold text-sm"
+                :style="{background:stage.color}">
+                <span class="truncate">{{ stage.label }}</span>
+                <span class="ml-1 bg-white/20 rounded-full px-2 py-0.5 text-xs shrink-0">{{ (spKanban[stage.key]||[]).length }}</span>
+              </div>
+              <div class="px-3 py-1.5 text-xs font-medium text-white/80 truncate" :style="{background:stage.darkColor}">{{ spColValue(stage.key) }}&nbsp;</div>
+              <div class="flex-1 flex flex-col gap-2 p-2 bg-slate-100 rounded-b-xl overflow-y-auto" style="min-height:200px;max-height:68vh">
+                <div v-if="!(spKanban[stage.key]||[]).length" class="text-center text-slate-400 text-xs py-8">ยังไม่มีงาน</div>
+                <div v-for="card in (spKanban[stage.key]||[])" :key="card.id"
+                  class="bg-white rounded-xl p-3 shadow-sm ring-1 ring-slate-100 hover:shadow-md transition-shadow">
+                  <div class="flex flex-wrap gap-1 mb-2">
+                    <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spSourceClass(card.source_type)">{{ card.source_label }}</span>
+                    <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spPriorityClass(card.priority)">{{ card.priority }}</span>
+                    <span v-if="card.segment" class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold bg-slate-100 text-slate-500">{{ card.segment }}</span>
+                  </div>
+                  <div v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-1">{{ card.project_code }}</div>
+                  <div class="font-bold text-[.95rem] leading-tight mb-1 text-slate-800">{{ card.title }}</div>
+                  <div class="text-[.85rem] text-slate-500 mb-1" v-if="card.client_name">{{ card.client_name }}</div>
+                  <div class="text-[1.05rem] font-black text-green-600 mb-2" v-if="card.value">฿{{ formatNumber(card.value) }}</div>
+                  <div v-if="!spFilter.assigned_to"
+                    class="text-[.8rem] text-slate-500 mb-2 flex items-center gap-1.5">
+                    <img v-if="card.sale_photo_url" :src="card.sale_photo_url" class="w-5 h-5 rounded-full object-cover shrink-0"/>
+                    <div v-else class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[.6rem] font-bold shrink-0"
+                      :style="{background:card.sale_color||'#64748b'}">{{ avatarInitials(card.sale_name) }}</div>
+                    {{ card.sale_name }}
+                  </div>
+                  <div v-if="card.next_action" class="text-[.8rem] text-blue-700 bg-blue-50 rounded-lg px-2 py-1 mb-2">{{ card.next_action }}</div>
+                  <button v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)"
+                    class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200 mb-1"
+                    @click="confirmSpMove(card, spNextStage(card.stage))">
+                    ▶ {{ spNextLabel(card.stage) }}
+                  </button>
+                  <div v-if="card.stage === 'Negotiating'" class="flex gap-1 mb-1">
+                    <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="openSpWinLoss(card, 'Deal Signed')">ปิดดีล</button>
+                    <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-red-100 text-red-700 hover:bg-red-200" @click="openSpWinLoss(card, 'Lost')">ไม่สำเร็จ</button>
+                  </div>
+                  <div v-if="card.stage === 'Deal Signed'" class="flex gap-1 mb-1">
+                    <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="confirmSpMove(card, 'Delivered')">ส่งสินค้าแล้ว</button>
+                  </div>
+                  <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 mt-1" @click="openSpForm(card)">แก้ไข</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TABLE VIEW -->
+          <div v-show="spView==='table'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 gap-3 flex-wrap">
+              <span class="font-bold text-slate-700 flex items-center gap-2">
+                <span class="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </span>
+                รายการงานขายตรงทั้งหมด
+              </span>
+              <button @click="exportSpTable"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Excel
+              </button>
+            </div>
+            <div class="p-4 overflow-x-auto">
+              <!-- ตารางนี้ DataTables (jQuery) เป็นผู้คุมทั้งหมด เหมือน bid-pipeline.html/sources.html — ห้ามใส่ v-for ในนี้เด็ดขาด -->
+              <table id="spTable" class="display w-full min-w-[900px] text-sm"></table>
+            </div>
+          </div>
+
+        </template>
+
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- MODALS -->
+    <!-- SP: Add / Edit Deal Modal -->
+    <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="text-white px-6 py-5 flex items-center justify-between"
+          :style="{background: `linear-gradient(135deg, ${spFormStageColor.darkColor}, ${spFormStageColor.color})`}">
+          <h3 class="font-bold text-lg m-0">{{ spForm.id ? 'แก้ไขรายละเอียดงาน' : 'เพิ่มงานใหม่' }}</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5">
+
+          <!-- รหัสงาน -->
+          <div v-if="spForm.project_code" class="flex gap-2 py-2 border-b border-slate-50 mb-2">
+            <span class="text-sm text-slate-400 w-32 shrink-0">รหัสงาน</span>
+            <span class="text-sm font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block">{{ spForm.project_code }}</span>
+          </div>
+
+          <!-- แหล่งที่มา -->
+          <div class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">แหล่งที่มาของงาน</div>
+            <div class="grid grid-cols-3 gap-2 mt-1">
+              <div v-for="s in spSourceTypes.filter(s=>s.val!=='ebidding')" :key="s.val"
+                class="border-[1.5px] rounded-lg p-2.5 text-center cursor-pointer text-sm font-medium transition-all"
+                :class="spForm.source_type===s.val ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600'"
+                @click="spForm.source_type=s.val">
+                {{ s.icon }} {{ s.label }}
+              </div>
+            </div>
+          </div>
+
+          <!-- ข้อมูลหลัก -->
+          <div class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ข้อมูลโครงการ / ลูกค้า</div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">ชื่อโครงการ / รายการสินค้า <span class="text-red-500">*</span></label>
+              <input v-model="spForm.title" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โต๊ะทำงาน 50 ชุด, เก้าอี้ประชุม">
+              <div class="text-xs text-slate-400 mt-0.5">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
+            </div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">ชื่อลูกค้า / บริษัท</label>
+              <input v-model="spForm.client_name" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น บริษัท ABC จำกัด, สำนักงาน ก.">
+            </div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">เจ้าของงานที่รับผิดชอบ</label>
+              <select v-if="isSecretary" v-model="spForm.assigned_to" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="">-- เลือก Sale --</option>
+                <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+              </select>
+              <div v-else class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50 text-slate-600">{{ currentUser?.full_name }}</div>
+            </div>
+          </div>
+
+          <!-- ขั้นตอนและความสำคัญ -->
+          <div class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ขั้นตอนและความสำคัญ</div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">ขั้นตอนปัจจุบัน</label>
+              <div class="flex gap-2 flex-wrap mt-1">
+                <div v-for="st in spStages.filter(s=>!['Delivered','Lost'].includes(s.key))" :key="st.key"
+                  class="px-3.5 py-2 rounded-xl border text-sm font-semibold cursor-pointer transition-all"
+                  :class="spForm.stage===st.key ? 'text-white border-transparent' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-400'"
+                  :style="spForm.stage===st.key ? {background:st.color} : {}"
+                  @click="spForm.stage=st.key">
+                  {{ st.icon }} {{ st.thLabel }}
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">ระดับความสำคัญ</label>
+              <div class="flex gap-2">
+                <div v-for="p in [{val:'High',icon:'',label:'สูง'},{val:'Medium',icon:'',label:'กลาง'},{val:'Low',icon:'',label:'ต่ำ'}]"
+                  :key="p.val" @click="spForm.priority=p.val"
+                  class="flex-1 border-[1.5px] rounded-lg p-2.5 text-center cursor-pointer transition-all"
+                  :class="spForm.priority===p.val ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'">
+                  <div class="text-xl">{{ p.icon }}</div>
+                  <div class="text-[.9rem] font-semibold mt-0.5">{{ p.label }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- รายละเอียดดีล -->
+          <div class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">รายละเอียดดีล</div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="mb-3">
+                <label class="block text-sm font-semibold text-slate-600 mb-1">มูลค่า (บาท) <span class="text-red-500">*</span></label>
+                <input v-model="spForm.value" type="number" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="0">
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm font-semibold text-slate-600 mb-1">โอกาสปิดดีล (%) <span class="text-red-500">*</span></label>
+                <input v-model="spForm.win_probability" type="number" min="0" max="100" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="20">
+                <div class="text-xs text-slate-400 mt-0.5">ประเมินเอง — ใช้คำนวณ Weighted Pipeline</div>
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm font-semibold text-slate-600 mb-1">วันคาดปิดดีล <span class="text-red-500">*</span></label>
+                <input v-model="spForm.expected_close" type="date" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm font-semibold text-slate-600 mb-1">ประเภทลูกค้า <span class="text-red-500">*</span></label>
+                <select v-model="spForm.segment" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือก --</option>
+                  <option value="Gov">ภาครัฐ (Gov)</option>
+                  <option value="Private">เอกชน (Private)</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm font-semibold text-slate-600 mb-1">หมวดสินค้า <span class="text-red-500">*</span></label>
+                <select v-model="spForm.product_category" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือก --</option>
+                  <option>Steel</option><option>Chair</option><option>Wooden</option><option>Other</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm font-semibold text-slate-600 mb-1">แบรนด์ <span class="text-red-500">*</span></label>
+                <select v-model="spForm.brand" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือก --</option>
+                  <option>Taiyo</option><option>Motech</option><option>Sunon</option><option>Hybrida</option><option>Other</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm font-semibold text-slate-600 mb-1">Fee Structure <span class="text-red-500">*</span></label>
+                <select v-model="spForm.fee_structure" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือก --</option>
+                  <option>No fee</option><option>Referral %</option><option>Client to resell</option>
+                </select>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">กลุ่มลูกค้า (Specialization) <span class="text-red-500">*</span></label>
+              <select v-model="spForm.specialization" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="">-- เลือก --</option>
+                <option>Office</option><option>Hospital &amp; Wellness</option><option>Education</option><option>Government</option><option>Other</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- แผนการดำเนินงาน -->
+          <div class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">แผนการดำเนินงาน</div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">สิ่งที่ต้องทำต่อ (Next Action)</label>
+              <input v-model="spForm.next_action" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โทรติดตาม, ส่งตัวอย่างสินค้า, นัดพรีเซนต์">
+              <div class="text-xs text-slate-400 mt-0.5">ระบุให้ชัดว่าต้องทำอะไร เพื่อให้ติดตามงานได้ง่าย</div>
+            </div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">หมายเหตุ</label>
+              <textarea v-model="spForm.notes" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y" rows="2" placeholder="รายละเอียดเพิ่มเติม ข้อตกลงพิเศษ ฯลฯ" style="min-height:70px"></textarea>
+            </div>
+          </div>
+
+          <!-- ประวัติ stage -->
+          <div v-if="spFormHistory.length" class="mb-2">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ประวัติ stage</div>
+            <div v-for="h in spFormHistory" :key="h.id" class="flex gap-3 py-2 border-b border-slate-50">
+              <div class="w-2 h-2 rounded-full bg-teal-400 shrink-0 mt-1.5"></div>
+              <div class="flex-1">
+                <div class="text-xs text-slate-700 font-semibold">{{ h.changed_by_name }}</div>
+                <div class="text-xs text-slate-500 flex items-center gap-1 flex-wrap mt-0.5">
+                  <span v-if="h.old_stage" class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{{ h.old_stage }}</span>
+                  <span v-if="h.old_stage">→</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="spStageClass(h.new_stage)">{{ h.new_stage }}</span>
+                  <span v-if="h.note" class="text-slate-400">· {{ h.note }}</span>
+                </div>
+                <div class="text-[11px] text-slate-400 mt-0.5">{{ formatDateTimeThai(h.changed_at) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitSpForm">
+            {{ spForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มงานใหม่' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SP: Win/Loss Modal -->
+    <div v-if="modal.type==='sp-win-loss'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
+        <div class="px-6 py-5 border-b flex items-center justify-between"
+          :style="spWinLossForm.stage==='Deal Signed' ? 'background:#f0fdf4;border-color:#bbf7d0' : 'background:#fff1f2;border-color:#fecdd3'">
+          <h3 class="font-bold text-[1.1rem] m-0" :style="spWinLossForm.stage==='Deal Signed' ? 'color:#15803d' : 'color:#b91c1c'">
+            {{ spWinLossForm.stage==='Deal Signed' ? 'บันทึกการปิดดีล' : 'บันทึกการไม่สำเร็จ' }}
+          </h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5">
+          <div class="text-base font-semibold text-slate-800 mb-4 px-3 py-3 bg-slate-50 rounded-lg">{{ spWinLossForm.title }}</div>
+          <div class="mb-4">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">
+              {{ spWinLossForm.stage==='Deal Signed' ? 'เหตุผลที่ปิดดีลได้ *' : 'เหตุผลที่ไม่สำเร็จ *' }}
+            </label>
+            <div class="flex flex-wrap gap-2 mt-2">
+              <div v-for="r in (spWinLossForm.stage==='Deal Signed' ? spWonReasons : spLostReasons)" :key="r"
+                @click="spWinLossForm.reason=r"
+                class="border-[1.5px] rounded-lg px-4 py-2 cursor-pointer text-[.9rem] font-medium transition-all"
+                :style="spWinLossForm.reason===r
+                  ? (spWinLossForm.stage==='Deal Signed' ? 'background:#dcfce7;border-color:#16a34a;color:#15803d' : 'background:#fee2e2;border-color:#dc2626;color:#b91c1c')
+                  : 'background:#f8fafc;border-color:#e2e8f0;color:#475569'">
+                {{ r }}
+              </div>
+            </div>
+          </div>
+          <div class="mb-3" v-if="spWinLossForm.stage==='Deal Signed'">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">มูลค่าที่ปิดได้ (บาท)</label>
+            <input v-model="spWinLossForm.value" type="number" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ระบุมูลค่าจริงที่ปิดดีลได้">
+          </div>
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">บันทึกเพิ่มเติม</label>
+            <textarea v-model="spWinLossForm.note" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y" rows="2" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)" style="min-height:70px"></textarea>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold text-white border-0 cursor-pointer min-h-[44px]"
+            :style="spWinLossForm.stage==='Deal Signed' ? 'background:#16a34a' : 'background:#dc2626'"
+            @click="submitSpWinLoss">
+            {{ spWinLossForm.stage==='Deal Signed' ? 'ยืนยันปิดดีล' : 'ยืนยันไม่สำเร็จ' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- งานที่ยังไม่จบ (คาดการณ์) Info Modal — รวม งานในมือ + Weighted Pipeline ไว้ modal เดียว ตรงกับปุ่ม i เดียวที่ label กลุ่ม -->
+    <div v-if="modal.type==='sp-forecast-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">งานที่ยังไม่จบ (คาดการณ์) คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <div class="mb-4">
+            <div class="text-xs font-bold text-sky-700 mb-1.5">งานในมือ</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              งานทั้งหมดที่<b>ยังไม่จบ</b> — นับทุก stage ยกเว้น <code>Delivered</code> (ส่งมอบแล้ว) และ <code>Lost</code> (ไม่สำเร็จ) มูลค่าที่แสดงคือผลรวมมูลค่าดีลของงานกลุ่มนี้ (ยังไม่ถ่วงน้ำหนักตามโอกาสปิดดีล)
+            </p>
+            <div class="rounded-xl bg-sky-50 border border-sky-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-sky-700 mb-0.5">กรอบเวลา</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ปัจจุบัน (real-time) — ไม่มีกรอบเวลา นับงานที่ยังไม่จบทั้งหมด ไม่ว่าสร้างเมื่อไหร่</div>
+            </div>
+            <p class="text-sm text-slate-600 leading-relaxed">
+              ตัวเลขเทียบ 7 วัน (▲) หมายถึง <b>จำนวนงานใหม่ที่เพิ่งเข้ามาในระบบใน 7 วันที่ผ่านมา แล้วยังคงเปิดอยู่</b> (นับจากวันที่สร้างงาน)
+            </p>
+          </div>
+          <div class="pt-4 border-t border-slate-100">
+            <div class="text-xs font-bold text-indigo-700 mb-1.5">โอกาสรายได้ในอนาคต Weighted Pipeline</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              มูลค่าประมาณการของงานที่ยัง<b>ไม่ตัดสินผล</b> โดยเอามูลค่าดีลแต่ละงานคูณด้วย <b>"โอกาสปิดดีล (%)"</b> ที่ sale กรอกเองต่อดีลในฟอร์ม (ไม่ใช่คำนวณอัตโนมัติตาม stage แบบฝั่งงานประมูล เพราะแต่ละดีลของ Sales Hunt มีความไม่แน่นอนต่างกันมาก แม้อยู่ stage เดียวกัน)
+            </p>
+            <div class="rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-indigo-700 mb-0.5">กรอบเวลา</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ปัจจุบัน (real-time) — ไม่มีกรอบเวลา คำนวณจากงานที่ยังไม่จบทั้งหมดของขณะนี้</div>
+            </div>
+            <div class="rounded-xl bg-slate-50 p-3 text-sm text-slate-600 text-center font-semibold mb-2">
+              Weighted Pipeline = Σ (มูลค่าดีล × โอกาสปิดดีลที่กรอกไว้)
+            </div>
+            <p class="text-xs text-slate-400">* งานที่ตัดสินผลแล้ว (<code>Deal Signed</code>, <code>Delivered</code>, <code>Lost</code>) ไม่นับรวม — ดีลใหม่ที่ยังไม่ได้กรอก % จะ default ที่ 20%</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- รายได้ที่ได้รับ Info Modal -->
+    <div v-if="modal.type==='sp-results-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <div class="mb-4">
+            <div class="text-xs font-bold text-emerald-700 mb-1.5">รายได้ที่ได้รับ</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              งานที่อยู่ใน stage <code>Delivered</code> (<b>ส่งมอบสินค้าแล้วจริง</b>) เท่านั้น — ต่างจาก "ปิดดีลแล้ว" (<code>Deal Signed</code>) ที่ลูกค้าตกลงซื้อแล้วแต่ยังไม่ได้ส่งของ ตัวเลขนี้จึงเป็นรายได้ที่รับรู้ได้จริง ไม่ใช่แค่ดีลที่ปิดสำเร็จ
+            </p>
+            <div class="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-emerald-700 mb-0.5">กรอบเวลา — ตัวเลขใหญ่</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ตลอดกาล (all-time) — ไม่มีกรอบเวลา นับงานที่ส่งมอบแล้วทั้งหมดที่เคยมีในระบบ</div>
+            </div>
+            <div class="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5">
+              <div class="text-xs font-bold text-emerald-700 mb-0.5">กรอบเวลา — แถบ เดือนนี้/ไตรมาสนี้/ปีนี้</div>
+              <div class="text-sm text-slate-600 leading-relaxed">อิงวันที่ส่งมอบจริง เทียบกับวันนี้เสมอ</div>
+            </div>
+          </div>
+          <div class="pt-4 border-t border-slate-100">
+            <div class="text-xs font-bold text-amber-700 mb-1.5">Win Rate</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              อัตราชนะ โดยนับ<b>เฉพาะงานที่ตัดสินผลแล้ว</b> (ปิดดีลได้ หรือไม่สำเร็จ) เท่านั้น — งานที่ยังเปิดอยู่ (Interest/Send PI/Negotiating) ยังไม่นับรวมเพราะยังไม่รู้ผล
+            </p>
+            <div class="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-amber-700 mb-0.5">กรอบเวลา</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ตลอดกาล (all-time) — ใช้ชนะ/แพ้สะสมทั้งหมดเหมือนการ์ดรายได้ที่ได้รับ</div>
+            </div>
+            <div class="rounded-xl bg-slate-50 p-3 text-sm text-slate-600 text-center font-semibold mb-2">
+              Win Rate = ชนะ ÷ (ชนะ + แพ้) × 100
+            </div>
+            <p class="text-xs text-slate-400">* "ชนะ" นับรวม <code>Deal Signed</code> + <code>Delivered</code> เพราะส่งมอบแล้วคือสถานะถัดจากปิดดีล</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- งานทั้งหมด Info Modal -->
+    <div v-if="modal.type==='sp-total-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">งานทั้งหมด คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <p class="text-sm text-slate-600 leading-relaxed mb-3">
+            ภาพรวมสะสม<b>ทุกงานที่เคยมีในระบบ</b> นับทุก stage รวมกัน (<code>Interest</code>, <code>Send PI</code>, <code>Negotiating</code>, <code>Deal Signed</code>, <code>Delivered</code>, <code>Lost</code>) — คนละแนวคิดกับ "งานในมือ" ด้านบนที่ตัดงานที่จบแล้วออก การ์ดนี้ตอบคำถาม "ตลอดมาทำไปทั้งหมดกี่งาน มูลค่ารวมเท่าไหร่" ไม่ใช่ประมาณการ
+          </p>
+          <div class="rounded-xl bg-purple-50 border border-purple-100 px-3 py-2.5">
+            <div class="text-xs font-bold text-purple-700 mb-0.5">กรอบเวลา</div>
+            <div class="text-sm text-slate-600 leading-relaxed">ตลอดกาล (all-time) — มูลค่ารวม<b>นับ Lost ด้วย</b> เพราะเป็นตัวเลขสะสมของงานที่เคยทำ ไม่ใช่ประมาณการโอกาสสำเร็จ</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ตัวกรองเพิ่มเติม Modal: กรองเฉพาะ Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน (เหมือนตัวกรองช่วงเวลา) -->
+    <div v-if="modal.type==='sp-adv-filter'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between shrink-0">
+          <h3 class="font-bold text-lg flex items-center gap-2">
+            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
+            ตัวกรองเพิ่มเติม
+          </h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">ความสำคัญ</label>
+              <select v-model="spFilter.priority" @change="loadSpKanban()"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+                <option value="">ทั้งหมด</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">หมวดสินค้า</label>
+              <select v-model="spFilter.product_category" @change="loadSpKanban()"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+                <option value="">ทั้งหมด</option>
+                <option value="Steel">Steel</option>
+                <option value="Chair">Chair</option>
+                <option value="Wooden">Wooden</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">แบรนด์</label>
+              <select v-model="spFilter.brand" @change="loadSpKanban()"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+                <option value="">ทั้งหมด</option>
+                <option value="Taiyo">Taiyo</option>
+                <option value="Motech">Motech</option>
+                <option value="Sunon">Sunon</option>
+                <option value="Hybrida">Hybrida</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">ประเภทลูกค้า</label>
+              <select v-model="spFilter.segment" @change="loadSpKanban()"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+                <option value="">ทั้งหมด</option>
+                <option value="Gov">Gov</option>
+                <option value="Private">Private</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">กลุ่มลูกค้า (Specialization)</label>
+              <select v-model="spFilter.specialization" @change="loadSpKanban()"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+                <option value="">ทั้งหมด</option>
+                <option value="Office">Office</option>
+                <option value="Hospital & Wellness">Hospital & Wellness</option>
+                <option value="Education">Education</option>
+                <option value="Government">Government</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">ค้นหาลูกค้า / ชื่องาน</label>
+              <input v-model="spFilter.client_q" @keyup.enter="loadSpKanban()" @blur="loadSpKanban()" type="text" placeholder="ค้นหาชื่อลูกค้าหรือชื่องาน..."
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+            </div>
+            <div class="sm:col-span-2">
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">ช่วงมูลค่าดีล (บาท)</label>
+              <div class="flex items-center gap-2">
+                <input v-model="spFilter.value_min" @keyup.enter="loadSpKanban()" @blur="loadSpKanban()" type="number" min="0" placeholder="จาก"
+                  class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+                <span class="text-slate-400 text-sm shrink-0">ถึง</span>
+                <input v-model="spFilter.value_max" @keyup.enter="loadSpKanban()" @blur="loadSpKanban()" type="number" min="0" placeholder="ถึง"
+                  class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-between shrink-0">
+          <button v-if="spAdvFilterCount" @click="spFilter.priority=''; spFilter.product_category=''; spFilter.brand=''; spFilter.client_q=''; spFilter.value_min=''; spFilter.value_max=''; spFilter.segment=''; spFilter.specialization=''; loadSpKanban()"
+            class="inline-flex items-center px-3 py-2 rounded-xl text-sm font-semibold ring-1 ring-red-200 text-red-600 bg-white hover:bg-red-50 border-0 cursor-pointer">✕ ล้างตัวกรอง</button>
+          <span v-else></span>
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer" @click="closeModal">เสร็จสิ้น</button>
+        </div>
+      </div>
+    </div>
+
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppTabBar, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      modal: { type: null, data: null },
+      salesUsers: [],
+      spView: 'kanban',
+      spKanban: {},
+      spStats: null,
+      spSaleStats: [],
+      spFilter: { assigned_to: '', source_type: '', period: 'all', priority: '', product_category: '', brand: '', client_q: '', value_min: '', value_max: '', segment: '', specialization: '' },
+      spLoading: false,
+spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client_name:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' },
+      spFormHistory: [],
+      spWinLossForm: { id:null, stage:'', title:'', reason:'', note:'', value:'' },
+    };
+  },
+  computed: {
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'งานขาย', icon:'briefcase', active:true },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+    isAdmin()      { return this.currentUser?.role === 'admin'; },
+    isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
+    isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
+    isSale()       { return this.currentUser?.role === 'sale'; },
+
+    spAdvFilterCount() {
+      let n = 0;
+      if (this.spFilter.priority)         n++;
+      if (this.spFilter.product_category) n++;
+      if (this.spFilter.brand)            n++;
+      if (this.spFilter.client_q)         n++;
+      if (this.spFilter.value_min || this.spFilter.value_max) n++;
+      if (this.spFilter.segment)          n++;
+      if (this.spFilter.specialization)   n++;
+      return n;
+    },
+
+    spStages() {
+      if (this.spFilter.source_type === 'ebidding') {
+        return [
+          { key:'Interest',    thLabel:'รับงาน/ศึกษา TOR', label:'รับงาน / ศึกษา TOR',    icon:'', color:'#6b8fa8', darkColor:'#5a7a92' },
+          { key:'Send PI',     thLabel:'เตรียม/ยื่นซอง',   label:'เตรียม & ยื่นข้อเสนอ',  icon:'', color:'#0fa8c8', darkColor:'#0d90ac' },
+          { key:'Negotiating', thLabel:'รอประกาศผล',        label:'⏳ รอประกาศผล',          icon:'⏳', color:'#7c6cc8', darkColor:'#6858b0' },
+          { key:'Deal Signed', thLabel:'ชนะประมูล',         label:'ชนะประมูล',             icon:'', color:'#1ea86a', darkColor:'#198f59' },
+          { key:'Delivered',   thLabel:'ส่งมอบแล้ว',        label:'ส่งมอบแล้ว',            icon:'', color:'#0fa89a', darkColor:'#0d9088' },
+          { key:'Lost',        thLabel:'แพ้/ยกเลิก',        label:'แพ้ / ยกเลิก',          icon:'', color:'#c85858', darkColor:'#b04848' },
+        ];
+      }
+      return [
+        { key:'Interest',    thLabel:'สนใจ/ติดต่อ',   label:'สนใจ / ติดต่อ',      icon:'', color:'#6b8fa8', darkColor:'#5a7a92' },
+        { key:'Send PI',     thLabel:'ส่ง PI/ใบเสนอ', label:'ส่ง PI / ใบเสนอราคา',icon:'', color:'#0fa8c8', darkColor:'#0d90ac' },
+        { key:'Negotiating', thLabel:'ต่อรอง/เจรจา',  label:'ต่อรอง / เจรจา',      icon:'', color:'#7c6cc8', darkColor:'#6858b0' },
+        { key:'Deal Signed', thLabel:'ปิดดีลแล้ว',    label:'ปิดดีลแล้ว',          icon:'', color:'#1ea86a', darkColor:'#198f59' },
+        { key:'Delivered',   thLabel:'ส่งมอบแล้ว',    label:'ส่งมอบแล้ว',          icon:'', color:'#0fa89a', darkColor:'#0d9088' },
+        { key:'Lost',        thLabel:'ไม่สำเร็จ',      label:'ไม่สำเร็จ',           icon:'', color:'#c85858', darkColor:'#b04848' },
+      ];
+    },
+
+    // สีหัว modal "เพิ่ม/แก้ไขงาน" ให้ตรงกับสี stage ปัจจุบันของงานนั้น (เหมือน modal รายละเอียดงานประมูลใน
+    // bid-pipeline.html ที่ทำไว้อยู่แล้ว) ยืนยันจากผู้ใช้ 2026-09-02 ให้ทุก modal ที่เกี่ยวกับ stage ใช้สีเดียวกับ Kanban
+    spFormStageColor() {
+      const s = this.spStages.find(s => s.key === this.spForm.stage);
+      return s ? { color: s.color, darkColor: s.darkColor } : { color: '#008074', darkColor: '#1e293b' };
+    },
+
+    spSourceTypes() {
+      return [
+        { val:'purchased_data', label:'เว็บซื้อข้อมูล',    icon:'' },
+        { val:'self_sourced',   label:'Sales Hunt งานเอง',  icon:'' },
+      ];
+    },
+
+    spTableData() {
+      const order = ['Interest','Send PI','Negotiating','Deal Signed','Delivered','Lost'];
+      const all = [];
+      for (const k of order) all.push(...(this.spKanban[k] || []));
+      return all;
+    },
+
+    spWonReasons() {
+      return ['ราคาเหมาะสม','คุณภาพสินค้าดี','ความสัมพันธ์ดี','ส่งเร็ว/ตรงเวลา','ครบสเปก','อื่นๆ'];
+    },
+
+    spLostReasons() {
+      return ['ราคาสูงกว่าคู่แข่ง','สินค้าไม่ตรงสเปก','ลูกค้าเลื่อน/ยกเลิก','งบประมาณถูกตัด','ติดต่อช้าไป','อื่นๆ'];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (this.currentUser.role === 'salesadmin') {
+        window.location.href = 'dashboard.html'; return;
+      }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    window.appVue = this;
+    await this.$nextTick(); // รอให้ Vue วาง <table id="spTable"> ลง DOM ก่อน ค่อยให้ jQuery จับ
+    this.bindTableEvents();
+    if (this.isSecretary) {
+      this.loadSales();
+    }
+    this.loadSpKanban();
+  },
+  methods: {
+    ...SharedMethods,
+
+    esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+
+    /** ผูก event คลิกปุ่ม action ในแถว "ครั้งเดียว" ตอน mounted ด้วย delegated listener บน #spTable (element แม่ที่ DataTables ไม่ทำลายทิ้งตอน destroy:true)
+        หา card ต้นทางผ่าน DataTables row API (ไม่ใช้ data-id) เพราะ .row(tr).data() คืน object เดิมที่ผูกไว้ตอน initDataTable() ตรงๆ */
+    bindTableEvents() {
+      const self = this;
+      const rowCard = btn => $('#spTable').DataTable().row($(btn).closest('tr')).data();
+      $('#spTable').on('click', '.sp-next-btn', function () {
+        const card = rowCard(this);
+        if (card) self.confirmSpMove(card, self.spNextStage(card.stage));
+      });
+      $('#spTable').on('click', '.sp-winloss-signed-btn', function () {
+        const card = rowCard(this);
+        if (card) self.openSpWinLoss(card, 'Deal Signed');
+      });
+      $('#spTable').on('click', '.sp-winloss-lost-btn', function () {
+        const card = rowCard(this);
+        if (card) self.openSpWinLoss(card, 'Lost');
+      });
+      $('#spTable').on('click', '.sp-delivered-btn', function () {
+        const card = rowCard(this);
+        if (card) self.confirmSpMove(card, 'Delivered');
+      });
+      $('#spTable').on('click', '.sp-edit-btn', function () {
+        const card = rowCard(this);
+        if (card) self.openSpForm(card);
+      });
+      $('#spTable').on('click', '.sp-delete-btn', function () {
+        const card = rowCard(this);
+        if (card) self.deleteSpItem(card);
+      });
+    },
+
+    /** สร้าง/รีเซ็ต DataTable ใหม่ทุกครั้งที่ spTableData เปลี่ยน (โหลดข้อมูล/เปลี่ยนตัวกรอง) — ใช้ destroy:true กันเวลา init ซ้ำ error
+        คอลัมน์ render เป็น HTML string ล้วน เพราะ DataTables วาด DOM เอง ไม่ผ่าน Vue template
+        คอลัมน์ Sale/หมวด และปุ่มลบ โผล่เฉพาะมุมมอง Secretary/Admin (isSale เห็นแค่ปุ่มที่เกี่ยวกับงานตัวเอง) */
+    initDataTable() {
+      const self = this;
+      const columns = [
+        {
+          data: null, title: 'โครงการ / ลูกค้า',
+          render: (d, type, card) => {
+            let html = '';
+            if (card.project_code) html += `<div class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-0.5">${self.esc(card.project_code)}</div>`;
+            html += `<div class="font-bold text-sm text-slate-800 leading-snug">${self.esc(card.title)}</div>`;
+            if (card.client_name) html += `<div class="text-[.82rem] text-slate-500">${self.esc(card.client_name)}</div>`;
+            return html;
+          },
+        },
+        {
+          data: 'stage', title: 'ขั้นตอน', orderable: false,
+          render: d => `<span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold ${self.spStageClass(d)}">${self.esc(d)}</span>`,
+        },
+        {
+          data: null, title: 'แหล่งที่มา', orderable: false,
+          render: (d, type, card) => `<span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold ${self.spSourceClass(card.source_type)}">${self.esc(card.source_label)}</span>`,
+        },
+        {
+          data: 'value', title: 'มูลค่า (฿)', className: 'text-right',
+          render: d => d ? `<span class="font-bold text-green-600">฿${self.formatNumber(d)}</span>` : '<span class="text-slate-300">-</span>',
+        },
+      ];
+      if (self.isSecretary) {
+        columns.push({
+          data: null, title: 'Sale', orderable: false,
+          render: (d, type, card) => {
+            const avatar = card.sale_photo_url
+              ? `<img src="${self.esc(card.sale_photo_url)}" class="w-5 h-5 rounded-full object-cover shrink-0"/>`
+              : `<div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[.65rem] font-bold shrink-0" style="background:${card.sale_color||'#64748b'}">${self.esc(self.avatarInitials(card.sale_name))}</div>`;
+            return `<div class="flex items-center gap-1.5">${avatar}<span class="text-sm">${self.esc(card.sale_name)}</span></div>`;
+          },
+        });
+      }
+      columns.push({
+        data: 'priority', title: 'ความสำคัญ', orderable: false,
+        render: d => `<span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold ${self.spPriorityClass(d)}">${self.esc(d)}</span>`,
+      });
+      if (self.isSecretary) {
+        columns.push({ data: 'product_category', title: 'หมวด', render: d => d ? self.esc(d) : '<span class="text-slate-300">-</span>' });
+      }
+      columns.push({ data: 'expected_close', title: 'วันคาดปิด', render: d => d ? self.esc(d) : '<span class="text-slate-300">-</span>' });
+      columns.push({
+        data: null, title: '', orderable: false, className: 'text-right',
+        render: (d, type, card) => {
+          let html = '<div class="flex gap-1 justify-end flex-wrap">';
+          const nextStage = self.spNextStage(card.stage);
+          if (!['Deal Signed','Delivered','Lost'].includes(card.stage) && nextStage) {
+            html += `<button class="sp-next-btn text-xs font-semibold px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 border-0 cursor-pointer whitespace-nowrap">▶ ${self.esc(self.spNextLabel(card.stage))}</button>`;
+          }
+          if (card.stage === 'Negotiating') {
+            html += `<button class="sp-winloss-signed-btn text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0 cursor-pointer">ปิดดีล</button>`;
+            html += `<button class="sp-winloss-lost-btn text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 border-0 cursor-pointer">ไม่สำเร็จ</button>`;
+          }
+          if (card.stage === 'Deal Signed') {
+            html += `<button class="sp-delivered-btn text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0 cursor-pointer whitespace-nowrap">ส่งสินค้าแล้ว</button>`;
+          }
+          html += `<button class="sp-edit-btn text-xs font-semibold px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer">แก้ไข</button>`;
+          if (self.isSecretary) {
+            html += `<button class="sp-delete-btn text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 border-0 cursor-pointer">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+            </button>`;
+          }
+          html += '</div>';
+          return html;
+        },
+      });
+
+      $('#spTable').DataTable({
+        data: this.spTableData,
+        destroy: true,
+        autoWidth: false,
+        language: {
+          search: 'ค้นหา:',
+          lengthMenu: 'แสดง _MENU_ รายการ',
+          info: 'แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ',
+          infoEmpty: 'ไม่มีข้อมูล',
+          infoFiltered: '(กรองจาก _MAX_ รายการทั้งหมด)',
+          zeroRecords: 'ไม่มีข้อมูล',
+          paginate: { previous: 'ก่อนหน้า', next: 'ถัดไป' },
+        },
+        columns,
+      });
+    },
+
+    // export ตามลำดับ/ตัวกรองที่ DataTables แสดงอยู่ตอนนี้ (search:'applied') ไม่ใช่ข้อมูลดิบทั้งหมดเสมอไป — เหมือน bid-pipeline.html/sources.html
+    exportSpTable() {
+      const headers = ['รหัสงาน', 'ชื่อโครงการ', 'ชื่อลูกค้า', 'ขั้นตอน', 'แหล่งที่มา', 'มูลค่า'];
+      if (this.isSecretary) headers.push('Sale');
+      headers.push('ความสำคัญ');
+      if (this.isSecretary) headers.push('หมวดสินค้า');
+      headers.push('วันคาดปิด');
+
+      const cards = $('#spTable').DataTable().rows({ search: 'applied' }).data().toArray();
+      const rows = cards.map(card => {
+        const row = [card.project_code || '', card.title, card.client_name || '', card.stage, card.source_label, card.value ? Number(card.value) : ''];
+        if (this.isSecretary) row.push(card.sale_name || '');
+        row.push(card.priority);
+        if (this.isSecretary) row.push(card.product_category || '');
+        row.push(card.expected_close || '');
+        return row;
+      });
+      this.exportExcel('งานขายตรง', headers, rows);
+    },
+
+    async loadSpKanban() {
+      this.spLoading = true;
+      try {
+        let url = 'api/pipeline_items.php?action=kanban';
+        if (this.spFilter.assigned_to) url += '&assigned_to=' + this.spFilter.assigned_to;
+        if (this.spFilter.source_type)  url += '&source_type='  + this.spFilter.source_type;
+        if (this.spFilter.period && this.spFilter.period !== 'all') url += '&period=' + this.spFilter.period;
+        if (this.spFilter.priority)         url += '&adv_priority=' + encodeURIComponent(this.spFilter.priority);
+        if (this.spFilter.product_category) url += '&product_category=' + encodeURIComponent(this.spFilter.product_category);
+        if (this.spFilter.brand)            url += '&brand=' + encodeURIComponent(this.spFilter.brand);
+        if (this.spFilter.client_q)         url += '&client_q=' + encodeURIComponent(this.spFilter.client_q.trim());
+        if (this.spFilter.value_min)        url += '&value_min=' + encodeURIComponent(this.spFilter.value_min);
+        if (this.spFilter.value_max)        url += '&value_max=' + encodeURIComponent(this.spFilter.value_max);
+        if (this.spFilter.segment)          url += '&adv_segment=' + encodeURIComponent(this.spFilter.segment);
+        if (this.spFilter.specialization)   url += '&specialization=' + encodeURIComponent(this.spFilter.specialization);
+        const res = await apiCall('GET', url);
+        if (res.success) {
+          this.spKanban    = res.kanban    || {};
+          this.spStats     = res.stats     || null;
+          this.spSaleStats = res.per_sale  || [];
+        }
+      } catch { await this.showAlert('โหลดข้อมูลไม่ได้', 'error'); }
+      this.spLoading = false;
+      await this.$nextTick();
+      this.initDataTable();
+    },
+
+    spColValue(stageKey) {
+      const items = this.spKanban[stageKey] || [];
+      const total = items.reduce((s, c) => s + (Number(c.value) || 0), 0);
+      return total > 0 ? '฿' + this.formatNumber(total) : '';
+    },
+
+    spNextStage(stage) {
+      const order = ['Interest','Send PI','Negotiating','Deal Signed','Delivered'];
+      const i = order.indexOf(stage);
+      return i >= 0 && i < order.length - 1 ? order[i + 1] : null;
+    },
+
+    spNextLabel(stage) {
+      const map = {
+        'Interest':    'ส่ง PI / ใบเสนอราคา',
+        'Send PI':     'เข้าสู่การต่อรอง',
+        'Deal Signed': 'ส่งมอบสินค้าแล้ว',
+      };
+      return map[stage] || 'ขั้นตอนต่อไป';
+    },
+
+    async confirmSpMove(card, toStage) {
+      if (!toStage) return;
+      const stageInfo = this.spStages.find(s => s.key === toStage);
+      const ok = await this.showConfirm('เลื่อนขั้นตอน', `"${card.title}" จะถูกเลื่อนไปที่ → ${stageInfo?.thLabel || toStage}`, 'ยืนยัน เลื่อนขั้นตอน');
+      if (!ok) return;
+      const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + card.id, { stage: toStage });
+      if (res.success) { this.loadSpKanban(); await this.showAlert('เลื่อนขั้นตอนสำเร็จ', 'success'); }
+      else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    openSpWinLoss(card, stage) {
+      this.spWinLossForm = { id: card.id, stage, title: card.title, reason: '', note: '', value: card.value || '' };
+      this.modal = { type: 'sp-win-loss', data: card };
+    },
+
+    async submitSpWinLoss() {
+      if (!this.spWinLossForm.reason) { await this.showAlert('กรุณาเลือกเหตุผล', 'error'); return; }
+      const payload = {
+        stage:           this.spWinLossForm.stage,
+        win_loss_reason: this.spWinLossForm.reason,
+        win_loss_note:   this.spWinLossForm.note,
+      };
+      if (this.spWinLossForm.value) payload.value = this.spWinLossForm.value;
+      const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + this.spWinLossForm.id, payload);
+      if (res.success) {
+        this.closeModal();
+        this.loadSpKanban();
+        await this.showAlert('บันทึกสำเร็จ', 'success');
+      } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    async openSpForm(card) {
+      this.spFormHistory = [];
+      if (card) {
+        this.spForm = {
+          id: card.id, project_code: card.project_code || '', source_type: card.source_type || 'self_sourced',
+          title: card.title, client_name: card.client_name || '',
+          assigned_to: card.sale_id || '',
+          stage: card.stage, segment: card.segment || '', priority: card.priority || 'Medium',
+          product_category: card.product_category || '', brand: card.brand || '',
+          fee_structure: card.fee_structure || '', specialization: card.specialization || '',
+          value: card.value || '', win_probability: card.win_probability != null ? Math.round(card.win_probability * 100) : 20,
+          expected_close: card.expected_close || '',
+          next_action: card.next_action || '', notes: card.notes || '',
+        };
+      } else {
+        this.spForm = { id:null, source_type:'self_sourced', title:'', client_name:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' };
+      }
+      this.modal = { type: 'sp-form', data: card };
+
+      if (card) {
+        try {
+          const res = await apiCall('GET', `api/pipeline_items.php?action=one&id=${card.id}`);
+          if (res.success) this.spFormHistory = res.item.history || [];
+        } catch {}
+      }
+    },
+
+    async submitSpForm() {
+      if (!this.spForm.title.trim()) { await this.showAlert('กรุณาระบุชื่อโครงการ/รายการ', 'error'); return; }
+      const requiredDealFields = [
+        { key: 'value',            label: 'มูลค่า (บาท)' },
+        { key: 'win_probability',  label: 'โอกาสปิดดีล (%)' },
+        { key: 'expected_close',   label: 'วันคาดปิดดีล' },
+        { key: 'segment',          label: 'ประเภทลูกค้า' },
+        { key: 'product_category', label: 'หมวดสินค้า' },
+        { key: 'brand',            label: 'แบรนด์' },
+        { key: 'fee_structure',    label: 'Fee Structure' },
+        { key: 'specialization',   label: 'กลุ่มลูกค้า (Specialization)' },
+      ];
+      for (const f of requiredDealFields) {
+        const v = this.spForm[f.key];
+        if (v === '' || v === null || v === undefined) {
+          await this.showAlert(`กรุณากรอก "${f.label}"`, 'error');
+          return;
+        }
+      }
+      const payload = { ...this.spForm };
+      if (!payload.assigned_to) payload.assigned_to = this.currentUser.id;
+      payload.win_probability = Math.min(100, Math.max(0, Number(payload.win_probability) || 0)) / 100;
+      let res;
+      if (this.spForm.id) {
+        res = await apiCall('PUT', 'api/pipeline_items.php?id=' + this.spForm.id, payload);
+      } else {
+        res = await apiCall('POST', 'api/pipeline_items.php', payload);
+      }
+      if (res.success) {
+        this.closeModal();
+        this.loadSpKanban();
+        await this.showAlert(this.spForm.id ? 'แก้ไขสำเร็จ' : 'เพิ่มงานสำเร็จ', 'success');
+      } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    async deleteSpItem(card) {
+      const ok = await this.showConfirm('ลบรายการนี้?', `"${card.title}" จะถูกลบออกจากระบบ ไม่สามารถกู้คืนได้`, 'ลบรายการ');
+      if (!ok) return;
+      const res = await apiCall('DELETE', 'api/pipeline_items.php?id=' + card.id);
+      if (res.success) { this.loadSpKanban(); await this.showAlert('ลบสำเร็จ', 'success'); }
+      else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    spSourceClass(sourceType) {
+      const map = {
+        'ebidding':       'bg-teal-100 text-teal-700',
+        'purchased_data': 'bg-sky-100 text-sky-700',
+        'self_sourced':   'bg-amber-100 text-amber-700',
+      };
+      return map[sourceType] || 'bg-slate-100 text-slate-500';
+    },
+
+    spPriorityClass(priority) {
+      const map = {
+        'High':   'bg-red-100 text-red-700',
+        'Medium': 'bg-amber-100 text-amber-700',
+        'Low':    'bg-emerald-100 text-emerald-700',
+      };
+      return map[priority] || 'bg-slate-100 text-slate-500';
+    },
+
+    spStageClass(stage) {
+      const map = {
+        'Interest':    'bg-slate-100 text-slate-600',
+        'Send PI':     'bg-cyan-100 text-cyan-700',
+        'Negotiating': 'bg-indigo-100 text-indigo-700',
+        'Deal Signed': 'bg-emerald-100 text-emerald-700',
+        'Delivered':   'bg-teal-100 text-teal-700',
+        'Lost':        'bg-red-100 text-red-700',
+      };
+      return map[stage] || 'bg-slate-100 text-slate-500';
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

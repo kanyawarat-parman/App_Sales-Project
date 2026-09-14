@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ผลงานทีม Sale</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="my-performance" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <!-- Header -->
+      <header class="bg-white border-b border-slate-100 px-5 py-3 sticky top-0 z-30 shadow-sm">
+        <div class="flex flex-wrap items-center gap-3">
+          <button class="md:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-500 border-0 bg-transparent cursor-pointer"
+            @click="$refs.nav.sidebarOpen=!$refs.nav.sidebarOpen">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            {{ isSale ? 'ผลงานของฉัน' : 'ผลงานทีม Sale' }}
+          </h1>
+
+          <!-- Tabs (manager only) -->
+          <div v-if="isManager" class="flex rounded-xl overflow-hidden border border-slate-200 bg-slate-100 p-0.5 gap-0.5">
+            <button @click="switchTab('individual')"
+              class="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer border-0"
+              :class="activeTab==='individual' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500'">รายคน</button>
+            <button @click="switchTab('team')"
+              class="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer border-0"
+              :class="activeTab==='team' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500'">ทีมรวม</button>
+          </div>
+
+          <!-- Sale selector (individual tab + manager) -->
+          <select v-if="isManager && activeTab==='individual'" v-model="selectedUserId" @change="loadData"
+            class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+            <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+          </select>
+
+          <!-- Year selector -->
+          <div class="flex gap-1 ml-auto">
+            <button v-for="y in yearOptions" :key="y" @click="changeYear(y)"
+              class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer border"
+              :class="selectedYear===y ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'">
+              {{ y }}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="flex-1 p-5">
+        <div v-if="loading" class="flex items-center justify-center py-20">
+          <div class="spinner w-10 h-10"></div>
+        </div>
+
+        <template v-if="!loading && perfData">
+
+          <!-- KPI Cards -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-5">
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="text-[1.5rem] font-black leading-tight" style="color:#008074">{{ formatM(perfData.kpi.total_pipeline) }}</div>
+              <div class="text-xs text-slate-500 mt-1">Total Pipeline</div>
+              <div class="text-[.7rem] text-slate-400 mt-0.5">Active + Signed</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="text-[1.5rem] font-black leading-tight text-indigo-600">{{ formatM(perfData.kpi.weighted_pipeline) }}</div>
+              <div class="text-xs text-slate-500 mt-1">Weighted Pipeline</div>
+              <div class="text-[.7rem] text-slate-400 mt-0.5">ยอดจด Order (Weighted)</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="text-[1.5rem] font-black leading-tight text-orange-500">{{ formatM(perfData.kpi.taken_this_month) }}</div>
+              <div class="text-xs text-slate-500 mt-1">รับงานเดือนนี้</div>
+              <div v-if="perfData.kpi.target_this_month" class="text-[.7rem] text-slate-400 mt-0.5">
+                เป้า {{ formatM(perfData.kpi.target_this_month) }}
+                <span class="font-bold ml-1"
+                  :style="{color: takenAchievement>=100?'#16a34a':takenAchievement>=70?'#f59e0b':'#ef4444'}">
+                  {{ takenAchievement }}%
+                </span>
+              </div>
+              <div v-else class="text-[.7rem] text-slate-400 mt-0.5">ยังไม่มีเป้าหมาย</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="text-[1.5rem] font-black leading-tight text-amber-600">{{ formatM(perfData.kpi.annual_target) }}</div>
+              <div class="text-xs text-slate-500 mt-1">Annual Target (THB) · เป้าหมายทั้งปี</div>
+              <div class="text-[.7rem] text-slate-400 mt-0.5">Win Rate {{ perfData.kpi.win_rate }}% · Won {{ perfData.kpi.won_deals }}</div>
+            </div>
+          </div>
+
+          <!-- Monthly Progress highlight -->
+          <div v-if="perfData.kpi.target_this_month" class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5 mb-5 flex flex-wrap items-center gap-4">
+            <div class="text-sm font-bold text-amber-800">เดือนนี้ ({{ currentMonthLabel }})</div>
+            <div class="flex items-center gap-3 flex-1">
+              <div class="flex-1 bg-amber-100 rounded-full h-3 overflow-hidden">
+                <div class="h-full rounded-full transition-all"
+                  :style="{width:Math.min(takenAchievement,100)+'%',background:'#f59e0b'}"></div>
+              </div>
+              <span class="text-sm font-bold text-amber-700 shrink-0">{{ takenAchievement }}%</span>
+            </div>
+            <div class="text-sm text-amber-700">
+              รับงาน <strong>{{ formatM(perfData.kpi.taken_this_month) }}</strong> / เป้า <strong>{{ formatM(perfData.kpi.target_this_month) }}</strong>
+            </div>
+          </div>
+
+          <!-- Monthly Trend Chart -->
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-5">
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <span class="font-bold text-slate-700">เป้าหมาย vs รับงาน vs ส่งมอบ ปี {{ selectedYear }}</span>
+              <span class="text-xs text-slate-400">
+                <span class="inline-block w-5 border-t-2 border-dashed border-blue-400 align-middle mr-1"></span>เป้า
+                <span class="inline-block w-3 h-3 rounded-sm bg-orange-400 ml-2 mr-1 align-middle"></span>รับงาน
+                <span class="inline-block w-5 border-t-2 border-green-500 align-middle mr-1 ml-2"></span>ส่งมอบ
+              </span>
+            </div>
+            <div class="p-4"><canvas id="chartMonthly" height="160"></canvas></div>
+          </div>
+
+          <!-- Team: per-person comparison -->
+          <div v-if="activeTab==='team' && perfData.users.length" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="px-5 py-4 border-b border-slate-100 font-bold text-slate-700">เปรียบเทียบรายคน — เดือนนี้ ({{ currentMonthLabel }})</div>
+            <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div v-for="u in perfData.users" :key="u.id"
+                class="border border-slate-100 rounded-xl p-4 hover:bg-slate-50/50 transition-colors">
+                <div class="flex items-center gap-3 mb-3">
+                  <img v-if="u.photo_url" :src="u.photo_url" class="w-10 h-10 rounded-full object-cover shrink-0"/>
+                  <div v-else class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                    :style="{background:u.avatar_color||'#64748b'}">{{ avatarInitials(u.full_name) }}</div>
+                  <div>
+                    <div class="font-semibold text-slate-800">{{ u.full_name }}</div>
+                    <div class="text-xs text-slate-400">เป้า/ปี {{ formatM(u.annual_target) }}</div>
+                  </div>
+                  <div class="ml-auto text-right">
+                    <div class="text-lg font-black"
+                      :style="{color:(u.achievement_taken??0)>=100?'#16a34a':(u.achievement_taken??0)>=70?'#f59e0b':'#ef4444'}">
+                      {{ u.achievement_taken !== null ? u.achievement_taken + '%' : '-' }}
+                    </div>
+                    <div class="text-[.65rem] text-slate-400">achievement</div>
+                  </div>
+                </div>
+                <!-- Taken bar -->
+                <div class="mb-2">
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-orange-600 font-semibold">รับงาน {{ formatM(u.taken_this_month) }}</span>
+                    <span class="text-slate-400">/ {{ formatM(u.target_this_month) }}</span>
+                  </div>
+                  <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all"
+                      :style="{width:Math.min(u.achievement_taken??0,100)+'%',background:'#f59e0b'}"></div>
+                  </div>
+                </div>
+                <!-- Delivered bar -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-green-600 font-semibold">ส่งมอบ {{ formatM(u.delivered_this_month) }}</span>
+                    <span class="text-slate-400">
+                      {{ u.target_this_month ? Math.round(u.delivered_this_month/u.target_this_month*100)+'%' : '-' }}
+                    </span>
+                  </div>
+                  <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all"
+                      :style="{width:u.target_this_month?Math.min(Math.round(u.delivered_this_month/u.target_this_month*100),100)+'%':'0%',background:'#16a34a'}"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </template>
+      </main>
+    </div>
+
+    <div v-if="toast"
+      class="fixed bottom-6 right-6 z-[2000] px-5 py-3 rounded-xl text-sm font-semibold shadow-xl"
+      :class="toast.type==='success'?'bg-teal-700 text-white':'bg-red-500 text-white'">
+      {{ toast.msg }}
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=20"></script>
+<script>
+const { createApp } = Vue;
+const now = new Date();
+
+createApp({
+  components: { AppNav },
+  data() {
+    const cur = now.getFullYear();
+    return {
+      authReady: false,
+      currentUser: null,
+      toast: null,
+      loading: false,
+      activeTab: 'individual',
+      selectedYear: cur,
+      yearOptions: [cur - 1, cur, cur + 1],
+      selectedUserId: null,
+      salesUsers: [],
+      perfData: null,
+      chartInstance: null,
+    };
+  },
+  computed: {
+    isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
+    isSale()    { return this.currentUser?.role === 'sale'; },
+    takenAchievement() {
+      const kpi = this.perfData?.kpi;
+      if (!kpi || !kpi.target_this_month) return 0;
+      return Math.round(kpi.taken_this_month / kpi.target_this_month * 100);
+    },
+    currentMonthLabel() {
+      const m = now.getMonth() + 1;
+      return ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][m] + ' ' + (now.getFullYear() + 543);
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!['admin','salesadmin','manager','sale'].includes(this.currentUser.role)) {
+        location.href = 'dashboard.html'; return;
+      }
+    } catch { location.href = 'login.html'; return; }
+    this.authReady = true;
+    if (this.isManager) {
+      await this.loadSalesUsers();
+      if (this.salesUsers.length) this.selectedUserId = this.salesUsers[0].id;
+    } else {
+      this.selectedUserId = this.currentUser.id;
+    }
+    this.loadData();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async loadSalesUsers() {
+      const r = await apiCall('GET', `api/targets.php?year=${this.selectedYear}`);
+      if (r.success) this.salesUsers = r.data.users;
+    },
+
+    async loadData() {
+      this.loading = true;
+      let url = `api/reports.php?action=monthly_performance&year=${this.selectedYear}`;
+      if (this.activeTab === 'individual' && this.selectedUserId) {
+        url += `&user_id=${this.selectedUserId}`;
+      }
+      try {
+        const r = await apiCall('GET', url);
+        if (r.success) this.perfData = r.data;
+      } catch {}
+      this.loading = false;
+      this.$nextTick(() => this.initChart());
+    },
+
+    switchTab(tab) {
+      this.activeTab = tab;
+      this.loadData();
+    },
+
+    changeYear(y) {
+      this.selectedYear = y;
+      this.loadData();
+    },
+
+    initChart() {
+      const el = document.getElementById('chartMonthly');
+      if (!el || !this.perfData) return;
+      if (this.chartInstance) this.chartInstance.destroy();
+      const d = this.perfData.monthly;
+      const fmt = v => v >= 1000000 ? (v/1000000).toFixed(1)+'ล.' : v >= 1000 ? (v/1000).toFixed(0)+'K' : (v||0);
+      const font = { family: 'Anuphan, sans-serif', size: 11 };
+      this.chartInstance = new Chart(el.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: d.map(m => m.label),
+          datasets: [
+            {
+              type: 'line',
+              label: 'เป้าหมาย',
+              data: d.map(m => m.target),
+              borderColor: '#3b82f6',
+              borderDash: [6, 4],
+              borderWidth: 2.5,
+              pointRadius: 3,
+              pointBackgroundColor: '#3b82f6',
+              fill: false,
+              tension: 0.3,
+              order: 1,
+              spanGaps: true,
+            },
+            {
+              type: 'bar',
+              label: 'รับงาน (Deal Signed)',
+              data: d.map(m => m.taken),
+              backgroundColor: 'rgba(245,158,11,0.65)',
+              borderColor: '#f59e0b',
+              borderWidth: 1,
+              borderRadius: 4,
+              order: 3,
+            },
+            {
+              type: 'line',
+              label: 'ส่งมอบ (Delivered)',
+              data: d.map(m => m.delivered),
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16,185,129,0.06)',
+              borderWidth: 2,
+              pointRadius: 4,
+              pointBackgroundColor: '#10b981',
+              fill: true,
+              tension: 0.3,
+              order: 2,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: { position: 'top', labels: { font: { family:'Anuphan, sans-serif', size:12 }, boxWidth:14, padding:12 } },
+            tooltip: { callbacks: { label: c => `${c.dataset.label}: ฿${Number(c.raw||0).toLocaleString()}` } },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { font } },
+            y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font, callback: fmt } },
+          },
+        },
+      });
+    },
+
+    formatM(v) {
+      if (!v && v !== 0) return '-';
+      return '฿' + Number(v).toLocaleString('en-US');
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

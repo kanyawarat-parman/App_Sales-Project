@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Starter Kit Anatomy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #F6F8F7;
+    --surface: #FFFFFF;
+    --surface-sunk: #EEF2F0;
+    --ink: #16211E;
+    --ink-soft: #4B5A56;
+    --ink-faint: #7C8B86;
+    --border: #DCE4E1;
+    --border-soft: #E8EDEB;
+    --accent: #007A6F;
+    --accent-ink: #005F56;
+    --accent-soft: #E1F3F0;
+    --warn: #B4570B;
+    --warn-soft: #FBEEE1;
+    --ready: #1C7A5B;
+    --ready-soft: #E4F4EC;
+    --shadow: 0 1px 2px rgba(22,33,30,.04), 0 8px 24px -12px rgba(22,33,30,.12);
+    --radius: 14px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101613;
+      --surface: #161F1B;
+      --surface-sunk: #0D1311;
+      --ink: #EAF2EF;
+      --ink-soft: #A9BBB5;
+      --ink-faint: #718079;
+      --border: #26332D;
+      --border-soft: #1D2723;
+      --accent: #35C7B4;
+      --accent-ink: #6FDCCB;
+      --accent-soft: #163330;
+      --warn: #F0A868;
+      --warn-soft: #2E2015;
+      --ready: #5FCB9C;
+      --ready-soft: #16302A;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #101613;
+    --surface: #161F1B;
+    --surface-sunk: #0D1311;
+    --ink: #EAF2EF;
+    --ink-soft: #A9BBB5;
+    --ink-faint: #718079;
+    --border: #26332D;
+    --border-soft: #1D2723;
+    --accent: #35C7B4;
+    --accent-ink: #6FDCCB;
+    --accent-soft: #163330;
+    --warn: #F0A868;
+    --warn-soft: #2E2015;
+    --ready: #5FCB9C;
+    --ready-soft: #16302A;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans Thai', 'Noto Sans Thai', sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding: 0 0 6rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 0;
+  }
+
+  code, .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+
+  /* ── Header ── */
+  header.page {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2.75rem;
+  }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    font-weight: 500;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  h1 {
+    font-size: clamp(1.9rem, 4vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .lede {
+    font-size: 1.02rem;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  .path-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .82rem;
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 999px;
+    padding: .4rem .9rem;
+    width: fit-content;
+  }
+
+  /* ── Section shell ── */
+  section { margin-bottom: 3rem; }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.1rem;
+    padding-bottom: .6rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .section-head h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--ink);
+  }
+  .section-head .count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .78rem;
+    color: var(--ink-faint);
+  }
+
+  /* ── Philosophy cards ── */
+  .philosophy {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 640px) { .philosophy { grid-template-columns: 1fr; } }
+
+  .phil-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.35rem 1.5rem;
+    box-shadow: var(--shadow);
+  }
+  .phil-card .layer-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .7rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: .5rem;
+  }
+  .phil-card.generic .layer-tag { color: var(--ready); }
+  .phil-card.specific .layer-tag { color: var(--warn); }
+  .phil-card h3 { font-size: 1rem; margin: 0 0 .4rem; font-weight: 600; }
+  .phil-card p { margin: 0; font-size: .9rem; color: var(--ink-soft); }
+  .phil-card .arrow {
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--ink-faint);
+    font-size: .8rem;
+    margin: .6rem 0 -.2rem;
+  }
+
+  /* ── Tree ── */
+  .tree {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.6rem 1.6rem 1.4rem;
+    overflow-x: auto;
+  }
+
+  .tree-row {
+    display: flex;
+    align-items: baseline;
+    gap: .75rem;
+    padding: .3rem 0;
+    font-size: .88rem;
+    white-space: nowrap;
+  }
+  .tree-row .indent {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--border);
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .tree-row .name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    color: var(--ink);
+    flex-shrink: 0;
+  }
+  .tree-row.dir .name { color: var(--accent-ink); font-weight: 600; }
+  .tree-row .desc {
+    color: var(--ink-faint);
+    font-size: .82rem;
+    white-space: normal;
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+  }
+  .tree-row .tag {
+    flex-shrink: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .66rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: .12rem .5rem;
+    border-radius: 999px;
+  }
+  .tree-row .tag.ready { background: var(--ready-soft); color: var(--ready); }
+  .tree-row .tag.edit  { background: var(--warn-soft); color: var(--warn); }
+
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 1.2rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border);
+    font-size: .78rem;
+    color: var(--ink-faint);
+    flex-wrap: wrap;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .legend .dot.ready { background: var(--ready); }
+  .legend .dot.edit { background: var(--warn); }
+
+  /* ── Function classification ── */
+  .fn-table {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .fn-group { border-bottom: 1px solid var(--border-soft); }
+  .fn-group:last-child { border-bottom: none; }
+  .fn-group-head {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .85rem 1.5rem;
+    background: var(--surface-sunk);
+    font-size: .82rem;
+    font-weight: 600;
+  }
+  .fn-group-head .n {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 700;
+    font-size: .95rem;
+  }
+  .fn-group.g-ready .fn-group-head .n { color: var(--ready); }
+  .fn-group.g-adapt .fn-group-head .n { color: var(--accent-ink); }
+  .fn-group.g-drop .fn-group-head .n { color: var(--warn); }
+  .fn-group-body { padding: .9rem 1.5rem 1.1rem; }
+  .fn-pills { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .5rem; }
+  .fn-pill {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .76rem;
+    background: var(--surface-sunk);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: .2rem .55rem;
+    color: var(--ink);
+  }
+  .fn-group-body .note { font-size: .84rem; color: var(--ink-soft); margin: 0; }
+
+  /* ── Steps ── */
+  .steps { counter-reset: step; display: flex; flex-direction: column; gap: 0; }
+  .step {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .step:last-child { border-bottom: none; }
+  .step::before {
+    content: counter(step);
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: .85rem;
+    color: var(--accent);
+    background: var(--accent-soft);
+    width: 2rem; height: 2rem;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step .step-body h4 { margin: 0 0 .2rem; font-size: .92rem; font-weight: 600; }
+  .step .step-body p { margin: 0; font-size: .85rem; color: var(--ink-soft); }
+  .step .step-body code { font-size: .8rem; background: var(--surface-sunk); padding: .1rem .4rem; border-radius: 5px; }
+
+  footer.page {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    font-size: .78rem;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--border-soft);
+    padding-top: 1.5rem;
+    margin-top: 1rem;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="page">
+    <div class="eyebrow">Personal reference · webfront_saleproject</div>
+    <h1>Starter Kit Anatomy</h1>
+    <p class="lede">แผนผังโฟลเดอร์ <code class="mono">_starter-template</code> — สกัดจาก Taiyo Sales Project ไว้เป็นจุดเริ่มต้นของโปรเจกต์ถัดไปที่อยากได้แบบแผนเดียวกัน: Vue 3 Options API, ไม่มี build step, PHP vanilla + MySQL — จัดเป็น <strong>workspace 2 ชั้น</strong> (workspace รวม + แอปย่อยข้างใน) จำลองจากโปรเจกต์ต้นทางที่มี <code class="mono">app-salesproject/</code> คู่กับ <code class="mono">egp-import/</code></p>
+    <div class="path-pill">📁 D:\TAIYO\Project\Project_Claude\webfront_saleproject\_starter-template\</div>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <h2>หลักการแบ่งชั้น</h2>
+    </div>
+    <div class="philosophy">
+      <div class="phil-card generic">
+        <div class="layer-tag">ชั้น 1 — ทั่วไป</div>
+        <h3>ใช้ได้ทุกโปรเจกต์</h3>
+        <p>โครงสร้าง auth, API pattern, format helper — ไม่ผูกกับธุรกิจไหนเป็นการเฉพาะ copy ไปวางแล้วรันได้ทันที</p>
+      </div>
+      <div class="phil-card specific">
+        <div class="layer-tag">ชั้น 2 — เฉพาะโปรเจกต์</div>
+        <h3>เขียนใหม่ทุกครั้ง</h3>
+        <p>เมนู, enum สถานะ, badge สี, กฎ SLA — คำศัพท์และตรรกะที่ผูกกับธุรกิจของโปรเจกต์ใหม่นั้นๆ</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>โครงสร้าง workspace</h2>
+    </div>
+    <div class="philosophy">
+      <div class="phil-card generic">
+        <div class="layer-tag">workspace root</div>
+        <h3>รวมทุก service ไว้ด้วยกัน</h3>
+        <p><code class="mono">README.md</code>/<code class="mono">CLAUDE.md</code> ระดับบนสุด — ไม่ใช่ตัวแอป แค่ชี้ทางไปแอปย่อยข้างใน เผื่ออนาคตอยากเพิ่ม service คู่กันแบบ <code class="mono">egp-import</code> ของต้นทาง</p>
+      </div>
+      <div class="phil-card specific">
+        <div class="layer-tag">app-name/ · service-name/</div>
+        <h3>แอปย่อยแยกอิสระต่อกัน</h3>
+        <p>แต่ละโฟลเดอร์มี <code class="mono">config/</code>/<code class="mono">includes/</code>/<code class="mono">.htaccess</code> ของตัวเอง — ไม่มี code dependency ข้ามกัน เชื่อมกันได้แค่ผ่าน DB เดียวกันถ้าตั้งใจแชร์ข้อมูล</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>โครงสร้างไฟล์</h2>
+      <span class="count">19 ไฟล์</span>
+    </div>
+    <div class="tree">
+
+      <div class="tree-row"><span class="name">README.md</span><span class="desc">workspace — วิธีเริ่มโปรเจกต์ใหม่จาก template นี้</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="name">CLAUDE.md</span><span class="desc">workspace — ภาพรวม + ลิงก์ไปแอปย่อย</span><span class="tag ready">พร้อมใช้</span></div>
+
+      <div class="tree-row dir"><span class="name">app-name/</span><span class="desc">แอปหลัก — CHANGE_ME: rename เป็นชื่อจริง</span><span class="tag edit">ต้อง rename</span></div>
+      <div class="tree-row"><span class="indent">├─</span><span class="name">README.md</span><span class="desc">วิธีตั้งค่าแอปนี้ (DB, config, dev server)</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="indent">├─</span><span class="name">CLAUDE.md</span><span class="desc">เอกสาร convention — มีจุด CHANGE_ME ให้กรอกต่อ</span><span class="tag edit">ต้องแก้</span></div>
+      <div class="tree-row"><span class="indent">├─</span><span class="name">.htaccess</span><span class="desc">security headers + block .sql/.log/.env</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="indent">├─</span><span class="name">login.html</span><span class="desc">หน้าเข้าสู่ระบบ</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="indent">├─</span><span class="name">dashboard.html</span><span class="desc">ตัวอย่างหน้ามาตรฐานที่ต้อง auth</span><span class="tag ready">พร้อมใช้</span></div>
+
+      <div class="tree-row"><span class="indent">├─</span><span class="name">config/</span></div>
+      <div class="tree-row"><span class="indent">│&nbsp;&nbsp;├─</span><span class="name">.htaccess</span><span class="desc">Require all denied (บล็อกเข้าถึงตรงผ่าน URL)</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="indent">│&nbsp;&nbsp;├─</span><span class="name">database.php</span><span class="desc">เชื่อมต่อ MySQL ผ่าน PDO</span><span class="tag ready">generic 100%</span></div>
+      <div class="tree-row"><span class="indent">│&nbsp;&nbsp;└─</span><span class="name">config.php</span><span class="desc">envOr() + ค่าคงที่ (APP_NAME, SMTP, session)</span><span class="tag edit">ต้องแก้</span></div>
+
+      <div class="tree-row"><span class="indent">├─</span><span class="name">includes/</span></div>
+      <div class="tree-row"><span class="indent">│&nbsp;&nbsp;├─</span><span class="name">.htaccess</span><span class="desc">Require all denied</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="indent">│&nbsp;&nbsp;└─</span><span class="name">auth_check.php</span><span class="desc">requireAuth / requireRole / jsonResponse / getJsonBody</span><span class="tag ready">พร้อมใช้</span></div>
+
+      <div class="tree-row"><span class="indent">├─</span><span class="name">api/</span></div>
+      <div class="tree-row"><span class="indent">│&nbsp;&nbsp;├─</span><span class="name">auth.php</span><span class="desc">login / logout / me</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="indent">│&nbsp;&nbsp;└─</span><span class="name">config.php</span><span class="desc">public config endpoint (ให้หน้า login เรียกได้ก่อน login)</span><span class="tag ready">พร้อมใช้</span></div>
+
+      <div class="tree-row"><span class="indent">└─</span><span class="name">shared/</span></div>
+      <div class="tree-row"><span class="indent">&nbsp;&nbsp;&nbsp;├─</span><span class="name">app.js</span><span class="desc">apiCall + 8 SharedMethods ทั่วไป + AppNav โครงพื้นฐาน</span><span class="tag edit">ต่อยอด</span></div>
+      <div class="tree-row"><span class="indent">&nbsp;&nbsp;&nbsp;├─</span><span class="name">vue.global.prod.js</span><span class="desc">copy จากโปรเจกต์ต้นทาง</span><span class="tag ready">พร้อมใช้</span></div>
+      <div class="tree-row"><span class="indent">&nbsp;&nbsp;&nbsp;├─</span><span class="name">tailwind-config.js</span><span class="desc">theme สี/ฟอนต์กลาง</span><span class="tag edit">ปรับสีแบรนด์</span></div>
+      <div class="tree-row"><span class="indent">&nbsp;&nbsp;&nbsp;└─</span><span class="name">styles.css</span><span class="desc">scrollbar, spinner, DataTables override</span><span class="tag ready">พร้อมใช้</span></div>
+
+      <div class="tree-row dir"><span class="name">service-name/</span><span class="desc">ตัวอย่าง service เสริม (คล้าย egp-import ของต้นทาง)</span><span class="tag edit">ลบได้ถ้าไม่ใช้</span></div>
+      <div class="tree-row"><span class="indent">└─</span><span class="name">README.md</span><span class="desc">อธิบายวิธีใช้/เงื่อนไขถ้าจะสร้าง service จริง</span><span class="tag ready">พร้อมใช้</span></div>
+
+      <div class="legend">
+        <span><span class="dot ready"></span> พร้อมใช้ทันที ไม่ต้องแก้</span>
+        <span><span class="dot edit"></span> ต้องกรอก/ปรับ/rename ก่อนใช้จริง</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>SharedMethods เดิม 29 ตัว — คัดแล้วเอามาแค่ไหน</h2>
+    </div>
+    <div class="fn-table">
+      <div class="fn-group g-ready">
+        <div class="fn-group-head"><span class="n">9</span> ตัว — ทั่วไปจริง เอามาทั้งหมด</div>
+        <div class="fn-group-body">
+          <div class="fn-pills">
+            <span class="fn-pill">closeModal</span>
+            <span class="fn-pill">showAlert</span>
+            <span class="fn-pill">showConfirm</span>
+            <span class="fn-pill">avatarInitials</span>
+            <span class="fn-pill">formatPrice</span>
+            <span class="fn-pill">formatNumber</span>
+            <span class="fn-pill">formatNum</span>
+            <span class="fn-pill">formatDateTime</span>
+            <span class="fn-pill">formatFileSize</span>
+          </div>
+          <p class="note">ไม่ผูกกับคำศัพท์ธุรกิจใดๆ — modal กลาง (AppModal), avatar, format ตัวเลข-วันที่</p>
+        </div>
+      </div>
+      <div class="fn-group g-adapt">
+        <div class="fn-group-head"><span class="n">2</span> ตัว — ปรับ endpoint เป็น parameter ก่อนเอามา</div>
+        <div class="fn-group-body">
+          <div class="fn-pills">
+            <span class="fn-pill">loadSales → loadUsers(role)</span>
+            <span class="fn-pill">openDetail</span>
+          </div>
+          <p class="note">pattern ทั่วไป แต่ของเดิม hardcode endpoint เฉพาะโปรเจกต์ (api/assignments.php ฯลฯ) ไว้ตรงๆ</p>
+        </div>
+      </div>
+      <div class="fn-group g-drop">
+        <div class="fn-group-head"><span class="n">18</span> ตัว — ไม่เอามา เขียนใหม่ทุกโปรเจกต์</div>
+        <div class="fn-group-body">
+          <p class="note">statusBadge, priorityBadge, spStageStyle, docLabel, countdownColor ฯลฯ — hardcode string/enum ภาษาไทยเฉพาะของ e-Bidding/Sales Hunt โดยตรง</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>เริ่มโปรเจกต์ใหม่จาก template นี้</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-body">
+          <h4>Copy โฟลเดอร์ทั้งชุด แล้ว rename</h4>
+          <p>ย้ายออกไปเป็นโปรเจกต์ใหม่ นอก <code>webfront_saleproject</code> — rename <code>app-name/</code> เป็นชื่อแอปจริง, ลบ <code>service-name/</code> ทิ้งถ้าไม่ต้องการ service เสริม</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h4>สร้าง DB + ตาราง users</h4>
+          <p>SQL ตัวอย่างพร้อม COMMENT ภาษาไทยอยู่ใน <code>app-name/README.md</code></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h4>แก้จุด CHANGE_ME</h4>
+          <p>ใน <code>app-name/config/config.php</code> และ <code>app-name/CLAUDE.md</code> ให้ครบ</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h4>รัน dev server จาก workspace root</h4>
+          <p><code>php -S localhost:8000 -t app-name</code> (รันจากโฟลเดอร์ workspace ไม่ใช่ข้างในแอป) แล้วเปิด <code>login.html</code></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h4>ต่อยอดเมนูจริงใน AppNav</h4>
+          <p><code>navItems()</code> ใน <code>app-name/shared/app.js</code> ตอนนี้มีแค่ "ภาพรวม" เป็นตัวอย่าง</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h4>เริ่มสร้างหน้า/API ใหม่</h4>
+          <p>ตาม pattern ใน <code>app-name/dashboard.html</code> — auth check → <code>&lt;app-nav&gt;</code> → เนื้อหาใน <code>&lt;main&gt;</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer class="page">
+  <span>สร้าง 27 ส.ค. 2569 · ปรับเป็น workspace 2 ชั้น 27 ส.ค. 2569 · สกัดจาก Taiyo Sales Project</span>
+  <span>ทดสอบแล้ว: php -l ผ่านทุกไฟล์ · dev server -t app-name ทำงานถูกต้อง · auth-gate ทำงานถูกต้อง</span>
+</footer>
+</body>
+</html>

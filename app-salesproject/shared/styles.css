@@ -1,0 +1,57 @@
+/* ============================================================
+   shared/styles.css v16
+   เหลือเฉพาะ: scrollbar, DataTables override, source badges, spinner
+   ทุกอย่างอื่นใช้ Tailwind utility class แทน
+   ============================================================ */
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #e4edf5; }
+::-webkit-scrollbar-thumb { background: #b0c8d8; border-radius: 3px; }
+
+/* ── Loading Spinner ── */
+.spinner {
+  border: 3px solid #dde5ef;
+  border-top-color: #008074;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── DataTables overrides (DataTables renders its own HTML) ── */
+.dataTables_wrapper { font-size: .875rem; }
+.dataTables_wrapper .dataTables_filter input {
+  border: 1px solid #dde5ef; border-radius: 6px; padding: .35rem .7rem; outline: none;
+}
+.dataTables_wrapper .dataTables_filter input:focus {
+  border-color: #008074; box-shadow: 0 0 0 3px rgba(0,128,116,.15);
+}
+.dataTables_wrapper .dataTables_length select {
+  border: 1px solid #dde5ef; border-radius: 6px; padding: .3rem .5rem;
+}
+table.dataTable thead th {
+  background: #f4f8fb; color: #506070; font-size: .8rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .03em;
+  border-bottom: 2px solid #dde5ef !important; padding: .75rem 1rem;
+}
+table.dataTable tbody tr:hover { background: #e8f4f8; }
+table.dataTable tbody td {
+  padding: .65rem 1rem; vertical-align: middle; border-bottom: 1px solid #e8f0f8 !important;
+}
+.dataTables_paginate .paginate_button { border-radius: 6px !important; margin: 0 2px !important; }
+.dataTables_paginate .paginate_button.current {
+  background: #008074 !important; color: #fff !important; border-color: #008074 !important;
+}
+.dataTables_processing {
+  background: rgba(255,255,255,.9) !important; border: 1px solid #dde5ef !important;
+  border-radius: 8px; padding: 1rem !important;
+}
+
+/* ── Source Badges (used inside DataTables render functions) ── */
+.src-badge {
+  display: inline-flex; align-items: center; padding: 2px 8px;
+  border-radius: 99px; font-size: .72rem; font-weight: 700; line-height: 1.5; flex-shrink: 0;
+}
+.src-egp    { background: #e0f2fe; color: #0369a1; }
+.src-vendor { background: #fef3c7; color: #b45309; }
+.src-manual { background: #d1fae5; color: #047857; }

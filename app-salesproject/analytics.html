@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analytics</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="analytics" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          รายงานวิเคราะห์
+        </h1>
+        <div class="ml-auto">
+          <select v-model="months" @change="loadAll"
+            class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <option :value="6">6 เดือนล่าสุด</option>
+            <option :value="12">12 เดือนล่าสุด</option>
+            <option :value="24">24 เดือนล่าสุด</option>
+          </select>
+        </div>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 py-5 md:px-6 md:py-6">
+        <div v-if="loading" class="flex items-center justify-center py-16">
+          <div class="spinner w-10 h-10"></div>
+        </div>
+
+        <template v-else>
+
+          <!-- KPI Summary -->
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-3.5 mb-5">
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-6 3 3 4-7"/></svg>
+                <span class="text-xs text-slate-400 font-medium">Weighted Pipeline</span>
+                <button @click="modal = {type:'kpi-weighted-info'}"
+                  class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Weighted Pipeline คืออะไร">i</button>
+              </div>
+              <div class="text-[1.7rem] font-black leading-tight" style="color:#008074">{{ formatM(kpi.weighted_pipeline) }}</div>
+              <div class="text-[.72rem] text-slate-400 mt-1.5">งานประมูล {{ formatM(kpi.bid_weighted) }} · งานขายตรง {{ formatM(kpi.sales_weighted) }}</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8M12 17v4M7 4H5a2 2 0 00-2 2v2a4 4 0 004 4h.5M17 4h2a2 2 0 012 2v2a4 4 0 01-4 4h-.5M7 4h10v4a5 5 0 01-10 0V4z"/></svg>
+                <span class="text-xs text-slate-400 font-medium">ยอดสั่งขายจริง (Delivered)</span>
+                <button @click="modal = {type:'kpi-delivered-info'}"
+                  class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="ยอดสั่งขายจริง คืออะไร">i</button>
+              </div>
+              <div class="text-[1.7rem] font-black leading-tight text-green-600">{{ formatM(kpi.total_delivered) }}</div>
+              <div class="text-[.72rem] text-slate-400 mt-1.5">{{ kpi.won_deals }} ดีลที่ปิดได้</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
+                <span class="text-xs text-slate-400 font-medium">Win Rate</span>
+                <button @click="modal = {type:'kpi-winrate-info'}"
+                  class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Win Rate คืออะไร">i</button>
+              </div>
+              <div class="text-[1.7rem] font-black leading-tight"
+                :style="{color: kpi.win_rate>=60?'#16a34a':kpi.win_rate>=40?'#f59e0b':'#ef4444'}">{{ kpi.win_rate }}%</div>
+              <div class="text-[.72rem] text-slate-400 mt-1.5">ชนะ {{ kpi.won_deals }} / แพ้ {{ kpi.lost_deals }}</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+                <span class="text-xs text-slate-400 font-medium">Active Deals</span>
+                <button @click="modal = {type:'kpi-active-info'}"
+                  class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Active Deals คืออะไร">i</button>
+              </div>
+              <div class="text-[1.7rem] font-black leading-tight text-indigo-500">{{ kpi.active_deals }}</div>
+              <div class="text-[.72rem] text-slate-400 mt-1.5">งานประมูล {{ kpi.bid_active_deals }} · งานขายตรง {{ kpi.sales_active_deals }}</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2 2 7l10 5 10-5-10-5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2 17l10 5 10-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M2 12l10 5 10-5"/></svg>
+                <span class="text-xs text-slate-400 font-medium">Avg Deal Size</span>
+                <button @click="modal = {type:'kpi-avgdeal-info'}"
+                  class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Avg Deal Size คืออะไร">i</button>
+              </div>
+              <div class="text-[1.7rem] font-black leading-tight" style="color:#008074">{{ formatM(kpi.avg_deal_size) }}</div>
+              <div class="text-[.72rem] text-slate-400 mt-1.5">มูลค่าเฉลี่ยต่อดีล</div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+              <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>
+                <span class="text-xs text-slate-400 font-medium">Avg Sales Cycle</span>
+                <button @click="modal = {type:'kpi-cycle-info'}"
+                  class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Avg Sales Cycle คืออะไร">i</button>
+              </div>
+              <div class="text-[1.7rem] font-black leading-tight text-purple-700">
+                {{ kpi.avg_cycle_days ?? '-' }}<span v-if="kpi.avg_cycle_days" class="text-lg font-medium"> วัน</span>
+              </div>
+              <div class="text-[.72rem] text-slate-400 mt-1.5">เฉลี่ยจากสร้างดีลถึง Delivered</div>
+            </div>
+          </div>
+
+          <!-- Pipeline Charts -->
+          <div class="mb-5">
+            <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+              <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-6 3 3 4-7"/></svg>
+              <span class="text-base font-bold text-slate-700">กราฟ Pipeline</span>
+              <button @click="modal = {type:'chart-pipeline-info'}"
+                class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="กราฟ Pipeline คำนวณจากอะไร">i</button>
+            </div>
+            <div class="text-[.7rem] text-slate-400 mb-2.5">
+              <span class="inline-block w-2.5 h-2.5 rounded-sm mr-1" style="background:#00b5a4"></span>ยอดจด Order
+              <span class="inline-block w-2.5 h-0.5 mx-2 align-middle" style="background:#f59e0b"></span>ยอดจัดส่งจริง
+              <span class="inline-block w-2.5 h-0.5 ml-2 mr-1 align-middle" style="background:repeating-linear-gradient(90deg,#8b5cf6 0 4px,transparent 4px 7px)"></span>ปิดดีลแล้ว รอจัดส่ง (คาดการณ์ 3 เดือนข้างหน้า)
+            </div>
+            <p class="text-xs text-slate-400 mb-3.5">แสดงข้อมูลย้อนหลัง ที่ผ่านมาขายได้จริงเท่าไหร่ และส่งมอบเสร็จจริงเท่าไหร่ในแต่ละเดือน พร้อมยอดค้างส่ง 3 เดือนข้างหน้า</p>
+            <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 border-b border-slate-100">
+                <div class="flex items-center gap-1.5 font-bold text-slate-700">
+                  <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="8" width="5" height="13" rx="1"/><rect x="17" y="5" width="5" height="16" rx="1"/></svg>
+                  {{ pipelineViewLabel }}
+                  <button @click="modal = {type: pipelineViewInfoType}"
+                    class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="กราฟนี้ดูอะไร">i</button>
+                </div>
+                <div class="grid grid-cols-3 sm:flex gap-1.5 sm:ml-auto">
+                  <button @click="pipelineView='eb'; renderPipelineChart()"
+                    class="px-3 py-1 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all whitespace-nowrap"
+                    :class="pipelineView==='eb' ? 'bg-[#1a3450] text-white border-[#1a3450]' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'">งานประมูล</button>
+                  <button @click="pipelineView='sales'; renderPipelineChart()"
+                    class="px-3 py-1 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all whitespace-nowrap"
+                    :class="pipelineView==='sales' ? 'bg-[#1a3450] text-white border-[#1a3450]' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'">งานขายตรง</button>
+                  <button @click="pipelineView='all'; renderPipelineChart()"
+                    class="px-3 py-1 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all whitespace-nowrap"
+                    :class="pipelineView==='all' ? 'bg-[#1a3450] text-white border-[#1a3450]' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'">รวมทุก Pipeline</button>
+                </div>
+                <div class="flex gap-1 bg-slate-100 rounded-full p-0.5 shrink-0">
+                  <button @click="pipelineDisplayMode='chart'; $nextTick(renderPipelineChart)"
+                    class="px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all border-0 whitespace-nowrap"
+                    :class="pipelineDisplayMode==='chart' ? 'bg-white text-slate-700 shadow-sm' : 'bg-transparent text-slate-400'">📈 กราฟ</button>
+                  <button @click="pipelineDisplayMode='table'"
+                    class="px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all border-0 whitespace-nowrap"
+                    :class="pipelineDisplayMode==='table' ? 'bg-white text-slate-700 shadow-sm' : 'bg-transparent text-slate-400'">📋 ตาราง</button>
+                </div>
+                <button v-if="pipelineDisplayMode==='table'" @click="exportPipelineTable"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer shrink-0 whitespace-nowrap">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export Excel
+                </button>
+              </div>
+              <div v-if="pipelineDisplayMode==='chart'" class="p-4"><div class="relative" style="height:260px"><canvas id="chartPipeline"></canvas></div></div>
+              <div v-else class="p-4 overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-slate-400 text-xs">
+                      <th class="text-left pb-2 font-semibold">เดือน</th>
+                      <th class="text-right pb-2 font-semibold">ยอดจด Order</th>
+                      <th class="text-right pb-2 font-semibold">ยอดจัดส่งจริง</th>
+                      <th class="text-right pb-2 font-semibold">ปิดดีลแล้ว รอจัดส่ง</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="row in pipelineTableRows" :key="row.label">
+                      <tr class="border-t border-slate-50" :class="row.isForecast ? 'bg-violet-50/40' : ''">
+                        <td class="py-2 text-slate-600">
+                          <button v-if="row.items.length" type="button" @click="togglePipelineMonth(row.label)"
+                            class="bg-transparent border-0 cursor-pointer text-slate-400 hover:text-slate-600 mr-1 w-4 inline-flex items-center justify-center p-0"
+                            :title="expandedPipelineMonths[row.label] ? 'ย่อรายการ' : 'ดูรายการที่ประกอบเป็นยอดนี้'">{{ expandedPipelineMonths[row.label] ? '▼' : '▶' }}</button>
+                          <span v-else class="inline-block w-4"></span>
+                          {{ row.label }}
+                          <span v-if="row.items.length" class="text-[10px] text-slate-400">(<template v-if="row.orderCount">{{ row.orderCount }} จด Order</template><template v-if="row.orderCount && row.deliveredCount">, </template><template v-if="row.deliveredCount">{{ row.deliveredCount }} จัดส่ง</template>)</span>
+                        </td>
+                        <td class="py-2 text-right font-semibold" style="color:#00937f">{{ formatPrice(row.w) }}</td>
+                        <td class="py-2 text-right font-semibold text-amber-600">{{ formatPrice(row.a) }}</td>
+                        <td class="py-2 text-right font-semibold" :class="row.isForecast ? 'text-violet-600' : 'text-slate-300'">{{ row.isForecast ? formatPrice(row.backlog) : '-' }}</td>
+                      </tr>
+                      <template v-if="expandedPipelineMonths[row.label]">
+                        <tr v-for="item in row.items" :key="item.project_code + '-' + item.type" class="border-t border-slate-50 bg-slate-50/60 text-xs">
+                          <td class="py-1.5 pl-8 text-slate-500">
+                            <span class="text-slate-300 mr-1">└</span>{{ item.name }}
+                            <span class="text-slate-400">· {{ item.org }}</span>
+                            <span class="text-slate-300 font-mono">({{ item.project_code }})</span>
+                            <span v-if="pipelineView==='all'" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                              :class="item.source==='e-Bidding' ? 'bg-blue-100 text-blue-700' : 'bg-teal-100 text-teal-700'">{{ item.source }}</span>
+                            <span v-if="item.sale_name" class="ml-1.5 inline-flex items-center gap-1 text-slate-400">
+                              <span class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0" :style="{background:item.sale_color||'#64748b'}">{{ avatarInitials(item.sale_name) }}</span>
+                              {{ item.sale_name }}
+                            </span>
+                          </td>
+                          <td class="py-1.5 text-right" :class="item.type==='order' ? 'text-teal-700 font-semibold' : 'text-slate-300'">{{ item.type==='order' ? formatPrice(item.value) : '-' }}</td>
+                          <td class="py-1.5 text-right" :class="item.type==='delivered' ? 'text-amber-600 font-semibold' : 'text-slate-300'">{{ item.type==='delivered' ? formatPrice(item.value) : '-' }}</td>
+                          <td></td>
+                        </tr>
+                      </template>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Per-Sale Chart -->
+          <div v-if="isManager" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-5">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 border-b border-slate-100">
+              <div class="flex items-center gap-1.5 font-bold text-slate-700">
+                <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                เปรียบเทียบผลงาน Sale ทุกคน
+                <button @click="modal = {type:'chart-persale-info'}"
+                  class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="กราฟเปรียบเทียบผลงาน Sale ดูอะไร">i</button>
+              </div>
+              <div class="grid grid-cols-2 sm:flex gap-1.5 sm:ml-auto">
+                <button @click="perSaleView='bid'; renderPerSaleChart()"
+                  class="px-3 py-1 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all whitespace-nowrap"
+                  :class="perSaleView==='bid' ? 'bg-[#1a3450] text-white border-[#1a3450]' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'">งานประมูล</button>
+                <button @click="perSaleView='sales'; renderPerSaleChart()"
+                  class="px-3 py-1 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all whitespace-nowrap"
+                  :class="perSaleView==='sales' ? 'bg-[#1a3450] text-white border-[#1a3450]' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'">งานขายตรง</button>
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-[.7rem] text-slate-400 px-5 pt-3">
+              <span><span class="inline-block w-2.5 h-2.5 rounded-sm mr-1" style="background:#00b5a4"></span>Total Pipeline = ยอดรวมดิบ ยังไม่ถ่วงน้ำหนัก</span>
+              <span><span class="inline-block w-2.5 h-2.5 rounded-sm mr-1" style="background:#f59e0b"></span>Weighted = ถ่วงน้ำหนักโอกาสสำเร็จแล้ว</span>
+              <span><span class="inline-block w-2.5 h-2.5 rounded-sm mr-1" style="background:#16a34a"></span>Deals Won = มูลค่างานที่ปิดแล้ว</span>
+            </div>
+            <div class="p-4"><div class="relative" style="height:260px"><canvas id="chartPerSale"></canvas></div></div>
+          </div>
+
+          <!-- Stage Funnel + Stage Snapshot -->
+          <div class="mb-5">
+            <div class="mb-3.5">
+              <span class="text-base font-bold text-slate-700 flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                Stage Analysis
+              </span>
+            </div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="flex items-center gap-1.5 px-5 py-4 border-b border-slate-100 font-bold text-slate-700">
+              <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span title="นับแบบ cohort สะสม — ดีลที่ผ่าน stage นี้มาแล้วทั้งหมด ไม่ใช่แค่ที่ค้างอยู่ตอนนี้">Stage Funnel (สะสม)</span>
+              <button @click="modal = {type:'funnel-info'}"
+                class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Stage Funnel">i</button>
+              <select v-model="funnelPeriod" @change="loadFunnel"
+                class="ml-auto border border-slate-200 rounded-lg px-2 py-1 text-xs font-normal outline-none focus:border-teal-400 bg-white text-slate-600">
+                <option v-for="p in piePeriods" :key="p.v" :value="p.v">{{ p.l }}</option>
+              </select>
+            </div>
+            <div class="p-5">
+              <div v-if="!funnel.length" class="flex flex-col items-center justify-center py-8 text-slate-400">
+                <p>ไม่มีข้อมูล</p>
+              </div>
+              <div v-else>
+                <div class="mx-auto" style="max-width:380px">
+                  <div v-for="(s,i) in funnel" :key="s.stage" class="flex items-stretch">
+                    <div class="relative flex-1 flex flex-col items-center justify-center text-center text-white"
+                      :style="{
+                        height: '64px',
+                        clipPath: funnelClipPath(i),
+                        background: funnelColor(i)
+                      }">
+                      <div class="font-bold text-sm">{{ s.stage }}</div>
+                      <div class="text-[11px] opacity-90 mt-0.5">{{ s.count }} ดีล · {{ formatM(s.value) }}</div>
+                    </div>
+                    <div class="w-12 flex items-center justify-center shrink-0">
+                      <span v-if="i>0" class="text-xs font-bold text-slate-500">{{ s.conversion }}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stage Snapshot -->
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="flex items-center gap-1.5 px-5 py-4 border-b border-slate-100 font-bold text-slate-700">
+              <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="12" width="4" height="8"/><rect x="10" y="7" width="4" height="13"/><rect x="17" y="3" width="4" height="17"/></svg>
+              Stage Snapshot (ตอนนี้)
+              <button @click="modal = {type:'funnel-snapshot-info'}"
+                class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Stage Snapshot">i</button>
+              <select v-model="funnelSnapshotPeriod" @change="loadFunnelSnapshot"
+                class="ml-auto border border-slate-200 rounded-lg px-2 py-1 text-xs font-normal outline-none focus:border-teal-400 bg-white text-slate-600">
+                <option v-for="p in piePeriods" :key="p.v" :value="p.v">{{ p.l }}</option>
+              </select>
+            </div>
+            <div class="p-5">
+              <div v-if="!funnelSnapshot.length || !funnelSnapshot.some(s => s.count)" class="flex flex-col items-center justify-center py-8 text-slate-400">
+                <p>ไม่มีข้อมูล</p>
+              </div>
+              <div v-else class="space-y-2.5">
+                <div v-for="(s,i) in funnelSnapshot" :key="s.stage" class="flex items-center gap-3">
+                  <div class="w-24 shrink-0 text-xs font-bold text-slate-600 text-right">{{ s.stage }}</div>
+                  <div class="flex-1 h-7 bg-slate-50 rounded-lg overflow-hidden relative">
+                    <div class="h-full rounded-lg transition-all" :style="{ width: snapshotWidthPct(i) + '%', minWidth: funnelSnapshot[i].count ? '48px' : '0', background: funnelColor(i) }"></div>
+                    <div class="absolute inset-0 flex items-center px-2.5 text-[11px] font-bold text-slate-600">{{ s.count }} ดีล · {{ formatM(s.value) }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+          </div>
+
+          <!-- Bottleneck + Rep Velocity (manager-only) -->
+          <div v-if="isManager" class="mb-5">
+            <div class="mb-3.5">
+              <span class="text-base font-bold text-slate-700 flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>
+                ประสิทธิภาพการทำงาน (Pipeline Health)
+              </span>
+            </div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="flex items-center gap-1.5 px-5 py-4 border-b border-slate-100 font-bold text-slate-700">
+              <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+              คอขวดขั้นตอน (Bottleneck)
+              <button @click="modal = {type:'bottleneck-info'}"
+                class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="คอขวดขั้นตอนคำนวณจากอะไร">i</button>
+            </div>
+            <div class="p-5 space-y-5">
+                <div>
+                  <div class="text-xs font-bold text-slate-500 mb-2">งานประมูล</div>
+                  <div v-if="!bottleneck?.stage_duration?.bid?.length" class="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลพอคำนวณ (ต้องมีการเปลี่ยน stage อย่างน้อย 2 ครั้งต่อดีล)</div>
+                  <div v-else class="space-y-2">
+                    <div v-for="s in bottleneck.stage_duration.bid" :key="s.stage" class="flex items-center gap-3">
+                      <div class="w-32 shrink-0 text-xs font-semibold text-slate-600 text-right">{{ s.stage }}</div>
+                      <div class="flex-1 h-6 bg-slate-50 rounded-lg overflow-hidden relative">
+                        <div class="h-full rounded-lg bg-sky-400" :style="{ width: bottleneckWidthPct(s, bottleneck.stage_duration.bid) + '%' }"></div>
+                        <div class="absolute inset-0 flex items-center px-2.5 text-[11px] font-bold text-slate-600">{{ s.avg_days }} วัน ({{ s.count }} ครั้ง)</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-500 mb-2">งานขายตรง</div>
+                  <div v-if="!bottleneck?.stage_duration?.direct?.length" class="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลพอคำนวณ (ต้องมีการเปลี่ยน stage อย่างน้อย 2 ครั้งต่อดีล)</div>
+                  <div v-else class="space-y-2">
+                    <div v-for="s in bottleneck.stage_duration.direct" :key="s.stage" class="flex items-center gap-3">
+                      <div class="w-32 shrink-0 text-xs font-semibold text-slate-600 text-right">{{ s.stage }}</div>
+                      <div class="flex-1 h-6 bg-slate-50 rounded-lg overflow-hidden relative">
+                        <div class="h-full rounded-lg bg-violet-400" :style="{ width: bottleneckWidthPct(s, bottleneck.stage_duration.direct) + '%' }"></div>
+                        <div class="absolute inset-0 flex items-center px-2.5 text-[11px] font-bold text-slate-600">{{ s.avg_days }} วัน ({{ s.count }} ครั้ง)</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="flex items-center gap-1.5 px-5 py-4 border-b border-slate-100 font-bold text-slate-700">
+              <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>
+              ความเร็วการทำงานของ Sale (Rep Velocity)
+              <button @click="modal = {type:'rep-velocity-info'}"
+                class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Rep Velocity คำนวณจากอะไร">i</button>
+            </div>
+            <div class="p-5 space-y-5">
+                <div>
+                  <div class="text-xs font-bold text-slate-500 mb-2">งานประมูล — เฉลี่ยกี่วันต่อการขยับ 1 ขั้น</div>
+                  <div v-if="!bottleneck?.rep_velocity?.bid?.length" class="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลพอคำนวณ</div>
+                  <div v-for="r in bottleneck?.rep_velocity?.bid" :key="r.user_id" class="flex items-center justify-between py-1.5 border-b border-slate-50 text-sm">
+                    <span class="text-slate-600">{{ r.full_name }}</span>
+                    <span class="font-bold text-slate-700">{{ r.avg_days }} วัน <span class="text-slate-400 font-normal">({{ r.count }} ครั้ง)</span></span>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-500 mb-2">งานขายตรง — เฉลี่ยกี่วันต่อการขยับ 1 ขั้น</div>
+                  <div v-if="!bottleneck?.rep_velocity?.direct?.length" class="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลพอคำนวณ</div>
+                  <div v-for="r in bottleneck?.rep_velocity?.direct" :key="r.user_id" class="flex items-center justify-between py-1.5 border-b border-slate-50 text-sm">
+                    <span class="text-slate-600">{{ r.full_name }}</span>
+                    <span class="font-bold text-slate-700">{{ r.avg_days }} วัน <span class="text-slate-400 font-normal">({{ r.count }} ครั้ง)</span></span>
+                  </div>
+                </div>
+            </div>
+          </div>
+          </div>
+          </div>
+
+          <!-- Pie / Mix Charts -->
+          <div class="mb-5">
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-3.5">
+              <span class="text-base font-bold text-slate-700 flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M21.21 15.89A10 10 0 118 2.83"/><path stroke-linecap="round" stroke-linejoin="round" d="M22 12A10 10 0 0012 2v10z"/></svg>
+                วิเคราะห์เชิงส่วนแบ่ง (Mix Analysis)
+              </span>
+              <div class="flex gap-2 flex-wrap">
+                <button v-for="p in piePeriods" :key="p.v"
+                  class="px-3.5 py-1.5 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all"
+                  :class="piePeriod===p.v ? 'bg-[#1a3450] text-white border-[#1a3450]' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'"
+                  @click="piePeriod=p.v; loadPieData()">{{ p.l }}</button>
+              </div>
+            </div>
+            <div v-if="pieLoading" class="flex justify-center py-8"><div class="spinner w-8 h-8"></div></div>
+            <div v-else class="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+              <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+                <div class="flex items-center gap-1 px-3 py-2.5 border-b border-slate-100 font-bold text-slate-700 text-xs">
+                  <svg class="w-3.5 h-3.5 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M20.59 13.41L13.42 20.58a2 2 0 01-2.83 0L2.59 12.58a2 2 0 010-2.83L9.76 2.58a2 2 0 011.42-.58H18a2 2 0 012 2v6a2 2 0 01-.58 1.41z"/><circle cx="7" cy="7" r="1"/></svg>
+                  ประเภทงาน
+                </div>
+                <div class="p-3">
+                  <div v-if="!pieData || !pieData.source.length" class="flex flex-col items-center justify-center h-32 text-slate-400 text-xs gap-1">
+                    <span class="text-2xl">📊</span><span>ไม่มีข้อมูล</span>
+                  </div>
+                  <div v-else class="relative h-40"><canvas id="chartPieSource"></canvas></div>
+                </div>
+              </div>
+
+              <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+                <div class="flex items-center gap-1 px-3 py-2.5 border-b border-slate-100 font-bold text-slate-700 text-xs">
+                  <svg class="w-3.5 h-3.5 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                  Product Mix
+                </div>
+                <div class="p-3">
+                  <div v-if="!pieData || !pieData.product.length" class="flex flex-col items-center justify-center h-32 text-slate-400 text-xs gap-1">
+                    <span class="text-2xl">📦</span><span>ไม่มีข้อมูล</span>
+                  </div>
+                  <div v-else class="relative h-40"><canvas id="chartPieProduct"></canvas></div>
+                </div>
+              </div>
+
+              <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+                <div class="flex items-center gap-1 px-3 py-2.5 border-b border-slate-100 font-bold text-slate-700 text-xs">
+                  <svg class="w-3.5 h-3.5 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                  แบรนด์
+                </div>
+                <div class="p-3">
+                  <div v-if="!pieData || !pieData.brand.length" class="flex flex-col items-center justify-center h-32 text-slate-400 text-xs gap-1">
+                    <span class="text-2xl">🏷️</span><span>ไม่มีข้อมูล</span>
+                  </div>
+                  <div v-else class="relative h-40"><canvas id="chartPieBrand"></canvas></div>
+                </div>
+              </div>
+
+              <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+                <div class="flex items-center gap-1 px-3 py-2.5 border-b border-slate-100 font-bold text-slate-700 text-xs">
+                  <svg class="w-3.5 h-3.5 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+                  มาร์จิ้น เฉลี่ย
+                </div>
+                <div class="p-3">
+                  <div v-if="!pieData || !pieData.margin.filter(m=>m.label!=='ไม่ระบุ').length"
+                    class="flex flex-col items-center justify-center h-32 text-slate-400 text-xs gap-1">
+                    <span class="text-2xl">📈</span><span>ยังไม่มีข้อมูล</span>
+                  </div>
+                  <template v-else>
+                    <div v-if="pieData.avgMargin !== null" class="text-center mb-1">
+                      <span class="text-xl font-black text-green-600">{{ pieData.avgMargin }}%</span>
+                      <span class="text-[.68rem] text-slate-400 block -mt-0.5">เฉลี่ย</span>
+                    </div>
+                    <div class="relative h-[120px]"><canvas id="chartPieMargin"></canvas></div>
+                  </template>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Per-Sale Detail -->
+          <div v-if="isManager" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="flex items-center gap-1.5 px-5 py-4 border-b border-slate-100 font-bold text-slate-700">
+              <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+              รายละเอียด KPI รายบุคคล
+              <button @click="modal = {type:'perdetail-info'}"
+                class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="รายละเอียด KPI รายบุคคล คำนวณจากอะไร">i</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm" style="min-width:720px">
+                <thead>
+                  <tr class="bg-slate-50">
+                    <th class="px-4 py-3 text-left font-semibold text-slate-500 border-b-2 border-slate-200">Sale</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">ดีลทั้งหมด</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">Active</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">Win</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">Win Rate</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">ยอดขายสะสม</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">เป้าหมาย/เดือนนี้</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">Weighted Pipeline</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">Avg Deal</th>
+                    <th class="px-3 py-3 text-right font-semibold text-slate-500 border-b-2 border-slate-200">SLA ตรงเวลา</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="s in perSale" :key="s.id" class="border-b border-slate-50 hover:bg-slate-50/70">
+                    <td class="px-4 py-3">
+                      <div class="flex items-center gap-2">
+                        <img v-if="s.photo_url" :src="s.photo_url" class="w-8 h-8 rounded-full object-cover shrink-0"/>
+                        <div v-else class="w-8 h-8 rounded-full flex items-center justify-center text-white text-[.7rem] font-bold shrink-0"
+                          :style="{background:s.avatar_color||'#64748b'}">{{ avatarInitials(s.full_name) }}</div>
+                        <span class="font-semibold text-slate-700">{{ s.full_name }}</span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-3 text-right text-slate-500">{{ s.total_deals }}</td>
+                    <td class="px-3 py-3 text-right font-bold text-slate-800">{{ s.active_deals }}</td>
+                    <td class="px-3 py-3 text-right font-semibold text-green-600">{{ s.won_deals }}</td>
+                    <td class="px-3 py-3 text-right">
+                      <div class="flex flex-col items-end gap-1">
+                        <span class="font-bold" :style="{color:kpiColor(s.win_rate,'win_rate_green','win_rate_yellow')}">{{ s.win_rate }}%</span>
+                        <div class="h-1.5 w-14 rounded-full bg-slate-200 overflow-hidden">
+                          <div class="h-full rounded-full" :style="{width:s.win_rate+'%',background:kpiColor(s.win_rate,'win_rate_green','win_rate_yellow')}"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-3 py-3 text-right font-bold" style="color:#008074">{{ formatM(s.delivered_value) }}</td>
+                    <td class="px-3 py-3 text-right">
+                      <template v-if="editingTargetId === s.id">
+                        <input type="number" v-model.number="editingTargetVal" min="0" step="1000"
+                          class="w-24 border border-blue-400 rounded px-1.5 py-0.5 text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          @keyup.enter="saveTarget(s)"
+                          @keyup.escape="editingTargetId = null"
+                          @blur="saveTarget(s)" />
+                      </template>
+                      <template v-else>
+                        <div v-if="s.monthly_target" class="flex flex-col items-end gap-1">
+                          <span class="font-semibold text-slate-700">{{ formatM(s.monthly_target) }}</span>
+                          <!-- รับงาน (Taken / Deal Signed) -->
+                          <div class="flex items-center gap-1 w-full justify-end">
+                            <span class="text-[.6rem] text-orange-500 font-semibold shrink-0">รับงาน</span>
+                            <div class="h-1.5 w-14 rounded-full bg-slate-200 overflow-hidden">
+                              <div class="h-full rounded-full transition-all" :style="{width:Math.min(s.achievement_taken||0,100)+'%',background:'#f59e0b'}"></div>
+                            </div>
+                            <span class="text-[.65rem] font-bold text-orange-500 w-8 text-right">{{ s.achievement_taken !== null ? s.achievement_taken+'%' : '-' }}</span>
+                          </div>
+                          <!-- ส่งมอบ (Delivered) -->
+                          <div class="flex items-center gap-1 w-full justify-end">
+                            <span class="text-[.6rem] text-green-600 font-semibold shrink-0">ส่งมอบ</span>
+                            <div class="h-1.5 w-14 rounded-full bg-slate-200 overflow-hidden">
+                              <div class="h-full rounded-full transition-all" :style="{width:Math.min(s.achievement_delivered||0,100)+'%',background:'#16a34a'}"></div>
+                            </div>
+                            <span class="text-[.65rem] font-bold text-green-600 w-8 text-right">{{ s.achievement_delivered !== null ? s.achievement_delivered+'%' : '-' }}</span>
+                          </div>
+                        </div>
+                        <span v-else class="text-slate-300 text-xs">-</span>
+                        <button v-if="isManager" @click="startEditTarget(s)"
+                          class="block mt-0.5 text-[.65rem] text-blue-400 hover:text-blue-600 cursor-pointer ml-auto">แก้ไข</button>
+                      </template>
+                    </td>
+                    <td class="px-3 py-3 text-right font-semibold text-indigo-500">{{ formatM(s.weighted_pipeline) }}</td>
+                    <td class="px-3 py-3 text-right text-slate-500">{{ formatM(s.avg_deal_size) }}</td>
+                    <td class="px-3 py-3 text-right">
+                      <div class="flex flex-col items-end gap-1">
+                        <span class="font-bold" :style="{color:s.sla_rate>=80?'#16a34a':s.sla_rate>=60?'#f59e0b':'#ef4444'}">{{ s.sla_rate }}%</span>
+                        <div class="h-1.5 w-14 rounded-full bg-slate-200 overflow-hidden">
+                          <div class="h-full rounded-full" :style="{width:s.sla_rate+'%',background:s.sla_rate>=80?'#16a34a':s.sla_rate>=60?'#f59e0b':'#ef4444'}"></div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="!perSale.length">
+                    <td colspan="10" class="py-8 text-center text-slate-400">ไม่มีข้อมูล</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </template>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- KPI / Chart Info Modals -->
+    <div v-if="modal.type" class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto" @click.self="closeModal">
+
+      <div v-if="modal.type==='kpi-weighted-info'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">Weighted Pipeline คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>มูลค่าประมาณการของงานที่<b>ยังไม่ตัดสินผล</b> รวมงานประมูล + งานขายตรง — แต่ละฝั่งคำนวณคนละสูตร แล้วบวกกัน:</p>
+          <p><b>งานประมูล</b> = ราคากลาง × โอกาสสำเร็จตาม stage (ยังไม่ยื่นซอง 10% / ยื่นซองแล้วรอผล 50%)</p>
+          <p><b>งานขายตรง</b> = มูลค่าดีล × "โอกาสปิดดีล (%)" ที่ sale กรอกเองต่อดีล (default 20% ถ้าไม่กรอก)</p>
+          <p class="text-xs text-slate-400">* งานที่ตัดสินผลแล้ว (ชนะ/แพ้/Delivered/Lost) ไม่นับรวม เพราะรู้ผลแน่นอนแล้ว ไม่ต้องคาดการณ์</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='kpi-delivered-info'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between bg-green-50 border-b border-green-100">
+          <h3 class="font-bold text-lg text-green-800">ยอดสั่งขายจริง คืออะไร</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed">
+          <p>รวมมูลค่างานที่<b>ส่งมอบแล้วจริง</b> — งานประมูลที่สถานะเป็น <code>ส่งมอบแล้ว</code> + งานขายตรงที่ stage เป็น <code>Delivered</code> เป็นตัวเลขรายได้ที่รับรู้ได้แล้วจริง ไม่ใช่แค่ปิดดีล/ชนะประมูลเฉยๆ</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='kpi-winrate-info'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between bg-amber-50 border-b border-amber-100">
+          <h3 class="font-bold text-lg text-amber-800">Win Rate คืออะไร</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>อัตราชนะรวมทั้ง 2 ฝั่ง นับเฉพาะงานที่<b>ตัดสินผลแล้ว</b> (ชนะหรือแพ้) เท่านั้น</p>
+          <div class="rounded-xl bg-slate-50 p-3 text-center font-semibold">Win Rate = ชนะ ÷ (ชนะ + แพ้) × 100</div>
+          <p class="text-xs text-slate-400">* "ชนะ" ฝั่งงานประมูล = <code>ชนะการประมูล</code>+<code>ส่งมอบแล้ว</code>, ฝั่งงานขายตรง = <code>Deal Signed</code>+<code>Delivered</code></p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='kpi-active-info'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between bg-indigo-50 border-b border-indigo-100">
+          <h3 class="font-bold text-lg text-indigo-800">Active Deals คืออะไร</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed">
+          <p>จำนวนงานทั้งหมดที่<b>ยังไม่จบ</b> — งานประมูล (งานในมือ+รอประกาศผล) + งานขายตรง (ทุก stage ยกเว้น Delivered/Lost)</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='kpi-avgdeal-info'" class="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">Avg Deal Size คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed">
+          <p>มูลค่าเฉลี่ยต่อดีล 1 รายการ คำนวณจากงานทุกสถานะที่ระบุมูลค่าไว้ (รวมทั้งงานประมูล+งานขายตรง)</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='kpi-cycle-info'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between bg-purple-50 border-b border-purple-100">
+          <h3 class="font-bold text-lg text-purple-800">Avg Sales Cycle คืออะไร</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed">
+          <p>จำนวนวันเฉลี่ยตั้งแต่สร้างดีลจนถึงส่งมอบสำเร็จ (Delivered)</p>
+          <p class="mt-2 text-xs text-slate-400">สูตรที่ใช้: <code>Delivered Date − Created At</code> (เฉลี่ยของทุกดีลที่ส่งมอบแล้ว)</p>
+          <p class="mt-2 text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠️ นับ<b>เฉพาะงานขายตรงเท่านั้น</b> — งานประมูลยังไม่มีข้อมูลวันที่ส่งมอบแยกให้คำนวณรอบเวลาแบบเดียวกัน จึงไม่ได้รวมอยู่ในตัวเลขนี้</p>
+          <p class="mt-2 text-red-700 bg-red-50 rounded-lg px-3 py-2">⚠️ <b>ปัญหาที่เจอ</b>: <code>Created At</code> ในระบบตอนนี้ไม่ใช่วันที่เริ่มดีลจริง แต่เป็นวันที่ import ข้อมูลเข้าระบบครั้งเดียว (20 ส.ค. 69) — ตัวเลขนี้ผิดเพราะข้อมูลเก่าจาก Excel ไม่มีวันที่เริ่มดีลจริงให้อ้างอิง ตัวเลขเลยติดลบ</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='chart-pipeline-info'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">กราฟ Pipeline</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-4">
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#008074">กราฟนี้คืออะไร</div>
+            <p>กราฟเปรียบเทียบ "ยอดขาย" กับ "ยอดส่งมอบจริง" ย้อนหลังเป็นรายเดือน แยกดูได้ทั้งงานประมูล งานขายตรง และภาพรวมทุกช่องทาง</p>
+          </div>
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#008074">จุดประสงค์</div>
+            <p>ดูว่าเดือนไหนขายดี เดือนไหนส่งมอบล่าช้ากว่ายอดขาย จะได้วางแผนกำลังการผลิต/ติดตามงานค้างส่งได้ทันเวลา พร้อมดูยอดค้างส่งล่วงหน้า 3 เดือนไปพร้อมกัน</p>
+            <p class="text-xs text-slate-400 mt-1">* ถ้าต้องการดูมูลค่างานที่ยังไม่ปิดดีล (คาดการณ์ตามโอกาสสำเร็จ) ดูที่การ์ด "Weighted Pipeline" ด้านบนแทน — ต่างจากเส้น "รอจัดส่ง" ในกราฟนี้ที่เป็นงานปิดดีลแน่นอนแล้ว แค่รอส่งของ</p>
+          </div>
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#008074">วิธีคำนวณ</div>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><b>ยอดจด Order</b> = มูลค่างานที่ปิดดีล/ชนะประมูลแล้ว นับตามเดือนที่ปิดได้ (ใช้วันที่จด Order)</li>
+              <li><b>ยอดจัดส่งจริง</b> = มูลค่างานที่ส่งมอบแล้ว นับตามเดือนที่ส่งมอบ (ใช้วันที่ส่งมอบ)</li>
+              <li><b>ปิดดีลแล้ว รอจัดส่ง (คาดการณ์)</b> = ยอดรวมงานที่ชนะ/เซ็นสัญญาแล้ว ณ ปัจจุบัน แต่ยังไม่ส่งมอบจริง — แสดงเป็นเส้นคงที่ลากยาว 3 เดือนข้างหน้า เพราะระบบยังไม่มีข้อมูลวันที่คาดว่าจะส่งมอบจริงเก็บไว้ต่อรายการ จึงแบ่งเป็นรายเดือนล่วงหน้าแม่นยำไม่ได้</li>
+              <li><b>งานประมูล (e-Bidding)</b> ดึงจากตารางงานประมูลโดยตรง เห็นครบทั้ง funnel ไม่ใช่แค่งานที่ชนะแล้ว</li>
+              <li><b>รวมทุก Pipeline</b> = ผลรวมของงานประมูล + งานขายตรง</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='chart-persale-info'" class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">เปรียบเทียบผลงาน Sale ทุกคน</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-4">
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#008074">กราฟนี้คืออะไร</div>
+            <p>กราฟแท่งเปรียบเทียบผลงานของ sale แต่ละคน กดปุ่ม "งานประมูล" / "งานขายตรง" มุมขวาบนเพื่อสลับดูได้ทีละมุม</p>
+          </div>
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#008074">จุดประสงค์</div>
+            <p>ดูว่าใครทำยอดขายจริงได้เยอะ และใครถืองานในมือ (pipeline) เยอะ จะได้กระจายงาน/ติดตามความคืบหน้าของแต่ละคนได้เหมาะสม</p>
+          </div>
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#008074">วิธีคำนวณ</div>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><b>Total Pipeline (งานที่ยังไม่จบ)</b> = ยอดรวมมูลค่างานที่ยังไม่จบของแต่ละคน ตามมุมที่เลือก (ยอดดิบ ไม่ถ่วงน้ำหนักโอกาสสำเร็จ)</li>
+              <li><b>Weighted</b> = ยอดรวมมูลค่างานที่ยังไม่จบ ถ่วงน้ำหนักตามโอกาสสำเร็จแล้ว (ตัวเลขคาดการณ์)</li>
+              <li><b>Deals Won</b> = มูลค่ารวมของงานที่ปิดได้แล้ว (ชนะการประมูล/ปิดดีลแล้ว รวมทั้งที่ส่งมอบแล้วและยังไม่ส่งมอบ)</li>
+            </ul>
+            <p class="text-xs text-slate-400 mt-2">* Total Pipeline และ Deals Won คิดวิธีเดียวกันทั้ง 2 มุม แต่ <b>Weighted คิดคนละสูตร</b> — งานประมูลใช้ % ตายตัวตาม stage (10%/50%), งานขายตรงใช้ % ที่ sale กรอกเองต่อดีล เพราะความเสี่ยงมีจุดเปลี่ยนต่างกัน</p>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='chart-eb-info'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">กราฟงานประมูลดูอะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>กราฟนี้แสดง<b>เฉพาะงานประมูลราชการ (e-Bidding)</b> ในแต่ละเดือน เปรียบเทียบให้เห็นว่า</p>
+          <p>• <b>เดือนไหนชนะประมูลได้เยอะ</b> (แท่ง "ยอดจด Order")</p>
+          <p>• <b>เดือนไหนส่งมอบงานเสร็จเยอะ</b> (เส้น "ยอดจัดส่งจริง")</p>
+          <p>• <b>3 เดือนข้างหน้า ต้องเตรียมส่งของอีกเท่าไร</b> (เส้นประ "ปิดดีลแล้ว รอจัดส่ง" — งานชนะประมูลแล้วแต่ยังไม่ส่งมอบ)</p>
+          <p class="text-xs text-slate-400">* สองยอดนี้อาจไม่ตรงเดือนกัน เพราะปกติชนะประมูลก่อน แล้วค่อยผลิต/ส่งมอบทีหลัง</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='chart-sales-info'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">กราฟงานขายตรงดูอะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>กราฟนี้แสดง<b>เฉพาะงานขายตรง (Sales Hunt)</b> ที่ sale หาลูกค้าเอง ในแต่ละเดือน เปรียบเทียบให้เห็นว่า</p>
+          <p>• <b>เดือนไหนปิดดีลได้เยอะ</b> (แท่ง "ยอดจด Order")</p>
+          <p>• <b>เดือนไหนส่งมอบสินค้าเสร็จเยอะ</b> (เส้น "ยอดจัดส่งจริง")</p>
+          <p>• <b>3 เดือนข้างหน้า ต้องเตรียมส่งของอีกเท่าไร</b> (เส้นประ "ปิดดีลแล้ว รอจัดส่ง" — ดีลที่ Deal Signed แล้วแต่ยังไม่ส่งมอบ)</p>
+          <p class="text-xs text-slate-400">* ไม่รวมงานประมูลที่ชนะแล้ว เพื่อไม่ให้นับซ้ำกับกราฟงานประมูล</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='chart-all-info'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">กราฟรวมทุก Pipeline ดูอะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>กราฟนี้<b>รวมทั้งงานประมูลและงานขายตรงเข้าด้วยกัน</b> ให้เห็นภาพรวมทั้งบริษัทในแต่ละเดือน ว่า</p>
+          <p>• <b>ปิดงานได้ทั้งหมดเท่าไหร่</b> (แท่ง "ยอดจด Order") — รวมทุกช่องทาง</p>
+          <p>• <b>ส่งมอบเสร็จทั้งหมดเท่าไหร่</b> (เส้น "ยอดจัดส่งจริง") — รวมทุกช่องทาง</p>
+          <p>• <b>3 เดือนข้างหน้า ต้องเตรียมส่งของรวมทั้งหมดเท่าไร</b> (เส้นประ "ปิดดีลแล้ว รอจัดส่ง") — รวมทุกช่องทาง</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='funnel-info'" class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">Stage Funnel</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p><b>Stage Funnel (สะสม)</b> — แสดง<b>อัตราการหลุดระหว่าง stage</b> เป็นเท่าไหร่ (เช่น จาก <code>Interest</code> 100 ดีล ไปถึง <code>Deal Signed</code> กี่ %)</p>
+          <p>กราฟเป็น<b>รูปทรงกรวย</b> ที่ความกว้างลดหลั่นตามจำนวนดีล + มี <b>% Conversion</b> ระหว่าง stage กำกับไว้</p>
+          <div class="rounded-xl bg-slate-50 p-3 text-center font-semibold">จำนวนดีล = ดีลที่เคยผ่าน stage นี้มาแล้วทั้งหมด</div>
+          <div class="rounded-xl bg-slate-50 p-3 text-center font-semibold text-xs whitespace-nowrap overflow-x-auto">% = (จำนวนดีลของ stage นี้ ÷ จำนวนดีลของ stage ก่อนหน้า) × 100</div>
+          <p class="text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠️ กราฟนี้เป็นข้อมูล<b>งานขายตรงเท่านั้น</b></p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='funnel-snapshot-info'" class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">Stage Snapshot</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p><b>Stage Snapshot (ตอนนี้)</b> — แสดงตอนนี้มีดีลกี่ตัวค้างอยู่ stage ไหน เพื่อรู้ว่าต้องโฟกัสตรงไหน (เช่น มี 5 ดีลค้างที่ <code>Interest</code> ต้องรีบผลักดันต่อ)</p>
+          <div class="rounded-xl bg-slate-50 p-3 text-center font-semibold">จำนวนดีล = ดีลที่ค้างอยู่แต่ละ stage ณ ตอนนี้จริง</div>
+          <p class="text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠️ กราฟนี้เป็นข้อมูล<b>งานขายตรงเท่านั้น</b> ดีลที่ <code>Lost</code> ไม่นับรวม เพราะถือว่าจบแล้ว ไม่ได้ "ค้าง" อยู่ stage ไหน</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='bottleneck-info'" class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">คอขวดขั้นตอน (Bottleneck)</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>แสดง<b>เฉลี่ยกี่วันที่ดีลค้างอยู่แต่ละ stage</b> ก่อนจะขยับไปขั้นถัดไป ยิ่งแท่งยาว = stage นั้นใช้เวลานานผิดปกติ ควรหาสาเหตุว่าติดขัดอะไร</p>
+          <div class="rounded-xl bg-slate-50 p-3 text-center font-semibold">คำนวณจากช่วงเวลาระหว่างการเปลี่ยน stage 2 ครั้งติดกันของดีลเดียวกัน</div>
+          <p class="text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠️ นับเฉพาะดีลที่มีการเปลี่ยน stage เกิดขึ้นจริงตั้งแต่ 26 ส.ค. 69 เป็นต้นไป (วันที่เริ่มเก็บ log) ข้อมูลจะยิ่งแม่นขึ้นเมื่อเวลาผ่านไป</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='rep-velocity-info'" class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">Rep Velocity คำนวณจากอะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>แสดง<b>ความเร็วเฉลี่ยที่ sale แต่ละคนขยับดีลไปข้างหน้า 1 ขั้น</b> (กี่วัน) เรียงจากเร็วสุดไปช้าสุด ใช้ดูว่าใครทำงานรวดเร็ว/ใครอาจต้องการความช่วยเหลือเพิ่ม</p>
+          <div class="rounded-xl bg-slate-50 p-3 text-center font-semibold">นับจากทุกครั้งที่ sale คนนั้นเป็นคนกดเปลี่ยน stage ให้ดีล ไม่ว่าดีลจะเป็นของตัวเองหรือไม่</div>
+          <p class="text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠️ เป็นข้อมูลเปรียบเทียบระหว่างบุคคล มองเห็นได้เฉพาะ manager/admin เท่านั้น</p>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='perdetail-info'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">รายละเอียด KPI รายบุคคล คำนวณจากอะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 text-sm text-slate-600 leading-relaxed space-y-2.5">
+          <p>ตารางนี้รวมข้อมูลงานประมูล (project_assignments) และงานขายตรง (pipeline_items ไม่รวมงานประมูลที่ปิดจบแล้ว เพื่อไม่ให้นับซ้ำ) เข้าด้วยกันต่อคน แต่ละคอลัมน์คำนวณดังนี้:</p>
+          <ul class="list-disc pl-5 space-y-1.5">
+            <li><b>ดีลทั้งหมด / Active / Win</b> — จำนวนดีลรวมสองฝั่ง (Active = ยังไม่จบ, Win = ชนะการประมูล+ส่งมอบแล้ว หรือ Deal Signed+Delivered)</li>
+            <li><b>Win Rate</b> — Win ÷ (Win + แพ้) ปัดเป็นจำนวนเต็ม</li>
+            <li><b>ยอดขายสะสม</b> — มูลค่างานที่ส่งมอบแล้ว (ส่งมอบแล้ว/Delivered) รวมสองฝั่ง</li>
+            <li><b>เป้าหมาย/เดือนนี้</b> — % รับงาน (ชนะการประมูล+ส่งมอบแล้ว หรือ Deal Signed+Delivered เดือนนี้) และ % ส่งมอบ (ส่งมอบแล้ว/Delivered เดือนนี้) เทียบเป้าหมายรายเดือนที่ตั้งไว้</li>
+            <li><b>Weighted Pipeline</b> — งานประมูล (มูลค่า × 10%/50% ตาม stage) + งานขายตรง (มูลค่า × โอกาสปิดดีลที่ sale กรอกเอง) เฉพาะดีลที่ยังไม่จบ</li>
+            <li><b>Avg Deal</b> — มูลค่าเฉลี่ยต่อดีล (เฉพาะดีลที่มีมูลค่า) รวมสองฝั่ง</li>
+            <li><b>SLA ตรงเวลา</b> — % งานที่ยังไม่เกินกำหนดเวลา คำนวณจากงานประมูลเท่านั้น (งานขายตรงยังไม่มีเกณฑ์ SLA แยกต่างหาก)</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: true,
+      months: 12,
+      kpi: {},
+      funnel: [],
+      funnelPeriod: 'quarter',
+      funnelSnapshot: [],
+      bottleneck: null,
+      funnelSnapshotPeriod: 'quarter',
+      perSale: [],
+      perSaleView: 'bid',
+      pipelineView: 'eb',
+      pipelineDisplayMode: 'chart', // 'chart' | 'table' — สลับดูกราฟ Pipeline เป็นตารางตัวเลขรายเดือนแทน
+      expandedPipelineMonths: {}, // { 'ส.ค. 69': true } — เดือนไหนกดขยายดูรายการ item ย่อยอยู่บ้างในมุมมองตาราง
+      chartData: null,
+      piePeriod: 'l30d',
+      piePeriods: [
+        { v:'quarter', l:'ไตรมาสนี้' },
+        { v:'year',    l:'ปีนี้'      },
+        { v:'month',   l:'เดือนนี้'  },
+        { v:'l30d',    l:'30 วันล่าสุด' },
+      ],
+      pieData: null,
+      pieLoading: false,
+      editingTargetId: null,
+      editingTargetVal: '',
+      kpiSettings: { win_rate_green: 60, win_rate_yellow: 40, achievement_green: 100, achievement_yellow: 70 },
+      modal: { type: null },
+    };
+  },
+  computed: {
+    isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
+    isSale()    { return this.currentUser?.role === 'sale'; },
+
+    pipelineViewLabel() {
+      return this.pipelineView === 'eb' ? 'งานประมูล (e-Bidding)' : this.pipelineView === 'sales' ? 'งานขายตรง (Sales Hunt)' : 'รวมทุก Pipeline';
+    },
+    pipelineViewInfoType() {
+      return this.pipelineView === 'eb' ? 'chart-eb-info' : this.pipelineView === 'sales' ? 'chart-sales-info' : 'chart-all-info';
+    },
+    // แปลง chartData (array ขนานกันตาม index) เป็น row ต่อเดือน สำหรับมุมมองตาราง — ใช้ key ชุดเดียวกับที่ renderPipelineChart() ใช้
+    pipelineTableRows() {
+      const d = this.chartData;
+      if (!d) return [];
+      const keyMap = {
+        eb:    ['eb_w','eb_a','eb_backlog','eb_items','eb_delivered_items'],
+        sales: ['sl_w','sl_a','sl_backlog','sl_items','sl_delivered_items'],
+        all:   ['all_w','all_a','all_backlog','all_items','all_delivered_items'],
+      };
+      const [wKey, aKey, bKey, iKey, diKey] = keyMap[this.pipelineView];
+      return d.labels.map((label, i) => {
+        // รายการที่ประกอบเป็น "ยอดจด Order" (type:'order') กับ "ยอดจัดส่งจริง" (type:'delivered') ของเดือนนี้ — ดีลเดียวกัน
+        // อาจโผล่คนละแถวเดือนกันได้ ถ้าจด Order เดือนหนึ่งแต่ส่งมอบอีกเดือนหนึ่ง (group ตามวันที่ของแต่ละเหตุการณ์แยกกัน)
+        const orderItems     = (d[iKey]?.[i]  || []).map(it => ({ ...it, type: 'order' }));
+        const deliveredItems = (d[diKey]?.[i] || []).map(it => ({ ...it, type: 'delivered' }));
+        return {
+          label,
+          w: d[wKey][i],
+          a: d[aKey][i],
+          backlog: d[bKey][i],
+          isForecast: d[bKey][i] !== null,
+          items: [...orderItems, ...deliveredItems],
+          orderCount: orderItems.length,
+          deliveredCount: deliveredItems.length,
+        };
+      });
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!['admin','salesadmin','manager','sale'].includes(this.currentUser.role)) {
+        location.href = 'dashboard.html'; return;
+      }
+    } catch { location.href = 'login.html'; return; }
+    this.authReady = true;
+    this.loadAll();
+    this.loadPieData();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async loadAll() {
+      this.loading = true;
+      try {
+        const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
+          apiCall('GET', 'api/reports.php?action=kpi_summary'),
+          apiCall('GET', `api/reports.php?action=funnel&period=${this.funnelPeriod}`),
+          this.isManager ? apiCall('GET', 'api/reports.php?action=per_sale') : Promise.resolve(null),
+          apiCall('GET', `api/reports.php?action=pipeline_chart&months=${this.months}`),
+          apiCall('GET', 'api/kpi_settings.php'),
+          apiCall('GET', `api/reports.php?action=funnel_snapshot&period=${this.funnelSnapshotPeriod}`),
+          this.isManager ? apiCall('GET', 'api/reports.php?action=bottleneck') : Promise.resolve(null),
+        ]);
+        if (r1.success) this.kpi = r1.data;
+        if (r2.success) this.funnel = r2.data;
+        if (r3?.success) this.perSale = r3.data;
+        if (r4.success) { this.chartData = r4.data; }
+        if (r5?.success) this.kpiSettings = { ...this.kpiSettings, ...r5.data };
+        if (r6.success) this.funnelSnapshot = r6.data;
+        if (r7?.success) this.bottleneck = r7.data;
+      } catch {}
+      this.loading = false;
+      this.$nextTick(() => this.initCharts());
+    },
+
+    async loadFunnel() {
+      try {
+        const r = await apiCall('GET', `api/reports.php?action=funnel&period=${this.funnelPeriod}`);
+        if (r.success) this.funnel = r.data;
+      } catch {}
+    },
+
+    async loadFunnelSnapshot() {
+      try {
+        const r = await apiCall('GET', `api/reports.php?action=funnel_snapshot&period=${this.funnelSnapshotPeriod}`);
+        if (r.success) this.funnelSnapshot = r.data;
+      } catch {}
+    },
+
+    initCharts() {
+      if (!this.chartData) return;
+      this.renderPipelineChart();
+      this.renderPerSaleChart();
+    },
+
+    // กราฟ Pipeline — สลับดูงานประมูล/งานขายตรง/รวมทุก Pipeline ได้ทีละมุม (pipelineView) แทนที่จะแสดง 3 กราฟพร้อมกันตลอด
+    renderPipelineChart() {
+      const d = this.chartData;
+      if (!d) return;
+      const el = document.getElementById('chartPipeline');
+      if (!el) return;
+      const keyMap = { eb: ['eb_w','eb_a','eb_backlog'], sales: ['sl_w','sl_a','sl_backlog'], all: ['all_w','all_a','all_backlog'] };
+      const [wKey, aKey, bKey] = keyMap[this.pipelineView];
+      const fmt  = v => v >= 1000000 ? (v/1000000).toFixed(1)+'ล.' : v >= 1000 ? (v/1000).toFixed(0)+'K' : v;
+      const font = { family: 'Anuphan, sans-serif', size: 11 };
+      if (el._ci) el._ci.destroy();
+      el._ci = new Chart(el.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: d.labels,
+          datasets: [
+            { type:'bar',  label:'ยอดจด Order',  data:d[wKey], backgroundColor:'rgba(0,181,164,.55)', borderColor:'#00b5a4', borderWidth:1, borderRadius:5, order:2 },
+            { type:'line', label:'ยอดจัดส่งจริง', data:d[aKey], borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.08)', borderWidth:2.5, pointRadius:4, fill:true, tension:.35, order:1 },
+            { type:'line', label:'ปิดดีลแล้ว รอจัดส่ง (คาดการณ์)', data:d[bKey], borderColor:'#8b5cf6', backgroundColor:'transparent', borderWidth:2.5, borderDash:[6,4], pointRadius:3, pointStyle:'rectRot', fill:false, spanGaps:false, order:0 },
+          ],
+        },
+        options: {
+          responsive:true, maintainAspectRatio:false,
+          plugins: {
+            legend:{ display:false },
+            tooltip:{ callbacks:{ label: c => `${c.dataset.label}: ฿${Number(c.raw).toLocaleString()}` } },
+          },
+          scales: {
+            x:{ grid:{ display:false }, ticks:{ font } },
+            y:{ beginAtZero:true, grid:{ color:'#f1f5f9' }, ticks:{ font, callback:fmt } },
+          },
+        },
+      });
+    },
+
+    togglePipelineMonth(label) {
+      this.expandedPipelineMonths = { ...this.expandedPipelineMonths, [label]: !this.expandedPipelineMonths[label] };
+    },
+
+    // Export ตารางกราฟ Pipeline (มุมมองที่เลือกอยู่ตอนนี้) เป็น Excel — แทรกรายการ item ย่อยไว้ใต้แต่ละเดือนด้วย
+    // เพื่อให้ตรวจสอบที่มาของยอดรวมได้แม้ไม่ได้กดขยายดูบนหน้าจอ (export เอาทุกรายการเสมอ ไม่ขึ้นกับว่าขยายอยู่หรือไม่)
+    exportPipelineTable() {
+      const headers = ['เดือน', 'ยอดจด Order (บาท)', 'ยอดจัดส่งจริง (บาท)', 'ปิดดีลแล้ว รอจัดส่ง (บาท)', 'หน่วยงาน/ลูกค้า', 'Sale', 'แหล่งงาน'];
+      const rows = [];
+      this.pipelineTableRows.forEach(r => {
+        rows.push([r.label, r.w, r.a, r.isForecast ? r.backlog : '', '', '', '']);
+        r.items.forEach(item => {
+          rows.push([
+            `  └ ${item.name} (${item.project_code})${item.type==='delivered' ? ' [ส่งมอบ]' : ''}`,
+            item.type === 'order' ? item.value : '',
+            item.type === 'delivered' ? item.value : '',
+            '', item.org, item.sale_name, item.source,
+          ]);
+        });
+      });
+      this.exportExcel(`กราฟ Pipeline (${this.pipelineViewLabel})`, headers, rows);
+    },
+
+    // กราฟ "เปรียบเทียบผลงาน Sale ทุกคน" — สลับดูมุมงานประมูล/งานขายตรงแยกกันได้ (perSaleView) ไม่ผสมรวมเหมือนตาราง KPI รายบุคคล
+    renderPerSaleChart() {
+      const ps = this.perSale;
+      if (!ps.length) return;
+      const elPs = document.getElementById('chartPerSale');
+      if (!elPs) return;
+      const font = { family: 'Anuphan, sans-serif', size: 11 };
+      const fmt  = v => v >= 1000000 ? (v/1000000).toFixed(1)+'ล.' : v >= 1000 ? (v/1000).toFixed(0)+'K' : v;
+      const isBid = this.perSaleView === 'bid';
+      const pipelineKey = isBid ? 'bid_pipeline_raw'    : 'sales_pipeline_raw';
+      const weightedKey = isBid ? 'bid_weighted_solo'   : 'sales_weighted_solo';
+      const wonKey      = isBid ? 'bid_won_value'       : 'sales_won_value';
+      if (elPs._ci) elPs._ci.destroy();
+      elPs._ci = new Chart(elPs.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: ps.map(s => s.full_name),
+          datasets: [
+            { label: 'Total Pipeline (งานที่ยังไม่จบ)', data: ps.map(s => s[pipelineKey]), backgroundColor: 'rgba(0,181,164,0.45)', borderColor: '#00b5a4', borderWidth: 1, borderRadius: 5 },
+            { label: 'Weighted', data: ps.map(s => s[weightedKey]), backgroundColor: 'rgba(245,158,11,0.45)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 5 },
+            { label: 'Deals Won', data: ps.map(s => s[wonKey]), backgroundColor: 'rgba(22,163,74,0.65)', borderColor: '#16a34a', borderWidth: 1, borderRadius: 5 },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position:'top', labels:{ font:{ family:'Anuphan, sans-serif', size:12 }, boxWidth:14, padding:12 } },
+            tooltip: { callbacks: { label: c => `${c.dataset.label}: ฿${Number(c.raw).toLocaleString()}` } },
+          },
+          scales: {
+            x: { grid:{ display:false }, ticks:{ font } },
+            y: { beginAtZero:true, grid:{ color:'#f1f5f9' }, ticks:{ font, callback: fmt }, title:{ display:true, text:'มูลค่า (บาท)', font, color:'#64748b' } },
+          },
+        },
+      });
+    },
+
+    kpiColor(val, greenKey, yellowKey) {
+      const g = +(this.kpiSettings[greenKey] ?? 60);
+      const y = +(this.kpiSettings[yellowKey] ?? 40);
+      return val >= g ? '#16a34a' : val >= y ? '#f59e0b' : '#ef4444';
+    },
+
+    startEditTarget(s) {
+      this.editingTargetId = s.id;
+      this.editingTargetVal = s.monthly_target ?? '';
+    },
+
+    async saveTarget(s) {
+      if (this.editingTargetId !== s.id) return;
+      this.editingTargetId = null;
+      const val = this.editingTargetVal === '' ? null : Number(this.editingTargetVal);
+      const now = new Date();
+      try {
+        const r = await apiCall('POST', 'api/targets.php?action=save', {
+          user_id: s.id,
+          year: now.getFullYear(),
+          month: now.getMonth() + 1,
+          target_amount: val,
+        });
+        if (r.success) {
+          s.monthly_target = val;
+          s.achievement_taken    = (val > 0) ? Math.round((s.taken_this_month||0) / val * 100) : null;
+          s.achievement_delivered = (val > 0) ? Math.round((s.delivered_this_month||0) / val * 100) : null;
+          s.achievement_rate = s.achievement_taken;
+          await this.showAlert('บันทึกเป้าหมายสำเร็จ', 'success');
+        } else {
+          await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error');
+        }
+      } catch { await this.showAlert('เกิดข้อผิดพลาด', 'error'); }
+    },
+
+    formatM(v) {
+      if (!v && v !== 0) return '-';
+      return '฿' + Math.round(Number(v)).toLocaleString('th-TH');
+    },
+
+    funnelColor(i) {
+      return ['#6b8fa8','#0fa8c8','#7c6cc8','#1ea86a','#0fa89a'][i] || '#94a3b8';
+    },
+
+    // ความกว้างแท่ง (%) ของ Stage Snapshot เทียบกับ stage ที่มีจำนวนดีลมากที่สุดตอนนี้
+    snapshotWidthPct(i) {
+      if (!this.funnelSnapshot.length) return 0;
+      const max = Math.max(...this.funnelSnapshot.map(s => s.count), 1);
+      const cnt = this.funnelSnapshot[i].count;
+      if (!cnt) return 0;
+      return Math.max(cnt / max * 100, 8);
+    },
+
+    // ความกว้างแท่ง (%) ของ Bottleneck เทียบกับ stage ที่ใช้เวลาเฉลี่ยนานสุดในกลุ่มเดียวกัน (bid หรือ direct)
+    bottleneckWidthPct(stageRow, list) {
+      const max = Math.max(...list.map(s => s.avg_days), 0.1);
+      return Math.max(stageRow.avg_days / max * 100, 8);
+    },
+
+    // ความกว้าง (%) ของแต่ละ stage เทียบกับ stage ที่มีจำนวนดีลมากที่สุด (ไม่ใช่ stage แรกเสมอไป กันไม่ให้ width เกิน 100% ตอนข้อมูลไม่ลดหลั่นเป็นเส้นตรง)
+    funnelWidthPct(i) {
+      if (!this.funnel.length) return 0;
+      const max = Math.max(...this.funnel.map(s => s.count), 1);
+      const cnt = this.funnel[i].count;
+      if (!cnt) return 0;
+      return Math.max(cnt / max * 100, 14); // ขั้นต่ำ 14% ให้ยังเห็นเป็นแท่งได้แม้ตัวเลขน้อย
+    },
+
+    // สร้างทรงกรวย (trapezoid) โดยขอบบน = ความกว้างของ stage นี้ ขอบล่าง = ความกว้างของ stage ถัดไป ให้ต่อกันดูเป็นกรวยลงมา
+    funnelClipPath(i) {
+      const topPct = this.funnelWidthPct(i);
+      const botPct = i < this.funnel.length - 1 ? this.funnelWidthPct(i + 1) : topPct;
+      const topInset = (100 - topPct) / 2;
+      const botInset = (100 - botPct) / 2;
+      return `polygon(${topInset}% 0%, ${100 - topInset}% 0%, ${100 - botInset}% 100%, ${botInset}% 100%)`;
+    },
+
+    async loadPieData() {
+      this.pieLoading = true;
+      try {
+        const r = await apiCall('GET', `api/reports.php?action=pie_data&period=${this.piePeriod}`);
+        if (r.success) {
+          this.pieData = r.data;
+          this.pieLoading = false;
+          this.$nextTick(() => this.initPieCharts());
+          return;
+        }
+      } catch {}
+      this.pieLoading = false;
+    },
+
+    initPieCharts() {
+      if (!this.pieData) return;
+      const pd   = this.pieData;
+      const smFont = { family: 'Anuphan, sans-serif', size: 10 };
+      const mkOpts = (byVal) => ({
+        responsive: true, maintainAspectRatio: false, cutout: '55%',
+        layout: { padding: { top: 2, bottom: 2 } },
+        plugins: {
+          legend: { position: 'bottom', labels: { font: smFont, padding: 6, boxWidth: 10, boxHeight: 10 } },
+          tooltip: { callbacks: { label: byVal
+            ? c => { const t = c.dataset.data.reduce((a,b)=>a+b,0)||1; return ` ${c.label}: ฿${Number(c.raw).toLocaleString()} (${((c.raw/t)*100).toFixed(1)}%)`; }
+            : c => { const t = c.dataset.data.reduce((a,b)=>a+b,0)||1; return ` ${c.label}: ${c.raw} ดีล (${((c.raw/t)*100).toFixed(1)}%)`; }
+          }},
+        },
+      });
+
+      const mkChart = (id, labels, data, colors, byVal=true) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el._ci) el._ci.destroy();
+        el._ci = new Chart(el.getContext('2d'), {
+          type: 'doughnut',
+          data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] },
+          options: mkOpts(byVal),
+        });
+      };
+
+      if (pd.source.length) {
+        const sourceColors = { 'งานประมูล':'#008074', 'งานขายตรง':'#3b82f6' };
+        mkChart('chartPieSource', pd.source.map(s=>s.label), pd.source.map(s=>s.val), pd.source.map(s=>sourceColors[s.label]||'#94a3b8'));
+      }
+      if (pd.product.length) {
+        const productColors = { 'เหล็ก':'#475569', 'ไม้':'#8b5e34', 'เก้าอี้':'#14b8a6' };
+        mkChart('chartPieProduct', pd.product.map(p=>p.label), pd.product.map(p=>p.val), pd.product.map(p=>productColors[p.label]||'#cbd5e1'));
+      }
+      if (pd.brand.length) {
+        const brandColors = { 'Taiyo':'#f97316', 'Sunon':'#16a34a', 'Motech':'#7c6cc8', 'Hybrida':'#1e293b' };
+        mkChart('chartPieBrand', pd.brand.map(b=>b.label), pd.brand.map(b=>b.val), pd.brand.map(b=>brandColors[b.label]||'#cbd5e1'));
+      }
+
+      const realMargin = pd.margin ? pd.margin.filter(m => m.label !== 'ไม่ระบุ') : [];
+      if (realMargin.length) {
+        const marginColors = { '>30%':'#16a34a','20-30%':'#84cc16','10-20%':'#f59e0b','<10%':'#ef4444' };
+        mkChart('chartPieMargin', realMargin.map(m=>m.label), realMargin.map(m=>m.cnt), realMargin.map(m=>marginColors[m.label]||'#94a3b8'), false);
+      }
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

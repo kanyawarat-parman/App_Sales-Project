@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ภาพรวม</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=1">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="dashboard" ref="nav"></app-nav>
+
+    <main class="max-w-[1600px] mx-auto px-4 py-6 md:px-6">
+      <h1 class="text-xl font-bold text-slate-800 mb-4">ภาพรวม</h1>
+
+      <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-6">
+        <p class="text-slate-500 text-sm">
+          หน้านี้เป็นตัวอย่างโครงหน้ามาตรฐาน — ทำตาม pattern นี้ทุกหน้าใหม่:
+          auth check ใน <code>mounted()</code> &rarr; <code>&lt;app-nav&gt;</code> &rarr; เนื้อหาใน <code>&lt;main&gt;</code>
+        </p>
+      </div>
+    </main>
+  </template>
+
+  <!-- Modal กลางจอ (แทน toast/confirm() เดิม) — เรียกผ่าน this.showAlert(...) / this.showConfirm(...) -->
+  <app-modal ref="appModal"></app-modal>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=1"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      modal: { type: null, data: null },
+      appConfig: window.APP_CONFIG,
+    };
+  },
+  async mounted() {
+    window.APP_CONFIG_READY?.then(cfg => { this.appConfig = cfg; });
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+  },
+  methods: {
+    ...SharedMethods,
+    // เขียน method เฉพาะหน้านี้ต่อท้ายตรงนี้
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

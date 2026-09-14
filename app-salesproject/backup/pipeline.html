@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline e-Bidding</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="pipeline" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          Pipeline &amp; Project Tracking
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <!-- Stats row -->
+        <div class="grid gap-3.5 mb-4" style="grid-template-columns:repeat(4,1fr)">
+          <div class="relative overflow-hidden bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+            <div class="text-3xl font-black leading-none mb-1 text-blue-700">{{ pipelineStats?.active ?? 0 }}</div>
+            <div class="text-xs text-slate-400 font-medium">โครงการในมือ</div>
+            <div class="absolute -right-2 -bottom-2 text-5xl opacity-10 select-none">📋</div>
+          </div>
+          <div class="relative overflow-hidden bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+            <div class="text-3xl font-black leading-none mb-1 text-purple-700">{{ pipelineStats?.submitted ?? 0 }}</div>
+            <div class="text-xs text-slate-400 font-medium">ยื่นแล้ว รอผล</div>
+            <div class="absolute -right-2 -bottom-2 text-5xl opacity-10 select-none">📤</div>
+          </div>
+          <div class="relative overflow-hidden bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+            <div class="text-3xl font-black leading-none mb-1 text-green-700">{{ pipelineStats?.won ?? 0 }}</div>
+            <div class="text-xs text-slate-400 font-medium">ชนะประมูล</div>
+            <div class="absolute -right-2 -bottom-2 text-5xl opacity-10 select-none">🏆</div>
+          </div>
+          <div class="relative overflow-hidden bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100">
+            <div class="text-3xl font-black leading-none mb-1 text-amber-600">{{ pipelineStats?.win_rate != null ? pipelineStats.win_rate + '%' : '-' }}</div>
+            <div class="text-xs text-slate-400 font-medium">Win Rate</div>
+            <div class="absolute -right-2 -bottom-2 text-5xl opacity-10 select-none">📈</div>
+          </div>
+        </div>
+
+        <!-- Sales Performance Summary -->
+        <div v-if="isSecretary && pipelineSaleStats.length && !pipelineFilter.assigned_to"
+          class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 font-bold text-slate-700 text-sm">
+            <span class="flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" stroke-linejoin="round" d="M23 21v-2a4 4 0 00-3-3.87"/><path stroke-linecap="round" stroke-linejoin="round" d="M16 3.13a4 4 0 010 7.75"/></svg>
+              ภาพรวมทีม Sales
+            </span>
+            <span class="text-xs text-slate-400 font-normal">คลิกที่แถวเพื่อกรอง Kanban</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full border-collapse text-sm">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="px-4 py-2.5 text-left text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Sales</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Active</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">ยื่นแล้ว</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">ชนะ</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">แพ้</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Win Rate</th>
+                  <th class="px-4 py-2.5 text-right text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">มูลค่าชนะ</th>
+                  <th class="px-4 py-2.5 text-left text-[.72rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Pipeline Stage</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in pipelineSaleStats" :key="s.id"
+                  @click="pipelineFilter.assigned_to = s.id; loadPipeline()"
+                  class="border-b border-slate-50 cursor-pointer hover:bg-slate-50/70 transition-colors">
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <img v-if="s.photo_url" :src="s.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"/>
+                      <div v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[.72rem] font-bold shrink-0"
+                        :style="{background:s.avatar_color||'#64748b'}">{{ avatarInitials(s.full_name) }}</div>
+                      <span class="font-semibold text-slate-800">{{ s.full_name }}</span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 text-center font-bold text-blue-600">{{ s.active }}</td>
+                  <td class="px-3 py-3 text-center font-semibold text-purple-700">{{ s.submitted }}</td>
+                  <td class="px-3 py-3 text-center font-bold text-green-600">{{ s.won }}</td>
+                  <td class="px-3 py-3 text-center text-red-600">{{ s.lost }}</td>
+                  <td class="px-3 py-3 text-center">
+                    <span v-if="s.win_rate !== null" class="font-bold text-sm"
+                      :style="{color: s.win_rate>=60?'#16a34a':s.win_rate>=40?'#d97706':'#dc2626'}">{{ s.win_rate }}%</span>
+                    <span v-else class="text-slate-400">—</span>
+                  </td>
+                  <td class="px-4 py-3 text-right font-semibold text-green-600">
+                    {{ s.won_value > 0 ? '฿'+formatNumber(s.won_value) : '—' }}
+                  </td>
+                  <td class="px-4 py-3 min-w-[160px]">
+                    <div class="flex h-2.5 rounded-full overflow-hidden gap-px">
+                      <div v-if="Number(s.active)>0" :style="{flex: s.active, background:'#3b82f6'}" :title="'Active: '+s.active"></div>
+                      <div v-if="Number(s.submitted)>0" :style="{flex: s.submitted, background:'#7c3aed'}" :title="'ยื่น: '+s.submitted"></div>
+                      <div v-if="Number(s.won)>0" :style="{flex: s.won, background:'#16a34a'}" :title="'ชนะ: '+s.won"></div>
+                      <div v-if="Number(s.lost)>0" :style="{flex: s.lost, background:'#dc2626'}" :title="'แพ้: '+s.lost"></div>
+                      <div v-if="!Number(s.active) && !Number(s.submitted) && !Number(s.won) && !Number(s.lost)" class="flex-1 bg-slate-200"></div>
+                    </div>
+                    <div class="flex gap-2 mt-1 text-[.67rem]">
+                      <span v-if="Number(s.active)>0" class="text-blue-500">●Active {{s.active}}</span>
+                      <span v-if="Number(s.submitted)>0" class="text-purple-600">●ยื่น {{s.submitted}}</span>
+                      <span v-if="Number(s.won)>0" class="text-green-600">●ชนะ {{s.won}}</span>
+                      <span v-if="Number(s.lost)>0" class="text-red-600">●แพ้ {{s.lost}}</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4">
+          <div class="px-4 py-3 flex items-center gap-3 flex-wrap">
+            <div class="flex border-[1.5px] border-slate-200 rounded-lg overflow-hidden">
+              <button @click="pipelineView='kanban'"
+                class="px-4 py-1.5 text-xs font-semibold border-0 cursor-pointer transition-colors"
+                :class="pipelineView==='kanban' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'">Kanban</button>
+              <button @click="pipelineView='table'"
+                class="px-4 py-1.5 text-xs font-semibold border-0 cursor-pointer transition-colors"
+                :class="pipelineView==='table' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'">Table</button>
+            </div>
+            <select v-if="isSecretary" v-model="pipelineFilter.assigned_to" @change="loadPipeline()"
+              class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white min-w-[160px]">
+              <option value="">— Sales ทั้งหมด —</option>
+              <option v-for="s in salesUsers" :key="s.id" :value="s.id">{{ s.full_name }}</option>
+            </select>
+            <button v-if="isSecretary && pipelineFilter.assigned_to"
+              class="inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold ring-1 ring-red-200 text-red-600 bg-white hover:bg-red-50 border-0 cursor-pointer"
+              @click="pipelineFilter.assigned_to=''; loadPipeline()">✕ ล้างตัวกรอง</button>
+            <button class="inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer"
+              @click="loadPipeline()">↺ รีเฟรช</button>
+            <div v-if="pipelineLoading" class="flex items-center gap-1.5 text-xs text-slate-500">
+              <div class="spinner w-4 h-4" style="border-width:2px"></div> กำลังโหลด...
+            </div>
+          </div>
+        </div>
+
+        <!-- KANBAN VIEW -->
+        <div v-show="pipelineView==='kanban'" class="flex gap-3 overflow-x-auto pb-4">
+          <div v-for="stage in pipelineStages" :key="stage.key" class="flex-shrink-0 w-56 flex flex-col">
+            <div class="text-white px-3 py-2.5 flex items-center justify-between rounded-t-xl font-semibold text-sm"
+              :style="{background: stage.color}">
+              <span>{{ stage.label }}</span>
+              <span class="bg-white/20 rounded-full px-2.5 py-0.5 text-xs">{{ (pipelineKanban[stage.key]||[]).length }}</span>
+            </div>
+            <div class="px-3 py-1.5 text-xs font-medium text-white/80" :style="{background: stage.darkColor}">
+              {{ pipelineStageValue(stage.key) }}&nbsp;
+            </div>
+            <div class="flex-1 flex flex-col gap-2 p-2 bg-slate-100 rounded-b-xl overflow-y-auto min-h-[200px]">
+              <div v-if="!(pipelineKanban[stage.key]||[]).length"
+                class="text-center text-slate-400 text-xs py-6">ไม่มีงานในขั้นนี้</div>
+              <div v-for="card in (pipelineKanban[stage.key]||[])" :key="card.id"
+                class="bg-white rounded-lg p-3 shadow-sm ring-1 ring-slate-100 cursor-pointer hover:shadow-md transition-shadow"
+                @click="openAssignmentDetail(card.id)">
+                <div class="font-semibold text-slate-800 text-sm mb-1 leading-snug line-clamp-2">{{ card.project_name }}</div>
+                <div v-if="card.price_median" class="text-base font-bold text-slate-800 mb-0.5">฿{{ formatNumber(card.price_median) }}</div>
+                <div class="text-xs text-slate-400 mb-2">{{ card.unit_name }}</div>
+                <div class="flex items-center justify-between mt-2">
+                  <div class="flex items-center gap-1">
+                    <img v-if="card.sale_photo_url" :src="card.sale_photo_url" class="w-5 h-5 rounded-full object-cover"/>
+                    <div v-else class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[.62rem] font-bold"
+                      :style="{background:card.sale_color||'#64748b'}">{{ avatarInitials(card.sale_name) }}</div>
+                    <span class="text-[.73rem] text-slate-500">{{ (card.sale_name||'').split(' ')[0] }}</span>
+                  </div>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="priorityBadge(card.priority)">{{ card.priority }}</span>
+                </div>
+                <div v-if="card.close_date" class="mt-1.5 text-right text-[.7rem]"
+                  :style="{color: countdownColor(daysToClose(card.close_date))}">
+                  {{ countdownText(daysToClose(card.close_date)) }}
+                </div>
+                <div v-if="card.win_loss_reason"
+                  class="mt-1.5 text-[.7rem] px-2 py-1 rounded bg-slate-50 ring-1 ring-slate-200 text-slate-500">
+                  {{ card.win_loss_reason }}
+                </div>
+                <!-- Stage action buttons -->
+                <div v-if="!['ชนะ','แพ้','ยกเลิก'].includes(card.status)"
+                  class="flex gap-1 mt-2" @click.stop>
+                  <button v-if="pipelineStageIndex(card.status) > 0"
+                    @click.stop="quickMoveStage(card, pipelinePrevStage(card.status))"
+                    class="text-xs font-semibold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer">← ถอย</button>
+                  <button v-if="card.status !== 'ยื่นข้อเสนอแล้ว'"
+                    @click.stop="quickMoveStage(card, pipelineNextStage(card.status))"
+                    class="flex-1 text-xs font-semibold px-2 py-1 rounded-lg bg-sky-100 text-sky-700 hover:bg-sky-200 border-0 cursor-pointer">ส่งต่อ →</button>
+                  <template v-if="card.status === 'ยื่นข้อเสนอแล้ว'">
+                    <button @click.stop="openWinLossModal(card, 'ชนะ')"
+                      class="flex-1 text-xs font-semibold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0 cursor-pointer">ชนะ</button>
+                    <button @click.stop="openWinLossModal(card, 'แพ้')"
+                      class="flex-1 text-xs font-semibold px-2 py-1 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 border-0 cursor-pointer">แพ้</button>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABLE VIEW -->
+        <div v-show="pipelineView==='table'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+          <div class="overflow-x-auto">
+            <table class="w-full border-collapse text-sm">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">ชื่อโครงการ</th>
+                  <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">หน่วยงาน</th>
+                  <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Sales</th>
+                  <th class="px-4 py-3 text-right text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">ราคากลาง</th>
+                  <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">ปิดรับ</th>
+                  <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Priority</th>
+                  <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Stage</th>
+                  <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase border-b-2 border-slate-200">Win/Loss Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!pipelineTableData.length">
+                  <td colspan="8" class="text-center py-8 text-slate-400">ไม่มีข้อมูล</td>
+                </tr>
+                <tr v-for="card in pipelineTableData" :key="card.id"
+                  class="border-b border-slate-50 cursor-pointer hover:bg-slate-50 transition-colors"
+                  @click="openAssignmentDetail(card.id)">
+                  <td class="px-4 py-3 max-w-[220px]">
+                    <div class="font-semibold text-sm leading-snug line-clamp-2">{{ card.project_name }}</div>
+                  </td>
+                  <td class="px-4 py-3 max-w-[140px]">
+                    <div class="text-xs text-slate-500 truncate" :title="card.unit_name">{{ card.unit_name }}</div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-1.5">
+                      <img v-if="card.sale_photo_url" :src="card.sale_photo_url" class="w-6 h-6 rounded-full object-cover"/>
+                      <div v-else class="w-6 h-6 rounded-full flex items-center justify-center text-white text-[.65rem] font-bold"
+                        :style="{background:card.sale_color||'#64748b'}">{{ avatarInitials(card.sale_name) }}</div>
+                      <span class="text-xs">{{ (card.sale_name||'').split(' ')[0] }}</span>
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 text-right font-semibold text-green-600 text-sm">
+                    {{ card.price_median ? '฿'+formatNumber(card.price_median) : '-' }}
+                  </td>
+                  <td class="px-4 py-3 text-center text-xs"
+                    :style="{color: countdownColor(daysToClose(card.close_date)), fontWeight: daysToClose(card.close_date)<=3?'700':'400'}">
+                    {{ card.close_date || '-' }}
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(card.priority)">{{ card.priority }}</span>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="statusBadge(card.status)">{{ pipelineStageName(card.status) }}</span>
+                  </td>
+                  <td class="px-4 py-3 text-xs">
+                    <span v-if="card.win_loss_reason" :style="{color: card.status==='ชนะ'?'#16a34a':'#dc2626'}">{{ card.win_loss_reason }}</span>
+                    <span v-else-if="card.status==='ยื่นข้อเสนอแล้ว'" class="text-purple-600">⏳ รอผล</span>
+                    <span v-else class="text-slate-400">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <div v-if="toast"
+      class="fixed bottom-6 right-6 z-[2000] px-5 py-3 rounded-xl text-sm font-semibold shadow-xl"
+      :class="toast.type==='success' ? 'bg-teal-700 text-white' : 'bg-red-500 text-white'">
+      {{ toast.msg }}
+    </div>
+
+    <!-- MODALS -->
+    <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
+      v-if="modal.type" @click.self="closeModal">
+
+      <!-- Assignment Detail Modal -->
+      <div v-if="modal.type==='assign-detail'" class="bg-white rounded-2xl w-full max-w-[680px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-gradient-to-br from-slate-800 to-blue-700 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">รายละเอียดงาน</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="flex gap-2 flex-wrap mb-4">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
+            <span class="text-sm" :class="slaClass(modal.data.sla_status)">
+              {{ modal.data.sla_status==='เกิน' ? 'เกิน SLA' : modal.data.sla_status==='ใกล้ถึง' ? 'ใกล้ถึง SLA' : 'SLA ปกติ' }}
+            </span>
+          </div>
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ข้อมูลโครงการ</div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">เลขที่โครงการ</span><span class="text-sm text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ชื่อโครงการ</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.project_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">หน่วยงาน</span><span class="text-sm text-slate-700">{{ modal.data.unit_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ modal.data.close_date }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-green-600">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">เข้าประมูล</span><span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span></div>
+          </div>
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">การมอบหมาย</div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">มอบหมายให้</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.sale_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันที่มอบหมาย</span><span class="text-sm text-slate-700">{{ modal.data.assigned_at }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">SLA Deadline</span><span class="text-sm text-slate-700">{{ modal.data.sla_deadline }}</span></div>
+          </div>
+          <div v-if="modal.data.sale_notes" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">บันทึก Sales</div>
+            <div class="text-sm p-3 rounded-lg bg-green-50 text-green-800">{{ modal.data.sale_notes }}</div>
+          </div>
+          <div v-if="modal.data.bid_amount" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ราคาที่เสนอ</div>
+            <div class="text-xl font-bold text-green-600">{{ formatPrice(modal.data.bid_amount) }}</div>
+          </div>
+          <div v-if="modal.data.win_loss_reason" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">{{ modal.data.status==='ชนะ' ? 'เหตุผลที่ชนะ' : 'เหตุผลที่แพ้' }}</div>
+            <div class="text-sm p-3 rounded-lg"
+              :class="modal.data.status==='ชนะ' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'">
+              {{ modal.data.win_loss_reason }}
+            </div>
+          </div>
+          <div v-if="modal.data.history?.length" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติการเปลี่ยนสถานะ</div>
+            <div v-for="h in modal.data.history" :key="h.id" class="flex gap-3 py-2">
+              <div class="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0 mt-1"></div>
+              <div class="flex-1">
+                <div class="text-sm font-medium text-slate-700">{{ h.changed_by_name }}</div>
+                <div class="text-xs text-slate-500">
+                  <span v-if="h.old_status">{{ h.old_status }} → </span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadge(h.new_status)">{{ h.new_status }}</span>
+                  <span v-if="h.note"> · {{ h.note }}</span>
+                </div>
+                <div class="text-[11px] text-slate-400">{{ h.changed_at }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
+      <!-- Win/Loss Modal -->
+      <div v-if="modal.type==='win-loss'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between border-b"
+          :style="winLossForm.status==='ชนะ' ? 'background:#f0fdf4;border-color:#bbf7d0' : 'background:#fff1f2;border-color:#fecdd3'">
+          <h3 class="font-bold text-lg" :style="winLossForm.status==='ชนะ' ? 'color:#15803d' : 'color:#b91c1c'">
+            {{ winLossForm.status==='ชนะ' ? 'บันทึกเหตุผลที่ชนะ' : 'บันทึกเหตุผลที่แพ้' }}
+          </h3>
+          <button class="bg-transparent border-0 text-2xl cursor-pointer leading-none text-slate-500 hover:text-slate-700" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="text-sm font-semibold text-slate-800 mb-4 px-3 py-2.5 bg-slate-50 rounded-lg ring-1 ring-slate-200">
+            {{ modal.data?.project_name }}
+          </div>
+          <div class="flex flex-col gap-1 mb-4">
+            <label class="block text-sm font-semibold text-slate-600">เหตุผลหลัก <span class="text-red-500">*</span></label>
+            <div class="flex gap-2 flex-wrap mt-1">
+              <div v-for="r in (winLossForm.status==='ชนะ' ? wonReasons : lostReasons)" :key="r"
+                @click="winLossForm.reason = r"
+                class="px-3 py-1.5 rounded-lg border-[1.5px] text-sm font-semibold cursor-pointer transition-all"
+                :style="winLossForm.reason===r
+                  ? (winLossForm.status==='ชนะ' ? 'background:#166534;color:#fff;border-color:#166534' : 'background:#b91c1c;color:#fff;border-color:#b91c1c')
+                  : (winLossForm.status==='ชนะ' ? 'background:#f0fdf4;color:#166534;border-color:#86efac' : 'background:#fff1f2;color:#b91c1c;border-color:#fca5a5')">
+                {{ r }}
+              </div>
+            </div>
+          </div>
+          <div v-if="winLossForm.status==='ชนะ'" class="flex flex-col gap-1 mb-4">
+            <label class="block text-sm font-semibold text-slate-600">ราคาที่เสนอ (บาท)</label>
+            <input type="number" v-model="winLossForm.bid_amount" placeholder="0.00"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white mt-1">
+          </div>
+          <div class="flex flex-col gap-1 mb-4">
+            <label class="block text-sm font-semibold text-slate-600">รายละเอียดเพิ่มเติม</label>
+            <textarea v-model="winLossForm.note" rows="3"
+              :placeholder="winLossForm.status==='ชนะ' ? 'เช่น ราคาต่างจากคู่แข่ง / ปัจจัยที่ทำให้ชนะ...' : 'เช่น ชื่อผู้ชนะ / ราคาที่ต่างกัน / สเปกที่ขาด...'"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white mt-1 resize-y"></textarea>
+          </div>
+          <div class="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2">
+            ข้อมูลนี้จะนำไปวิเคราะห์ Win Rate และกลยุทธ์การประมูลต่อ
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white border-0 cursor-pointer"
+            :class="winLossForm.status==='ชนะ' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'"
+            @click="submitWinLoss">
+            {{ winLossForm.status==='ชนะ' ? 'ยืนยันชนะ' : 'ยืนยันแพ้' }}
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=22"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppTabBar },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      toast: null,
+      modal: { type: null, data: null },
+      pipelineView: 'kanban',
+      pipelineKanban: {},
+      pipelineStats: null,
+      pipelineSaleStats: [],
+      pipelineFilter: { assigned_to: '' },
+      pipelineLoading: false,
+      salesUsers: [],
+      winLossForm: { id: null, status: '', reason: '', note: '', bid_amount: null },
+    };
+  },
+  computed: {
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'Pipeline', icon:'bars3', active:true },
+        { label:'งานขาย', icon:'briefcase', href:'sales-pipeline.html' },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+    isAdmin()      { return this.currentUser?.role === 'admin'; },
+    isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
+
+    pipelineStages() {
+      return [
+        { key: 'รอดำเนินการ',     label: 'รอคัดกรอง',             color: '#64748b', darkColor: '#475569' },
+        { key: 'กำลังดำเนินการ',  label: 'จัดเตรียมสเปก/เอกสาร', color: '#2563eb', darkColor: '#1d4ed8' },
+        { key: 'ยื่นข้อเสนอแล้ว', label: 'ยื่นข้อเสนอแล้ว',       color: '#7c3aed', darkColor: '#6d28d9' },
+        { key: 'ชนะ',             label: 'ชนะการประมูล',          color: '#16a34a', darkColor: '#15803d' },
+        { key: 'แพ้',             label: 'แพ้การประมูล',          color: '#dc2626', darkColor: '#b91c1c' },
+      ];
+    },
+
+    pipelineTableData() {
+      const all = [];
+      for (const stage of this.pipelineStages) {
+        all.push(...(this.pipelineKanban[stage.key] || []));
+      }
+      return all;
+    },
+
+    wonReasons() {
+      return ['ราคากลาง', 'คุณสมบัติตรงสเปก', 'ความสัมพันธ์ลูกค้า', 'ส่งเร็วกว่าคู่แข่ง', 'อื่นๆ'];
+    },
+
+    lostReasons() {
+      return ['ราคาสูงกว่าคู่แข่ง', 'ตกสเปก', 'เอกสารไม่ครบ', 'เวลาไม่พอ', 'ลูกค้าเลื่อน/ยกเลิก', 'อื่นๆ'];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!['admin','salesadmin','manager','sale'].includes(this.currentUser.role)) {
+        window.location.href = 'dashboard.html'; return;
+      }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    window.appVue = this;
+    if (this.isSecretary) this.loadSales();
+    this.loadPipeline();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async loadSales() {
+      const res = await apiCall('GET', 'api/users.php?action=sales');
+      if (res.success) this.salesUsers = res.data;
+    },
+
+    async loadPipeline() {
+      this.pipelineLoading = true;
+      const q = new URLSearchParams({ action: 'kanban' });
+      if (this.pipelineFilter.assigned_to) q.set('assigned_to', this.pipelineFilter.assigned_to);
+      try {
+        const res = await apiCall('GET', `api/assignments.php?${q}`);
+        if (res.success) {
+          this.pipelineKanban    = res.data.kanban;
+          this.pipelineStats     = res.data.stats;
+          this.pipelineSaleStats = res.data.per_sale || [];
+        }
+      } catch {}
+      this.pipelineLoading = false;
+    },
+
+    pipelineStageValue(stageKey) {
+      const cards = this.pipelineKanban[stageKey] || [];
+      const total = cards.reduce((s, c) => s + parseFloat(c.price_median || 0), 0);
+      if (!total) return '';
+      if (total >= 1000000) return '฿' + (total / 1000000).toFixed(1) + ' ล.';
+      if (total >= 1000)    return '฿' + Math.round(total / 1000) + ' K';
+      return '฿' + total.toLocaleString('th-TH');
+    },
+
+    pipelineStageIndex(status) {
+      return ['รอดำเนินการ','กำลังดำเนินการ','ยื่นข้อเสนอแล้ว'].indexOf(status);
+    },
+
+    pipelineNextStage(status) {
+      const keys = ['รอดำเนินการ','กำลังดำเนินการ','ยื่นข้อเสนอแล้ว'];
+      const idx = keys.indexOf(status);
+      return idx >= 0 && idx < keys.length - 1 ? keys[idx + 1] : null;
+    },
+
+    pipelinePrevStage(status) {
+      const keys = ['รอดำเนินการ','กำลังดำเนินการ','ยื่นข้อเสนอแล้ว'];
+      const idx = keys.indexOf(status);
+      return idx > 0 ? keys[idx - 1] : null;
+    },
+
+    pipelineStageName(status) {
+      const map = {
+        'รอดำเนินการ':    'รอคัดกรอง',
+        'กำลังดำเนินการ': 'จัดเตรียมสเปก',
+        'ยื่นข้อเสนอแล้ว':'ยื่นแล้ว',
+        'ชนะ':            'ชนะ',
+        'แพ้':            'แพ้',
+        'ยกเลิก':         'ยกเลิก',
+      };
+      return map[status] || status;
+    },
+
+    async quickMoveStage(card, newStatus) {
+      if (!newStatus) return;
+      const res = await apiCall('POST', 'api/assignments.php?action=update', { id: card.id, status: newStatus });
+      if (res.success) {
+        this.showToast('ย้าย stage สำเร็จ', 'success');
+        this.loadPipeline();
+      } else {
+        this.showToast(res.message, 'error');
+      }
+    },
+
+    openWinLossModal(card, status) {
+      this.winLossForm = { id: card.id, status, reason: '', note: '', bid_amount: card.bid_amount || null };
+      this.modal = { type: 'win-loss', data: card };
+    },
+
+    async submitWinLoss() {
+      if (!this.winLossForm.reason) { this.showToast('กรุณาเลือกเหตุผล', 'error'); return; }
+      const payload = {
+        id:              this.winLossForm.id,
+        status:          this.winLossForm.status,
+        win_loss_reason: this.winLossForm.reason,
+        win_loss_note:   this.winLossForm.note,
+      };
+      if (this.winLossForm.bid_amount) payload.bid_amount = this.winLossForm.bid_amount;
+      const res = await apiCall('POST', 'api/assignments.php?action=update', payload);
+      if (res.success) {
+        this.showToast('บันทึกสำเร็จ', 'success');
+        this.closeModal();
+        this.loadPipeline();
+      } else {
+        this.showToast(res.message, 'error');
+      }
+    },
+
+    async openAssignmentDetail(id) {
+      const res = await apiCall('GET', `api/assignments.php?action=detail&id=${id}`);
+      if (res.success) this.modal = { type: 'assign-detail', data: res.data };
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

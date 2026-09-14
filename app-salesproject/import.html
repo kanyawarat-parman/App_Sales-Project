@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>นำเข้าข้อมูล</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="import" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+            <path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/>
+          </svg>
+          นำเข้าข้อมูลประมูล
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 max-w-[860px]">
+
+          <!-- Tab header -->
+          <div class="flex border-b-2 border-slate-100">
+            <button v-for="(tab, i) in tabs" :key="i" @click="switchTab(i)"
+              class="flex-1 py-3.5 border-0 bg-transparent cursor-pointer flex items-center justify-center gap-2 text-base font-medium font-sans transition-colors relative"
+              :class="activeTab===i ? 'text-teal-700 font-bold' : 'text-slate-500 hover:text-slate-700'">
+              <span :class="'src-badge ' + tab.cls">{{ tab.badge }}</span>
+              {{ tab.label }}
+              <span v-if="activeTab===i" class="absolute bottom-[-2px] left-0 right-0 h-[3px] bg-teal-700 rounded-t"></span>
+            </button>
+          </div>
+
+          <div class="p-5">
+
+            <!-- JSON import (tab 0) -->
+            <div v-show="activeTab < 1">
+              <p class="text-sm text-slate-500 mb-4 leading-relaxed">
+                เลือกไฟล์ .json จากระบบ AI หรือวาง JSON array — ระบบจะเพิ่มใหม่หรืออัพเดตถ้า project_no ซ้ำ<br>
+                ข้อมูลจะถูกบันทึกแหล่งที่มาเป็น <span class="src-badge src-egp">e-GP</span>
+              </p>
+
+              <div class="mb-4">
+                <label class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  เลือกไฟล์ JSON
+                  <input type="file" accept=".json" class="hidden" @change="loadJsonFile">
+                </label>
+                <span v-if="importFileName" class="ml-3 text-sm text-slate-600">{{ importFileName }}</span>
+              </div>
+
+              <div v-if="jsonResult"
+                class="px-4 py-3 mb-4 rounded-lg text-sm"
+                :class="jsonResult.ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+                {{ jsonResult.message }}
+              </div>
+
+              <div class="flex flex-col gap-1 mb-4">
+                <label class="block text-sm font-semibold text-slate-600">JSON Data</label>
+                <textarea v-model="importJson" rows="16"
+                  placeholder='[&#10;  {&#10;    "project_no": "...",&#10;    "project_name": "...",&#10;    "announce_date": "2026-07-29",&#10;    "close_date": "2026-08-05",&#10;    "price_median": 500000,&#10;    "can_bid": "ได้",&#10;    "unit_name": "..."&#10;  }&#10;]'
+                  class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white font-mono resize-y"></textarea>
+              </div>
+
+              <div class="flex gap-3">
+                <button @click="submitJson" :disabled="!importJson.trim() || jsonLoading"
+                  class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                  <span v-if="jsonLoading" class="spinner w-3.5 h-3.5" style="border-width:2px"></span>
+                  <span v-else>นำเข้าข้อมูล</span>
+                </button>
+                <button @click="clearJson"
+                  class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+                  ล้าง
+                </button>
+              </div>
+            </div>
+
+            <!-- Manual entry (tab 1) -->
+            <div v-show="activeTab === 1">
+              <p class="text-sm text-slate-500 mb-5 leading-relaxed">
+                กรอกข้อมูลโครงการประมูล e-GP ที่ทราบมาด้วยตนเอง — ข้อมูลจะถูกบันทึกแหล่งที่มาเป็น <span class="src-badge src-egp">e-GP</span>
+              </p>
+
+              <div v-if="manualResult"
+                class="px-4 py-3 mb-4 rounded-lg text-sm"
+                :class="manualResult.ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+                {{ manualResult.message }}
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div class="flex flex-col gap-1 col-span-2">
+                  <label class="block text-sm font-semibold text-slate-600">ชื่อโครงการ <span class="text-red-500">*</span></label>
+                  <input v-model="manualForm.project_name" type="text" placeholder="ระบุชื่อโครงการประมูล"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+
+                <div class="flex flex-col gap-1 col-span-2">
+                  <label class="block text-sm font-semibold text-slate-600">หน่วยงานเจ้าของโครงการ</label>
+                  <input v-model="manualForm.unit_name" type="text" placeholder="ชื่อหน่วยงาน / องค์กร"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="block text-sm font-semibold text-slate-600">วันที่ประกาศ <span class="text-red-500">*</span></label>
+                  <input v-model="manualForm.announce_date" type="date"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="block text-sm font-semibold text-slate-600">วันปิดรับข้อเสนอ</label>
+                  <input v-model="manualForm.close_date" type="date"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="block text-sm font-semibold text-slate-600">ราคากลาง (บาท)</label>
+                  <input v-model="manualForm.price_median" type="number" min="0" step="0.01" placeholder="0.00"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="block text-sm font-semibold text-slate-600">ยื่นประมูลได้</label>
+                  <select v-model="manualForm.can_bid"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                    <option value="ได้">ได้</option>
+                    <option value="ต้องตรวจสอบ">ต้องตรวจสอบ</option>
+                    <option value="ไม่ได้">ไม่ได้</option>
+                  </select>
+                </div>
+
+                <div class="flex flex-col gap-1 col-span-2">
+                  <label class="block text-sm font-semibold text-slate-600">ลิงก์ประกาศ / URL</label>
+                  <input v-model="manualForm.url" type="url" placeholder="https://..."
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+
+                <div class="flex flex-col gap-1 col-span-2">
+                  <label class="block text-sm font-semibold text-slate-600">หมายเหตุ / รายละเอียดเพิ่มเติม</label>
+                  <textarea v-model="manualForm.reason" rows="3"
+                    placeholder="เหตุผลที่ยื่นได้หรือไม่ได้, รายละเอียดเพิ่มเติม..."
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+                </div>
+
+                <div class="flex flex-col gap-1 col-span-2">
+                  <label class="block text-xs font-semibold text-slate-400">เลขอ้างอิง (ระบบสร้างให้อัตโนมัติถ้าไม่กรอก)</label>
+                  <input v-model="manualForm.project_no" type="text" placeholder="MAN-YYYYMMDD-XXXX"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white font-mono text-slate-500">
+                </div>
+              </div>
+
+              <div class="flex gap-3 mt-4">
+                <button @click="submitManual" :disabled="manualLoading"
+                  class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                  <span v-if="manualLoading" class="spinner w-3.5 h-3.5" style="border-width:2px"></span>
+                  <span v-else>บันทึกโครงการ</span>
+                </button>
+                <button @click="clearManual"
+                  class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+                  ล้าง
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <app-modal ref="appModal"></app-modal>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppTabBar, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      activeTab: 0,
+      tabs: [
+        { label: 'ประกาศ e-GP', badge: 'e-GP',    cls: 'src-egp', source: 'egp' },
+        { label: 'แจ้งเอง',     badge: 'แจ้งเอง', cls: 'src-egp', source: 'egp' },
+      ],
+      importJson: '',
+      importFileName: '',
+      jsonResult: null,
+      jsonLoading: false,
+      manualForm: {
+        project_no: '', project_name: '', unit_name: '',
+        announce_date: '', close_date: '', price_median: '',
+        url: '', can_bid: 'ต้องตรวจสอบ', reason: '',
+      },
+      manualResult: null,
+      manualLoading: false,
+    };
+  },
+  computed: {
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'ประกาศ', icon:'bell', href:'announcements.html' },
+        { label:'นำเข้า', icon:'import', active:true },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!['admin'].includes(this.currentUser.role)) {
+        window.location.href = 'dashboard.html'; return;
+      }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+  },
+  methods: {
+    ...SharedMethods,
+
+    switchTab(i) {
+      this.activeTab = i;
+      this.jsonResult = null;
+      this.manualResult = null;
+    },
+
+
+    async submitJson() {
+      let items;
+      try { items = JSON.parse(this.importJson); } catch {
+        await this.showAlert('JSON ไม่ถูกต้อง กรุณาตรวจสอบรูปแบบ', 'error'); return;
+      }
+      if (!Array.isArray(items)) items = [items];
+      const source_type = this.tabs[this.activeTab].source;
+      this.jsonLoading = true;
+      this.jsonResult = null;
+      const res = await apiCall('POST', 'api/announcements.php?action=import', { items, source_type });
+      this.jsonLoading = false;
+      this.jsonResult = { ok: res.success, message: res.message };
+      await this.showAlert(res.message, res.success ? 'success' : 'error');
+    },
+
+    clearJson() {
+      this.importJson = '';
+      this.importFileName = '';
+      this.jsonResult = null;
+    },
+
+    genProjectNo() {
+      const d = new Date();
+      const ymd = d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
+      const rand = String(Math.floor(Math.random() * 9000) + 1000);
+      return 'MAN-' + ymd + '-' + rand;
+    },
+
+    async submitManual() {
+      if (!this.manualForm.project_name.trim()) {
+        await this.showAlert('กรุณากรอกชื่อโครงการ', 'error'); return;
+      }
+      if (!this.manualForm.announce_date) {
+        await this.showAlert('กรุณาระบุวันที่ประกาศ', 'error'); return;
+      }
+      const item = {
+        project_no:    this.manualForm.project_no.trim() || this.genProjectNo(),
+        project_name:  this.manualForm.project_name,
+        unit_name:     this.manualForm.unit_name     || null,
+        announce_date: this.manualForm.announce_date,
+        close_date:    this.manualForm.close_date    || null,
+        price_median:  this.manualForm.price_median  ? parseFloat(this.manualForm.price_median) : null,
+        url:           this.manualForm.url           || null,
+        can_bid:       this.manualForm.can_bid,
+        reason:        this.manualForm.reason        || null,
+        filter_status: 'ตรง',
+      };
+      this.manualLoading = true;
+      this.manualResult = null;
+      const res = await apiCall('POST', 'api/announcements.php?action=import', { items: [item], source_type: this.tabs[this.activeTab].source });
+      this.manualLoading = false;
+      this.manualResult = { ok: res.success, message: res.message };
+      await this.showAlert(res.message, res.success ? 'success' : 'error');
+      if (res.success) this.clearManual();
+    },
+
+    clearManual() {
+      this.manualForm = {
+        project_no: '', project_name: '', unit_name: '',
+        announce_date: '', close_date: '', price_median: '',
+        url: '', can_bid: 'ต้องตรวจสอบ', reason: '',
+      };
+      this.manualResult = null;
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

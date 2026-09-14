@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ปฏิทินเวร</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <!-- app-nav อยู่ในคอนเทนเนอร์ h-screen เดียวกับ header/main (ไม่ใช่ sibling แยกแบบหน้าอื่น) เพราะหน้านี้ตั้งใจให้พอดี
+         1 จอโดยไม่ต้องเลื่อน เหมือน company-calendar.html — ถ้าวาง app-nav ไว้นอก div แล้วให้ div เป็น h-screen จะสูงเกิน 100vh -->
+    <div class="h-screen flex flex-col overflow-hidden">
+      <app-nav :user="currentUser" page="duty-calendar" ref="nav"></app-nav>
+
+      <header class="bg-white border-b border-slate-100 px-5 py-2 flex items-center gap-3 shadow-sm flex-wrap min-h-[56px] shrink-0">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          ปฏิทินเวร
+        </h1>
+        <!-- เลือกแหล่งงานที่จะดู/สร้างเวร — แต่ละแหล่งมีเวร/ปฏิทินอ้างอิงเป็นของตัวเอง (rotation_configs) ไม่ต้องมีเมนูแยกทีละแหล่ง -->
+        <select v-model="sourceType" @change="onSourceChange"
+          class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          <option v-for="s in sourcesList" :key="s.source_type" :value="s.source_type">{{ s.label }}</option>
+        </select>
+        <div class="flex items-center gap-2 ml-auto">
+          <button @click="prevMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="text-sm font-bold text-slate-700 min-w-[130px] text-center">{{ monthLabel }}</div>
+          <button @click="nextMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <a :href="`holidays.html?calendar=${dutyCalendarCode}`"
+            class="ml-2 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 whitespace-nowrap no-underline">
+            จัดการวันหยุด
+          </a>
+          <button @click="generateYear" :disabled="generating"
+            class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap">
+            {{ generating ? 'กำลังสร้าง...' : `สร้างเวรทั้งปี ${beYear(year)}` }}
+          </button>
+        </div>
+      </header>
+
+      <main class="flex-1 min-h-0 w-full max-w-[1280px] mx-auto px-4 py-3 md:px-6 md:py-3 flex flex-col">
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-3 flex-1 min-h-0 flex flex-col">
+
+          <!-- คำอธิบายสี -->
+          <div class="flex items-center gap-4 flex-wrap text-xs text-slate-500 mb-2 px-1 shrink-0">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-orange-200 inline-block"></span> วันหยุด</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-teal-500 inline-block"></span> มีคนเวร</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full border-2 border-teal-500 inline-block"></span> สลับ/แก้มือ</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full border-2 border-dashed border-amber-400 inline-block"></span> คาดการณ์ (ยังไม่ได้สร้างเวรจริง)</span>
+            <span class="text-slate-400">คลิกวันที่เพื่อแก้ไข</span>
+          </div>
+
+          <div v-if="loading" class="flex-1 flex items-center justify-center text-slate-400">กำลังโหลด...</div>
+
+          <template v-else>
+            <div class="grid grid-cols-7 gap-1.5 mb-1.5 shrink-0">
+              <div v-for="d in dayLabels" :key="d" class="text-center text-xs font-bold text-slate-400 py-1">{{ d }}</div>
+            </div>
+            <!-- จำนวนแถวคำนวณจากเดือนจริง (5 หรือ 6 แถว) แล้วให้แต่ละแถวยืด/หดเท่ากันจนเต็มพื้นที่ที่เหลือพอดี ไม่ต้องเลื่อนจอ (เหมือน company-calendar.html) -->
+            <div class="grid grid-cols-7 gap-1.5 flex-1 min-h-0" :style="{ gridTemplateRows: `repeat(${numWeeks}, 1fr)` }">
+              <div v-for="(cell, idx) in calendarCells" :key="idx"
+                   class="rounded-xl border p-2 flex flex-col transition-colors overflow-hidden"
+                   :class="[
+                     cell ? 'cursor-pointer hover:ring-2 hover:ring-teal-200' : 'bg-transparent border-transparent',
+                     cell && (cell.info?.holiday || !cell.isWorkDay) ? 'bg-orange-50 border-orange-200' : cell ? 'bg-white border-slate-100' : '',
+                     cell && cell.isToday ? 'ring-2 ring-teal-400' : ''
+                   ]"
+                   @click="cell && openDay(cell.date)">
+                <template v-if="cell">
+                  <!-- หน้านี้เป็นปฏิทินเวรล้วนๆ ไม่ต้องแสดงจำนวนประกาศ (ต่างจาก company-calendar.html ที่เน้นจำนวนประกาศเป็นหลัก) -->
+                  <span class="text-xs font-semibold text-slate-400 leading-none shrink-0">{{ cell.day }}</span>
+
+                  <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-1">
+                    <span v-if="cell.info?.holiday" class="text-[11px] text-orange-700 font-semibold text-center leading-tight line-clamp-2">{{ cell.info.holiday.name }}</span>
+                    <template v-else-if="cell.info?.duty">
+                      <img v-if="cell.info.duty.photo_url" :src="cell.info.duty.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"
+                           :class="cell.info.duty.computed ? 'opacity-60 border-2 border-dashed border-amber-400' : (cell.info.duty.manual ? 'ring-2 ring-teal-500' : '')"/>
+                      <div v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
+                           :class="cell.info.duty.computed ? 'opacity-60 border-2 border-dashed border-amber-400' : (cell.info.duty.manual ? 'ring-2 ring-teal-500' : '')"
+                           :style="{background: cell.info.duty.avatar_color || '#64748b'}">{{ avatarInitials(cell.info.duty.full_name) }}</div>
+                      <span class="text-xs truncate" :class="cell.info.duty.computed ? 'text-amber-600 italic' : 'text-slate-600'">{{ (cell.info.duty.full_name||'').split(' ')[0] }}</span>
+                    </template>
+                    <span v-else-if="!cell.isWorkDay" class="text-[11px] text-orange-600 font-semibold text-center">วันหยุดสุดสัปดาห์</span>
+                    <span v-else class="text-sm text-slate-300">-</span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modal แก้ไขวัน -->
+    <div v-if="editModal.date" class="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center p-4" @click.self="closeDay">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] p-5">
+        <div class="text-sm font-bold text-slate-700 mb-4">{{ formatThaiDate(editModal.date) }}</div>
+
+        <label class="flex items-center gap-2 mb-4 cursor-pointer">
+          <input type="checkbox" v-model="editModal.isHoliday" class="accent-orange-500 w-4 h-4">
+          <span class="text-sm font-semibold text-slate-600">ตั้งเป็นวันหยุด</span>
+        </label>
+
+        <div v-if="editModal.isHoliday" class="flex flex-col gap-1 mb-4">
+          <label class="text-xs font-semibold text-slate-500">ชื่อวันหยุด</label>
+          <input type="text" v-model="editModal.holidayName" placeholder="เช่น วันแม่แห่งชาติ"
+            class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+        </div>
+
+        <div v-else class="flex flex-col gap-1 mb-4">
+          <label class="text-xs font-semibold text-slate-500">คนเวร</label>
+          <select v-model="editModal.userId"
+            class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <option :value="null">— ไม่มีเวร —</option>
+            <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+          </select>
+          <label class="text-xs font-semibold text-slate-500 mt-2">หมายเหตุ (ถ้ามี)</label>
+          <input type="text" v-model="editModal.note" placeholder="เช่น สลับเวรกับคุณ..."
+            class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+        </div>
+
+        <div class="flex justify-end gap-2 mt-2">
+          <button @click="closeDay" type="button"
+            class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ปิด</button>
+          <button @click="saveDay" :disabled="saving" type="button"
+            class="px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-60">
+            {{ saving ? 'กำลังบันทึก...' : 'บันทึก' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    const now = new Date();
+    return {
+      authReady: false,
+      currentUser: null,
+      sourceType: 'egp', // แหล่งงานที่กำลังดูปฏิทินเวรอยู่ — เลือกได้จาก dropdown ในหน้า (ค่าเริ่มต้นมาจาก ?source=xxx ใน URL ถ้ามี) แต่ละแหล่งมีเวร/ปฏิทินอ้างอิงเป็นของตัวเอง
+      sourcesList: [], // จาก api/sources.php — master list แหล่งงานทั้งหมด ไม่ hardcode ชื่อ/รายการที่นี่
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      calendarData: {},
+      salesUsers: [],
+      holidayIndex: {},
+      loading: false,
+      generating: false,
+      saving: false,
+      editModal: { date: null, isHoliday: false, holidayName: '', userId: null, note: '' },
+      calendarsList: [],
+      rotationConfig: null, // ค่าตั้งเวรของ sourceType นี้ (จาก api/rotation.php?action=config) เอามาแค่รู้ว่าปฏิทินอ้างอิงคือตัวไหน
+      dayLabels: ['จ','อ','พ','พฤ','ศ','ส','อา'],
+      thMonths: ['','มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'],
+    };
+  },
+  computed: {
+    // ปฏิทิน (calendars.code) ที่ผูกกับเวรของแหล่งงานนี้อยู่ตอนนี้ — ใช้ลิงก์ไปหน้าจัดการวันหยุดให้ตรงปฏิทิน
+    dutyCalendarCode() {
+      return this.rotationConfig?.calendar_code || 'CAL-01';
+    },
+    monthLabel() {
+      return `${this.thMonths[this.month]} ${this.beYear(this.year)}`;
+    },
+    // วันทำงานของปฏิทินเวร (dutyCalendarCode) — ใช้บอกว่าวันไหน "ไม่ใช่วันทำงานประจำสัปดาห์" (เช่น เสาร์-อาทิตย์ของปฏิทินที่ทำงาน จ-ศ)
+    // แยกจาก "วันหยุด" จริง (calendar_holidays) ที่มีชื่อเฉพาะ — เหมือนหลักการเดียวกับ company-calendar.html
+    dutyWorkDays() {
+      const cal = this.calendarsList.find(c => c.code === this.dutyCalendarCode);
+      return cal ? cal.work_days.split(',').map(Number) : [1,2,3,4,5,6];
+    },
+    calendarCells() {
+      const first = new Date(this.year, this.month - 1, 1);
+      const startOffset = (first.getDay() + 6) % 7; // จันทร์=0
+      const daysInMonth = new Date(this.year, this.month, 0).getDate();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const cells = [];
+      for (let i = 0; i < startOffset; i++) cells.push(null);
+      for (let d = 1; d <= daysInMonth; d++) {
+        const mm = String(this.month).padStart(2, '0');
+        const dd = String(d).padStart(2, '0');
+        const date = `${this.year}-${mm}-${dd}`;
+        const dow = new Date(this.year, this.month - 1, d).getDay();
+        const isoDow = dow === 0 ? 7 : dow;
+        const isWorkDay = this.dutyWorkDays.includes(isoDow);
+        cells.push({ date, day: d, isToday: date === todayStr, info: this.calendarData[date] || null, isWorkDay });
+      }
+      return cells;
+    },
+    // จำนวนแถวจริงของเดือนนี้ (5 หรือ 6) — ใช้กำหนด grid-template-rows ให้เต็มพื้นที่ที่เหลือพอดี ไม่ต้องเลื่อนจอ
+    numWeeks() {
+      return Math.ceil(this.calendarCells.length / 7);
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!['admin', 'salesadmin'].includes(this.currentUser.role)) {
+        window.location.href = 'dashboard.html'; return;
+      }
+    } catch { window.location.href = 'login.html'; return; }
+    await this.loadSources();
+    this.sourceType = new URLSearchParams(window.location.search).get('source') || this.sourcesList[0]?.source_type || 'egp';
+    this.authReady = true;
+    // ต้องรู้ dutyCalendarCode (จาก loadRotationConfig) ก่อน ค่อยโหลดวันหยุด/เดือนต่อ ไม่งั้น loadMonth จะยิงด้วยปฏิทิน default ผิดตัว
+    await Promise.all([this.loadSales(), this.loadCalendars(), this.loadRotationConfig()]);
+    await this.loadMonth();
+  },
+  methods: {
+    ...SharedMethods,
+
+    beYear(y) { return y + 543; },
+
+    formatThaiDate(dateStr) {
+      const [y, m, d] = dateStr.split('-');
+      return `${parseInt(d)} ${this.thMonths[parseInt(m)]} ${this.beYear(parseInt(y))}`;
+    },
+
+    async loadSources() {
+      const r = await apiCall('GET', 'api/sources.php?action=list');
+      this.sourcesList = r.success ? r.data : [];
+    },
+
+    // เปลี่ยนแหล่งงานในหน้าเดียวกัน — โหลดเวร/ปฏิทินของแหล่งใหม่มาแทน ไม่ต้องเปลี่ยนหน้า/URL
+    async onSourceChange() {
+      const url = new URL(window.location.href);
+      url.searchParams.set('source', this.sourceType);
+      window.history.replaceState({}, '', url);
+      await this.loadRotationConfig();
+      await this.loadMonth();
+    },
+
+    async loadRotationConfig() {
+      const r = await apiCall('GET', `api/rotation.php?action=config&source_type=${this.sourceType}`);
+      this.rotationConfig = r.success ? r.data : null;
+    },
+
+    async loadMonth() {
+      this.loading = true;
+      // วันหยุดที่แสดง อิงปฏิทินที่ตั้งไว้ให้ sourceType นี้ (api/calendar.php ไปหาเองจาก rotation_configs)
+      const [calRes, holRes] = await Promise.all([
+        apiCall('GET', `api/calendar.php?action=month&year=${this.year}&month=${this.month}&source_type=${this.sourceType}`),
+        apiCall('GET', `api/holidays.php?action=calendar_holidays&code=${this.dutyCalendarCode}&year=${this.year}`),
+      ]);
+      this.calendarData = calRes.success ? calRes.data : {};
+      this.holidayIndex = {};
+      if (holRes.success) holRes.data.forEach(h => { this.holidayIndex[h.holiday_date] = h.id; });
+      this.loading = false;
+    },
+
+    prevMonth() {
+      this.month--; if (this.month < 1) { this.month = 12; this.year--; }
+      this.loadMonth();
+    },
+    nextMonth() {
+      this.month++; if (this.month > 12) { this.month = 1; this.year++; }
+      this.loadMonth();
+    },
+
+    openDay(date) {
+      const info = this.calendarData[date] || {};
+      this.editModal = {
+        date,
+        isHoliday: !!info.holiday,
+        holidayName: info.holiday?.name || '',
+        userId: info.duty?.id || null,
+        note: '',
+      };
+    },
+    closeDay() {
+      this.editModal = { date: null, isHoliday: false, holidayName: '', userId: null, note: '' };
+    },
+
+    async saveDay() {
+      const { date, isHoliday, holidayName, userId, note } = this.editModal;
+      this.saving = true;
+      try {
+        if (isHoliday) {
+          if (!holidayName.trim()) { await this.showAlert('กรุณาระบุชื่อวันหยุด', 'error'); this.saving = false; return; }
+          // เพิ่มจากปฏิทินเวรแบบนี้ ใส่ให้ปฏิทินที่ผูกกับเวรของ sourceType นี้เท่านั้น (dutyCalendarCode)
+          // ถ้าต้องการเพิ่มวันหยุดให้ปฏิทินอื่นด้วย ให้ไปที่หน้า "เพิ่มวันหยุด" แล้วเลือกปฏิทินนั้นแทน
+          const dutyCal = this.calendarsList.find(c => c.code === this.dutyCalendarCode);
+          if (dutyCal) {
+            await apiCall('POST', 'api/holidays.php?action=add', { calendar_id: dutyCal.id, holiday_date: date, name: holidayName.trim() });
+          }
+          await apiCall('POST', 'api/rotation.php?action=set_day', { duty_date: date, source_type: this.sourceType, user_id: null, note: 'วันหยุด' });
+        } else {
+          const existingHolidayId = this.holidayIndex[date];
+          if (existingHolidayId) {
+            await apiCall('POST', 'api/holidays.php?action=delete', { id: existingHolidayId });
+          }
+          await apiCall('POST', 'api/rotation.php?action=set_day', { duty_date: date, source_type: this.sourceType, user_id: userId, note });
+        }
+        this.closeDay();
+        await this.loadMonth();
+        await this.showAlert('บันทึกเรียบร้อย', 'success');
+      } catch {
+        await this.showAlert('เกิดข้อผิดพลาด', 'error');
+      }
+      this.saving = false;
+    },
+
+    async loadCalendars() {
+      const res = await apiCall('GET', 'api/calendars.php?action=list');
+      this.calendarsList = res.success ? res.data : [];
+    },
+
+    async generateYear() {
+      // เตือนก่อนสร้างเสมอ — ระบบข้ามวันหยุดตามรายการที่มีอยู่ ณ ตอนกดปุ่มเท่านั้น ถ้าวันหยุดยังใส่ไม่ครบ วันนั้นจะได้คนเวรผิดๆ ไปเลย
+      const ok = await this.showConfirm(
+        'ตรวจสอบวันหยุดให้ครบก่อนสร้าง',
+        `ระบบจะข้ามเฉพาะวันหยุดที่มีอยู่ในระบบตอนนี้เท่านั้น ถ้าวันหยุดของปี ${this.beYear(this.year)} ยังใส่ไม่ครบ วันนั้นจะถูกกำหนดคนเวรผิดพลาด — กด "จัดการวันหยุด" เช็คให้ครบก่อน แล้วค่อยกดยืนยันด้านล่าง (วันที่เคยสลับ/แก้มือไว้จะไม่ถูกทับ)`,
+        'ยืนยันว่าตรวจสอบแล้ว สร้างเลย',
+      );
+      if (!ok) return;
+      this.generating = true;
+      const r = await apiCall('POST', 'api/rotation.php?action=generate_year', { year: this.year, source_type: this.sourceType });
+      this.generating = false;
+      if (r.success) {
+        await this.loadMonth();
+        await this.showAlert(r.message || 'สร้างเวรทั้งปีสำเร็จ', 'success');
+      } else {
+        await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error');
+      }
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ประกาศที่มอบหมาย</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="my-assignments" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          ประกาศที่มอบหมาย
+        </h1>
+        <button @click="loadAssignments"
+          class="ml-auto p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 border-0 bg-transparent cursor-pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+          </svg>
+        </button>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <!-- Summary cards -->
+        <div class="grid grid-cols-4 gap-2 mb-4">
+          <div @click="activeTab='pending'"
+            class="bg-white rounded-xl p-3 text-center cursor-pointer transition-all ring-1"
+            :class="activeTab==='pending' ? 'ring-orange-400 shadow-md' : 'ring-orange-200 hover:ring-orange-300'">
+            <div class="text-xl font-bold" :class="counts.pending>0 ? 'text-orange-500' : 'text-slate-400'">{{ counts.pending }}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5 leading-tight">รอรับงาน</div>
+          </div>
+          <div @click="activeTab='active'"
+            class="bg-white rounded-xl p-3 text-center cursor-pointer transition-all ring-1"
+            :class="activeTab==='active' ? 'ring-blue-400 shadow-md' : 'ring-blue-200 hover:ring-blue-300'">
+            <div class="text-xl font-bold text-blue-600">{{ counts.active }}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5 leading-tight">ดำเนินการ</div>
+          </div>
+          <div @click="activeTab='done'"
+            class="bg-white rounded-xl p-3 text-center cursor-pointer transition-all ring-1"
+            :class="activeTab==='done' ? 'ring-slate-400 shadow-md' : 'ring-slate-200 hover:ring-slate-300'">
+            <div class="text-xl font-bold text-slate-500">{{ counts.done }}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5 leading-tight">เสร็จ/ยกเลิก</div>
+          </div>
+          <div @click="activeTab='all'"
+            class="bg-white rounded-xl p-3 text-center cursor-pointer transition-all ring-1"
+            :class="activeTab==='all' ? 'ring-teal-400 shadow-md' : 'ring-slate-200 hover:ring-slate-300'">
+            <div class="text-xl font-bold text-teal-700">{{ assignments.length }}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5 leading-tight">ทั้งหมด</div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex bg-white rounded-xl ring-1 ring-slate-100 mb-4 overflow-x-auto">
+          <button v-for="tab in tabs" :key="tab.key" @click="activeTab=tab.key"
+            class="flex-1 px-3 py-3 text-sm font-medium border-0 bg-transparent cursor-pointer whitespace-nowrap relative transition-colors"
+            :class="activeTab===tab.key ? 'text-teal-700 font-bold' : 'text-slate-500 hover:text-slate-700'">
+            {{ tab.label }}
+            <span v-if="tab.key==='pending' && counts.pending > 0"
+                  class="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold bg-orange-500 text-white px-1">
+              {{ counts.pending }}
+            </span>
+            <span v-if="activeTab===tab.key" class="absolute bottom-0 left-0 right-0 h-[2px] bg-teal-700 rounded-t"></span>
+          </button>
+        </div>
+
+        <button type="button" @click="showStatusLegend=!showStatusLegend"
+          class="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 p-0 mb-2 cursor-pointer">
+          ℹ️ แต่ละแท็บนับสถานะอะไรบ้าง {{ showStatusLegend ? '▲' : '▼' }}
+        </button>
+        <div v-if="showStatusLegend" class="bg-slate-50 rounded-xl p-3 mb-4 text-xs text-slate-600 leading-relaxed">
+          <div class="mb-1"><strong class="text-slate-700">รอรับงาน</strong> = รอดำเนินการ</div>
+          <div class="mb-1"><strong class="text-slate-700">ดำเนินการ</strong> = รับงาน/ศึกษา TOR, จัดเตรียมยื่นข้อเสนอ, รอประกาศผล</div>
+          <div><strong class="text-slate-700">เสร็จ/ยกเลิก</strong> = ชนะการประมูล, แพ้การประมูล, ส่งมอบแล้ว, ยกเลิก</div>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="loading" class="flex justify-center py-12">
+          <div class="spinner w-8 h-8"></div>
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="!filteredAssignments.length" class="flex flex-col items-center justify-center py-14 text-slate-400">
+          <div class="text-4xl mb-3">{{ activeTab==='pending' ? '✅' : '📭' }}</div>
+          <p class="text-sm">{{ activeTab==='pending' ? 'รับงานครบทุกรายการแล้ว!' : 'ไม่มีงานในหมวดนี้' }}</p>
+        </div>
+
+        <!-- List -->
+        <div v-else class="flex flex-col gap-3">
+          <div v-for="a in filteredAssignments" :key="a.id"
+            class="bg-white rounded-xl shadow-sm ring-1 overflow-hidden transition-shadow hover:shadow-md"
+            :class="a.status==='รอดำเนินการ' ? 'ring-orange-300' : a.sla_status==='เกิน' ? 'ring-red-200' : 'ring-slate-100'">
+
+            <!-- Pending banner -->
+            <div v-if="a.status==='รอดำเนินการ'"
+                 class="bg-orange-50 border-b border-orange-200 px-4 py-2 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0"></span>
+                <span class="text-xs font-bold text-orange-700">รอรับงาน — กรุณาตรวจสอบรายละเอียดก่อนตัดสินใจ</span>
+              </div>
+              <span class="text-[11px] text-orange-500 shrink-0 ml-2">{{ formatDateThai(a.assigned_at) }}</span>
+            </div>
+
+            <div class="p-4">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                  <div class="flex gap-1.5 flex-wrap mb-1.5">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="statusBadge(a.status)">{{ a.status }}</span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(a.priority)">{{ a.priority }}</span>
+                    <span v-if="a.sla_status==='เกิน'" class="text-xs font-bold text-red-600">⚠ เกิน SLA</span>
+                    <span v-else-if="a.sla_status==='ใกล้ถึง'" class="text-xs font-semibold text-amber-600">⏰ ใกล้ถึง SLA</span>
+                  </div>
+                  <!-- รหัสงานกลาง (project_code) + เลขโครงการ e-GP (project_no) — ใส่ label กำกับให้ชัดว่าคนละเลขกัน -->
+                  <div class="flex items-center gap-1 mb-0.5 flex-wrap">
+                    <template v-if="a.project_code">
+                      <span class="text-[10px] text-slate-400">รหัสงาน</span>
+                      <span class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ a.project_code }}</span>
+                    </template>
+                    <span class="text-[10px] text-slate-400 ml-1.5">เลขที่โครงการ</span>
+                    <span class="text-[11px] text-slate-400 font-mono">{{ a.project_no }}</span>
+                  </div>
+                  <h4 class="font-bold text-slate-800 text-sm mb-0.5 line-clamp-2 cursor-pointer hover:text-teal-700"
+                      @click="openDetail(a.id)">{{ a.project_name }}</h4>
+                  <p class="text-xs text-slate-400">{{ a.unit_name }}</p>
+                </div>
+
+                <div class="flex flex-col gap-1.5 shrink-0">
+                  <!-- รับทราบ — เปิด modal ตัดสินใจจุดเดียว (เข้าประมูลได้/ไม่ได้) ไม่แยกปุ่ม รับงาน/ไม่รับงาน
+                       เพราะทำให้ sale สับสนว่าต้องกดปุ่มไหนก่อน ทั้งที่ modal ถามซ้ำอยู่ดี -->
+                  <button v-if="a.status==='รอดำเนินการ'"
+                    class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white border-0 cursor-pointer"
+                    @click="openDecisionModal(a)">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    รับทราบ-ตัดสินใจ
+                  </button>
+                  <button class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 border-0 cursor-pointer"
+                    @click="openDetail(a.id)">รายละเอียด</button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-1 mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                <div class="col-span-2"><span class="text-slate-400">วันที่ประกาศ:</span> <span class="ml-1">{{ formatDateThai(a.announce_date) }}</span></div>
+                <div>
+                  <span class="text-slate-400">ปิดรับ:</span>
+                  <span class="ml-1 font-medium" :class="urgentClose(a.close_date) ? 'text-red-600 font-bold' : ''">{{ formatDateThai(a.close_date) }}</span>
+                </div>
+                <div><span class="text-slate-400">ราคากลาง:</span> <span class="ml-1">{{ formatPrice(a.price_median) }}</span></div>
+                <div class="col-span-2"><span class="text-slate-400">มอบหมายโดย:</span> <span class="ml-1">{{ a.secretary_name }}</span></div>
+                <div class="col-span-2"><span class="text-slate-400">วันเวลาที่มอบหมาย:</span> <span class="ml-1">{{ formatDateTimeThai(a.assigned_at) }}</span></div>
+              </div>
+
+              <div v-if="a.secretary_notes" class="mt-2 text-xs bg-blue-50 text-blue-800 rounded-lg px-3 py-2">
+                <span class="font-semibold">ธุรการ:</span> {{ a.secretary_notes }}
+              </div>
+              <div v-if="a.sale_notes && a.status!=='รอดำเนินการ'" class="mt-1.5 text-xs bg-green-50 text-green-800 rounded-lg px-3 py-2">
+                <span class="font-semibold">บันทึก:</span> {{ a.sale_notes }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Mobile nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- MODALS -->
+    <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
+      v-if="modal.type" @click.self="closeModal">
+
+      <!-- รับทราบ / ตัดสินใจ Modal — จุดตัดสินใจเดียว ไม่ preset ค่า ได้/ไม่ได้ ล่วงหน้า บังคับให้ sale เลือกเองก่อนบันทึกได้ -->
+      <div v-if="modal.type==='accept'" class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-gradient-to-br from-orange-600 to-amber-500 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">รับทราบ-ตัดสินใจ</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <div class="flex items-center gap-1 mb-1 flex-wrap">
+            <template v-if="modal.data?.project_code">
+              <span class="text-[10px] text-slate-400">รหัสงาน</span>
+              <span class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ modal.data?.project_code }}</span>
+            </template>
+            <span class="text-[10px] text-slate-400 ml-1.5">เลขที่โครงการ</span>
+            <span class="text-xs font-mono text-slate-400">{{ modal.data?.project_no }}</span>
+          </div>
+          <p class="text-sm font-semibold text-slate-700 mb-4 line-clamp-2">{{ modal.data?.project_name }}</p>
+          <div class="mb-4">
+            <label class="block text-sm font-semibold text-slate-600 mb-2">เข้าประมูลได้หรือไม่? <span class="text-red-500">*</span></label>
+            <div class="flex gap-3">
+              <label class="flex flex-col gap-1 cursor-pointer flex-1 border rounded-xl p-3 transition-colors"
+                     :class="acceptForm.can_bid==='ได้' ? 'border-teal-500 bg-teal-50' : 'border-slate-200'">
+                <span class="flex items-center gap-2">
+                  <input type="radio" v-model="acceptForm.can_bid" value="ได้" class="accent-teal-500">
+                  <span class="text-sm font-medium text-slate-700">เข้าประมูลได้</span>
+                </span>
+                <span class="text-[11px] text-slate-400 pl-6">→ สถานะ "รับงาน/ศึกษา TOR"</span>
+              </label>
+              <label class="flex flex-col gap-1 cursor-pointer flex-1 border rounded-xl p-3 transition-colors"
+                     :class="acceptForm.can_bid==='ไม่ได้' ? 'border-red-400 bg-red-50' : 'border-slate-200'">
+                <span class="flex items-center gap-2">
+                  <input type="radio" v-model="acceptForm.can_bid" value="ไม่ได้" class="accent-red-500">
+                  <span class="text-sm font-medium text-slate-700">เข้าประมูลไม่ได้</span>
+                </span>
+                <span class="text-[11px] text-slate-400 pl-6">→ สถานะ "ยกเลิก"</span>
+              </label>
+            </div>
+          </div>
+          <div v-if="acceptForm.can_bid==='ไม่ได้'" class="mb-4">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">เหตุผล <span class="text-red-500">*</span></label>
+            <textarea v-model="acceptForm.reason" rows="3" placeholder="ระบุเหตุผลที่ไม่สามารถเข้าประมูลได้..."
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+          </div>
+          <div v-if="acceptForm.can_bid" class="rounded-xl p-3 text-sm"
+               :class="acceptForm.can_bid==='ได้' ? 'bg-teal-50 border border-teal-100 text-teal-700' : 'bg-red-50 border border-red-100 text-red-700'">
+            <span v-if="acceptForm.can_bid==='ได้'">สถานะจะเปลี่ยนเป็น <strong>รับงาน/ศึกษา TOR</strong> — จะไปอยู่ที่แท็บ <strong>"ดำเนินการ"</strong></span>
+            <span v-else>สถานะจะเปลี่ยนเป็น <strong>ยกเลิก</strong> — จะไปอยู่ที่แท็บ <strong>"เสร็จ/ยกเลิก"</strong></span>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="px-4 py-2 rounded-xl text-sm font-semibold border-0 text-white"
+            :class="!acceptForm.can_bid ? 'bg-slate-300 cursor-not-allowed' : acceptForm.can_bid==='ได้' ? 'bg-teal-700 hover:bg-teal-800 cursor-pointer' : 'bg-red-500 hover:bg-red-600 cursor-pointer'"
+            :disabled="!acceptForm.can_bid"
+            @click="submitAccept">บันทึก</button>
+        </div>
+      </div>
+
+      <!-- Detail Modal -->
+      <div v-if="modal.type==='detail'" class="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between shrink-0">
+          <div>
+            <h3 class="font-bold text-lg">รายละเอียดงาน</h3>
+          </div>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-6">
+          <div class="flex gap-2 flex-wrap mb-4">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
+            <span class="text-sm" :class="slaClass(modal.data.sla_status)">
+              {{ modal.data.sla_status==='เกิน' ? '⚠ เกิน SLA' : modal.data.sla_status==='ใกล้ถึง' ? '⏰ ใกล้ถึง SLA' : 'SLA ปกติ' }}
+            </span>
+          </div>
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ข้อมูลโครงการ</div>
+            <div v-if="modal.data.project_code" class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">รหัสงาน</span><span class="text-sm font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block">{{ modal.data.project_code }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">เลขที่โครงการ</span><span class="text-sm text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ชื่อโครงการ</span><span class="text-sm text-slate-700 font-semibold">{{ modal.data.project_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">หน่วยงาน</span><span class="text-sm text-slate-700">{{ modal.data.unit_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-green-600">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <div v-if="modal.data.url" class="flex gap-2 py-1.5 border-b border-slate-50">
+              <span class="text-sm text-slate-400 min-w-[120px] shrink-0">ลิงก์ประกาศ</span>
+              <a :href="modal.data.url" target="_blank" rel="noopener" class="text-blue-600 text-sm hover:underline">เปิดประกาศ ↗</a>
+            </div>
+          </div>
+
+          <div v-if="modal.data.items" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายการสินค้าและจำนวน</div>
+            <div class="rounded-lg bg-slate-50 p-3">
+              <div v-if="parsedItems.summary" class="text-xs font-semibold text-slate-500 mb-2">{{ parsedItems.summary }}</div>
+              <div v-for="(row, i) in parsedItems.rows" :key="i" class="py-2" :class="i>0 ? 'border-t border-slate-200' : ''">
+                <template v-if="row.parsed">
+                  <div class="text-sm font-semibold text-slate-800 mb-1">{{ row.no }}. {{ row.name }}</div>
+                  <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
+                    <span>จำนวน: <strong class="text-teal-700">{{ row.qty }}{{ row.unit ? ' ' + row.unit : '' }}</strong></span>
+                    <span>ราคา/หน่วย: <strong>{{ formatNum(row.unitPrice) }}</strong> บาท</span>
+                    <span>รวม: <strong class="text-green-700">{{ formatNum(row.total) }}</strong> บาท</span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="text-sm text-slate-700 flex gap-2 leading-relaxed"><span class="text-teal-600 shrink-0">•</span><span>{{ row.text }}</span></div>
+                </template>
+              </div>
+            </div>
+          </div>
+          <div v-if="modal.data.spec" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">คุณลักษณะ (Spec)</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.spec }}</div>
+          </div>
+          <div v-if="modal.data.docs_required" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารที่ต้องเตรียม</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.docs_required }}</div>
+          </div>
+          <div v-if="modal.data.need_sample || modal.data.sample_detail" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายละเอียดตัวอย่าง</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700">
+              <div v-if="modal.data.need_sample" class="font-semibold mb-1.5">ต้องส่งตัวอย่าง: {{ modal.data.need_sample }}</div>
+              <div v-if="modal.data.sample_detail" class="whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.sample_detail }}</div>
+            </div>
+          </div>
+          <div v-if="modal.data.conditions" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เงื่อนไขพิเศษ</div>
+            <div class="text-sm p-3 rounded-lg bg-amber-50 text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.conditions }}</div>
+          </div>
+
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารโครงการ</div>
+            <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
+            <template v-else-if="docs?.available && docs.files.length">
+              <a v-for="f in docs.files" :key="f.name"
+                 :href="`api/documents.php?action=download&id=${modal.data.id}&file=${encodeURIComponent(f.name)}`"
+                 target="_blank" rel="noopener"
+                 class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
+                <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
+                <span class="flex-1 min-w-0">
+                  <span class="block truncate font-medium">{{ docLabel(f.name) || f.name }}</span>
+                  <span v-if="docLabel(f.name)" class="block truncate text-[11px] text-slate-400">{{ f.name }}</span>
+                </span>
+                <span class="text-xs text-slate-400 shrink-0">{{ formatFileSize(f.size) }}</span>
+              </a>
+            </template>
+            <div v-else class="text-sm text-slate-400 py-1">
+              {{ docs?.available===false ? 'ยังไม่พบโฟลเดอร์เอกสารสำหรับโครงการนี้' : 'ไม่สามารถโหลดรายการเอกสารได้' }}
+              <button v-if="modal.data.announce_date" type="button" @click="openFolder(modal.data.announce_date)"
+                class="block mt-1 text-blue-600 text-xs hover:underline bg-transparent border-0 p-0 cursor-pointer text-left">
+                📋 คัดลอก path โฟลเดอร์แทน
+              </button>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">การมอบหมาย</div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">มอบหมายโดย</span><span class="text-sm text-slate-700">{{ modal.data.secretary_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันที่มอบหมาย</span><span class="text-sm text-slate-700">{{ formatDateTimeThai(modal.data.assigned_at) }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">SLA Deadline</span><span class="text-sm" :class="modal.data.sla_status!=='ปกติ'?'font-bold text-red-600':'text-slate-700'">{{ formatDateTimeThai(modal.data.sla_deadline) }}</span></div>
+          </div>
+          <div v-if="modal.data.secretary_notes" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">หมายเหตุจากธุรการ</div>
+            <div class="text-sm p-3 rounded-lg bg-blue-50 text-blue-800">{{ modal.data.secretary_notes }}</div>
+          </div>
+          <div v-if="modal.data.sale_notes" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">บันทึก Sales</div>
+            <div class="text-sm p-3 rounded-lg bg-green-50 text-green-800">{{ modal.data.sale_notes }}</div>
+          </div>
+          <div v-if="modal.data.history?.length" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติสถานะ</div>
+            <div v-for="h in modal.data.history" :key="h.id" class="flex gap-3 py-2">
+              <div class="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0 mt-1"></div>
+              <div class="flex-1">
+                <div class="text-sm font-medium text-slate-700">{{ h.changed_by_name }}</div>
+                <div class="text-xs text-slate-500">
+                  <span v-if="h.old_status">{{ h.old_status }} → </span>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadge(h.new_status)">{{ h.new_status }}</span>
+                  <span v-if="h.note"> · {{ h.note }}</span>
+                </div>
+                <div class="text-[11px] text-slate-400">{{ formatDateTimeThai(h.changed_at) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
+          <button class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+          <button v-if="modal.data.status==='รอดำเนินการ'"
+            class="px-4 py-2 rounded-xl text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white border-0 cursor-pointer"
+            @click="openDecisionModal(modal.data)">รับทราบ-ตัดสินใจ</button>
+        </div>
+      </div>
+
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppTabBar, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      modal: { type: null, data: null },
+      docs: null,
+      docsLoading: false,
+      showStatusLegend: false,
+      loading: false,
+      assignments: [],
+      activeTab: 'pending',
+      acceptForm: { id: null, can_bid: '', reason: '' },
+      tabs: [
+        { key: 'pending', label: 'รอรับงาน' },
+        { key: 'active',  label: 'ดำเนินการ' },
+        { key: 'done',    label: 'เสร็จสิ้น' },
+        { key: 'all',     label: 'ทั้งหมด' },
+      ],
+    };
+  },
+  computed: {
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'งาน', icon:'doc', active:true },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+    counts() {
+      return {
+        pending: this.assignments.filter(a => a.status === 'รอดำเนินการ').length,
+        active:  this.assignments.filter(a => ['รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ','รอประกาศผล'].includes(a.status)).length,
+        done:    this.assignments.filter(a => ['ชนะการประมูล','แพ้การประมูล','ส่งมอบแล้ว','ยกเลิก'].includes(a.status)).length,
+      };
+    },
+    filteredAssignments() {
+      const sorted = [...this.assignments].sort((a, b) => {
+        const pa = a.status === 'รอดำเนินการ' ? 0 : 1;
+        const pb = b.status === 'รอดำเนินการ' ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        return new Date(b.assigned_at || 0) - new Date(a.assigned_at || 0);
+      });
+      if (this.activeTab === 'pending') return sorted.filter(a => a.status === 'รอดำเนินการ');
+      if (this.activeTab === 'active')  return sorted.filter(a => ['รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ','รอประกาศผล'].includes(a.status));
+      if (this.activeTab === 'done')    return sorted.filter(a => ['ชนะการประมูล','แพ้การประมูล','ส่งมอบแล้ว','ยกเลิก'].includes(a.status));
+      return sorted;
+    },
+    parsedItems() {
+      const raw = this.modal?.data?.items;
+      if (!raw) return { summary: '', rows: [] };
+      let t = raw.trim();
+      let summary = '';
+      const sm = t.match(/^(\d+\s*รายการ)\s*:\s*/);
+      if (sm) { summary = sm[1]; t = t.slice(sm[0].length); }
+      const lines = this.splitClauses(t);
+      const rows = lines.map(line => {
+        const m = line.match(/^\(?(\d+)\)?\s*(.+?)\s+(\d+(?:\.\d+)?)\s*(ชุด|ตัว|ชิ้น|อัน|เครื่อง|หน่วย|ห้อง|คัน|โต๊ะ|เตียง|ตู้|เก้าอี้)?\s*@\s*([\d,]+(?:\.\d+)?)\s*=\s*([\d,]+(?:\.\d+)?)\s*$/);
+        if (m) return { parsed: true, no: m[1], name: m[2].trim(), qty: m[3], unit: m[4] || '', unitPrice: m[5], total: m[6] };
+        return { parsed: false, text: line };
+      });
+      return { summary, rows };
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (this.currentUser.role !== 'sale') { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.loadAssignments();
+  },
+  methods: {
+    ...SharedMethods,
+
+    urgentClose(closeDate) {
+      if (!closeDate) return false;
+      const days = this.daysToClose(closeDate);
+      return days !== null && days <= 3;
+    },
+
+    async loadAssignments() {
+      this.loading = true;
+      const res = await apiCall('GET', 'api/assignments.php?action=list');
+      if (res.success) {
+        this.assignments = res.data;
+        const pending = res.data.filter(a => a.status === 'รอดำเนินการ').length;
+        if (pending === 0 && this.activeTab === 'pending') this.activeTab = 'all';
+      }
+      this.loading = false;
+    },
+
+
+    // รับทราบ — เปิด modal ตัดสินใจจุดเดียว ไม่ preset ค่า ได้/ไม่ได้ ไว้ล่วงหน้า บังคับให้ sale เลือกเองก่อนบันทึกได้
+    openDecisionModal(assignment) {
+      this.acceptForm = { id: assignment.id, can_bid: '', reason: '' };
+      this.modal = { type: 'accept', data: assignment };
+    },
+
+    async submitAccept() {
+      if (!this.acceptForm.can_bid) {
+        await this.showAlert('กรุณาเลือกว่าเข้าประมูลได้หรือไม่', 'error'); return;
+      }
+      if (this.acceptForm.can_bid === 'ไม่ได้' && !this.acceptForm.reason.trim()) {
+        await this.showAlert('กรุณาระบุเหตุผล', 'error'); return;
+      }
+      const res = await apiCall('POST', 'api/assignments.php?action=accept', this.acceptForm);
+      if (res.success) {
+        this.closeModal();
+        this.loadAssignments();
+        await this.showAlert('บันทึกผลสำเร็จ', 'success');
+      } else {
+        await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+      }
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ผู้ใช้งาน</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="users" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          ผู้ใช้งาน
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <span class="font-bold text-slate-700 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" stroke-linejoin="round" d="M23 21v-2a4 4 0 00-3-3.87"/><path stroke-linecap="round" stroke-linejoin="round" d="M16 3.13a4 4 0 010 7.75"/></svg>
+              ผู้ใช้งานในระบบ
+            </span>
+            <button @click="openUserModal(null)"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">
+              + เพิ่มผู้ใช้
+            </button>
+          </div>
+          <div>
+            <div v-if="!allUsers.length" class="flex flex-col items-center justify-center py-12 text-slate-400">
+              <div class="spinner w-8 h-8 mx-auto"></div>
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm">
+                <thead>
+                  <tr class="bg-slate-50">
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ชื่อ</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">Username</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">บทบาท</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">LINE ID</th>
+                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">งาน Active</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">สถานะ</th>
+                    <th class="px-4 py-3 border-b-2 border-slate-200"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="u in allUsers" :key="u.id" class="border-b border-slate-100 hover:bg-slate-50/50">
+                    <td class="px-4 py-3">
+                      <div class="flex items-center gap-2.5">
+                        <img v-if="u.photo_url" :src="u.photo_url"
+                          class="w-8 h-8 rounded-full object-cover shrink-0"/>
+                        <div v-else class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                          :style="{background: u.avatar_color}">{{ avatarInitials(u.full_name) }}</div>
+                        <span class="font-medium text-slate-800">{{ u.full_name }}</span>
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 text-slate-500 text-sm">{{ u.username }}</td>
+                    <td class="px-4 py-3">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
+                        :class="u.role==='admin'?'bg-indigo-100 text-indigo-700':u.role==='salesadmin'?'bg-amber-100 text-amber-700':u.role==='manager'?'bg-teal-100 text-teal-700':'bg-sky-100 text-sky-700'">
+                        {{ {admin:'Admin',salesadmin:'SalesAdmin',manager:'Manager',sale:'Sale'}[u.role] || u.role }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-xs text-slate-500">{{ u.line_user_id || '-' }}</td>
+                    <td class="px-4 py-3 font-bold text-center">{{ u.active_tasks ?? 0 }}</td>
+                    <td class="px-4 py-3">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
+                        :class="u.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
+                        {{ u.is_active ? 'ใช้งาน' : 'ปิดใช้' }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3">
+                      <button @click="openUserModal(u)"
+                        class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+                        แก้ไข
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- MODALS -->
+    <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
+      v-if="modal.type" @click.self="closeModal">
+      <!-- User Modal -->
+      <div v-if="modal.type==='user'" class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">{{ userForm.id ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้' }}</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none"
+            @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-220px)]">
+          <div class="grid grid-cols-2 gap-4">
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">ชื่อ-นามสกุล <span class="text-red-500">*</span></label>
+              <input v-model="userForm.full_name" required
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">Username <span class="text-red-500">*</span></label>
+              <input v-model="userForm.username" :disabled="!!userForm.id" required
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white disabled:bg-slate-50 disabled:text-slate-400">
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">Password {{ userForm.id ? '(เว้นว่างถ้าไม่เปลี่ยน)' : '*' }}</label>
+              <input v-model="userForm.password" type="password" :required="!userForm.id"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">บทบาท <span class="text-red-500">*</span></label>
+              <select v-model="userForm.role"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="admin">Admin (ผู้ดูแลระบบ)</option>
+                <option value="salesadmin">SalesAdmin (ธุรการขาย)</option>
+                <option value="manager">Manager (ผู้จัดการฝ่ายขาย)</option>
+                <option value="sale">Sale (พนักงานขาย)</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">LINE User ID</label>
+              <input v-model="userForm.line_user_id" placeholder="Uxxxxxxxx..."
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">เบอร์โทรศัพท์</label>
+              <input v-model="userForm.phone" placeholder="08x-xxx-xxxx"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <div class="flex flex-col gap-1 col-span-2">
+              <label class="block text-sm font-semibold text-slate-600">Email</label>
+              <input v-model="userForm.email" type="email" placeholder="example@email.com"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <div class="flex flex-col gap-2 col-span-2">
+              <label class="block text-sm font-semibold text-slate-600">การแจ้งเตือน</label>
+              <div class="flex items-center gap-4 flex-wrap">
+                <div class="flex gap-1.5">
+                  <button type="button" v-for="ch in [{v:'line',l:'LINE'},{v:'email',l:'Email'},{v:'both',l:'ทั้งคู่'}]" :key="ch.v"
+                    @click="userForm.notify_channel=ch.v"
+                    class="px-3.5 py-1.5 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all"
+                    :class="userForm.notify_channel===ch.v ? 'bg-teal-700 text-white border-teal-500' : 'bg-white text-slate-500 border-slate-300'">
+                    {{ ch.l }}
+                  </button>
+                </div>
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                  <div @click="userForm.notify_enabled=userForm.notify_enabled?0:1"
+                    class="relative w-10 h-6 rounded-full cursor-pointer transition-colors"
+                    :class="userForm.notify_enabled ? 'bg-teal-700' : 'bg-slate-300'">
+                    <div class="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all"
+                      :class="userForm.notify_enabled ? 'left-5' : 'left-1'"></div>
+                  </div>
+                  <span class="text-sm text-slate-500">{{ userForm.notify_enabled ? 'เปิดแจ้งเตือน' : 'ปิดแจ้งเตือน' }}</span>
+                </label>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">สีอวตาร</label>
+              <div class="flex gap-2 items-center mt-1">
+                <input type="color" v-model="userForm.avatar_color"
+                  class="w-10 h-9 border border-slate-200 rounded-lg cursor-pointer p-0.5">
+                <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                  :style="{background: userForm.avatar_color}">
+                  {{ avatarInitials(userForm.full_name||'?') }}
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1" v-if="userForm.id">
+              <label class="block text-sm font-semibold text-slate-600">รูปโปรไฟล์</label>
+              <div class="flex items-center gap-3 mt-1">
+                <img v-if="userForm.photo_url" :src="userForm.photo_url"
+                  class="w-12 h-12 rounded-full object-cover"/>
+                <div v-else class="w-12 h-12 rounded-full flex items-center justify-center text-white text-base font-bold"
+                  :style="{background: userForm.avatar_color}">
+                  {{ avatarInitials(userForm.full_name||'?') }}
+                </div>
+                <div>
+                  <input type="file" accept="image/*" @change="uploadPhoto($event, userForm.id)"
+                    class="hidden" :ref="'photoInput_'+userForm.id" :id="'photoInput_'+userForm.id">
+                  <label :for="'photoInput_'+userForm.id"
+                    class="inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">
+                    เลือกรูป
+                  </label>
+                  <p class="text-xs text-slate-400 mt-1">JPG/PNG ไม่เกิน 2MB</p>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1" v-if="userForm.id">
+              <label class="block text-sm font-semibold text-slate-600">สถานะ</label>
+              <select v-model="userForm.is_active"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option :value="1">ใช้งาน</option>
+                <option :value="0">ปิดใช้งาน</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button @click="closeModal"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+            ยกเลิก
+          </button>
+          <button @click="submitUser"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">
+            บันทึก
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppTabBar, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      modal: { type: null, data: null },
+      allUsers: [],
+      userForm: { id: null, username: '', password: '', full_name: '', role: 'sale', line_user_id: '', phone: '', email: '', notify_channel: 'line', notify_enabled: 1, avatar_color: '#3B82F6', is_active: 1 },
+    };
+  },
+  computed: {
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'ผู้ใช้', icon:'users', active:true },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (this.currentUser.role !== 'admin') { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    this.loadUsers();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async loadUsers() {
+      const res = await apiCall('GET', 'api/users.php?action=list');
+      if (res.success) this.allUsers = res.data;
+    },
+
+    openUserModal(user) {
+      this.userForm = user
+        ? { ...user, password: '' }
+        : { id: null, username: '', password: '', full_name: '', role: 'sale', line_user_id: '', phone: '', email: '', notify_channel: 'line', notify_enabled: 1, avatar_color: '#3B82F6', is_active: 1 };
+      this.modal = { type: 'user', data: user };
+    },
+
+    async uploadPhoto(event, userId) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('user_id', userId);
+      fd.append('photo', file);
+      try {
+        const res = await fetch('api/upload_photo.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+        const json = await res.json();
+        if (json.success) {
+          this.userForm.photo_url = json.data.photo_url + '?t=' + Date.now();
+          this.loadUsers();
+          await this.showAlert('อัพโหลดรูปสำเร็จ', 'success');
+        } else {
+          await this.showAlert(json.message || 'อัพโหลดไม่สำเร็จ', 'error');
+        }
+      } catch {
+        await this.showAlert('เกิดข้อผิดพลาดในการอัพโหลด', 'error');
+      }
+    },
+
+    async submitUser() {
+      const isCreate = !this.userForm.id;
+      const action = isCreate ? 'create' : 'update';
+      const res = await apiCall('POST', `api/users.php?action=${action}`, this.userForm);
+      if (res.success) {
+        this.loadUsers();
+        if (isCreate) {
+          // สร้างสำเร็จแล้ว เปลี่ยนฟอร์มเป็นโหมดแก้ไขของ user ที่เพิ่งสร้าง (ไม่ปิด modal)
+          // เพื่อให้เลือกรูปโปรไฟล์ได้ทันที เพราะ upload_photo.php ต้องใช้ user id ที่มีอยู่จริงแล้วเท่านั้น
+          this.userForm.id = res.data.id;
+          this.userForm.password = '';
+          await this.showAlert('สร้างผู้ใช้สำเร็จ เลือกรูปโปรไฟล์ได้เลย', 'success');
+        } else {
+          this.closeModal();
+          await this.showAlert(res.message, 'success');
+        }
+      } else {
+        await this.showAlert(res.message, 'error');
+      }
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

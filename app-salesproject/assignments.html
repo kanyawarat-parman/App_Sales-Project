@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>จัดการงาน</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <!-- app-nav อยู่ในคอนเทนเนอร์เดียวกับ header/main เสมอ (ไม่ใช่ sibling แยก) กันปัญหาสูงเกิน 100vh ตอนมุมมองปฏิทินล็อกเป็น h-screen
+         (ดูปัญหาเดียวกันที่เคยเจอใน company-calendar.html/duty-calendar.html) — โหมด gantt/รายการ ยังเลื่อนจอได้ตามปกติเหมือนเดิม -->
+    <div class="flex flex-col" :class="view==='calendar' ? 'h-screen overflow-hidden' : 'min-h-screen'">
+      <app-nav :user="currentUser" page="assignments" ref="nav"></app-nav>
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px] shrink-0">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="2" width="8" height="4" rx="1"/>
+            <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
+            <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+          </svg>
+          จัดการงาน
+        </h1>
+        <!-- สลับมุมมอง: ปฏิทิน (ค่าเริ่มต้น รวมทั้งทีมต่อวัน หน้าตาแบบ company-calendar.html) / Gantt (รายคน×วัน) / รายการ (list การ์ด กรองได้) -->
+        <div class="ml-auto flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+          <button type="button" @click="view='calendar'; loadCalendarView()"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold border-0 cursor-pointer"
+            :class="view==='calendar' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">ปฏิทิน</button>
+          <button type="button" @click="view='gantt'; loadGanttData()"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold border-0 cursor-pointer"
+            :class="view==='gantt' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">Gantt</button>
+          <button type="button" @click="view='list'"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold border-0 cursor-pointer"
+            :class="view==='list' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">รายการ</button>
+        </div>
+      </header>
+
+      <main class="w-full max-w-[1280px] mx-auto px-4 md:px-6"
+        :class="view==='calendar' ? 'flex-1 min-h-0 flex flex-col overflow-hidden py-3' : 'flex-1 pb-24 pt-5 md:py-6'">
+        <!-- Calendar view: ภาพรวมทั้งทีมต่อวัน "จำนวนมอบหมาย / จำนวนกดรับ" หน้าตาแบบเดียวกับ company-calendar.html — พอดี 1 จอไม่ต้องเลื่อน -->
+        <div v-if="view==='calendar'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-4 flex-1 min-h-0 flex flex-col">
+          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div class="flex items-center gap-2">
+              <button @click="prevCalMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <div class="text-sm font-bold text-slate-700 min-w-[130px] text-center">{{ calMonthLabel }}</div>
+              <button @click="nextCalMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-4 flex-wrap text-xs text-slate-500 shrink-0">
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-orange-200 inline-block"></span> วันหยุดบริษัท</span>
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block"></span> มอบหมาย / กดรับ</span>
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-teal-500 inline-block"></span> เวร sale ที่รับผิดชอบ</span>
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full border-2 border-dashed border-amber-400 inline-block"></span> คาดการณ์ (ยังไม่ได้สร้างเวรจริง)</span>
+              <span class="text-slate-400">คลิกวันที่เพื่อดูรายละเอียด</span>
+            </div>
+          </div>
+
+          <div v-if="calLoading" class="flex-1 flex items-center justify-center text-slate-400"><div class="spinner w-8 h-8"></div></div>
+          <template v-else>
+            <div class="grid grid-cols-7 gap-1.5 mb-1.5 shrink-0">
+              <div v-for="d in dayLabels" :key="d" class="text-center text-xs font-bold text-slate-400 py-1">{{ d }}</div>
+            </div>
+            <!-- โครงสร้าง/ขนาดช่องเดียวกับ company-calendar.html ทุกจุด (badge มุมขวาบน + เวร sale กลางช่อง) -->
+            <div class="grid grid-cols-7 gap-1.5 flex-1 min-h-0" :style="{ gridTemplateRows: `repeat(${calNumWeeks}, 1fr)` }">
+              <div v-for="(cell, idx) in calendarCells" :key="idx"
+                   class="rounded-xl border p-2 flex flex-col transition-colors overflow-hidden"
+                   :class="[
+                     cell ? 'cursor-pointer hover:ring-2 hover:ring-teal-200' : 'bg-transparent border-transparent',
+                     cell && cell.isOff ? 'bg-orange-50 border-orange-200' : cell ? 'bg-white border-slate-100' : '',
+                     cell && cell.isToday ? 'ring-2 ring-teal-400' : ''
+                   ]"
+                   @click="cell && openCalDay(cell.date)">
+                <template v-if="cell">
+                  <div class="flex items-center justify-between shrink-0">
+                    <span class="text-xs font-semibold text-slate-400 leading-none">{{ cell.day }}</span>
+                    <span v-if="cell.info?.assigned" class="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500 text-white font-bold leading-none whitespace-nowrap shadow-sm shadow-sky-200">{{ cell.info.assigned }}/{{ cell.info.accepted }}</span>
+                  </div>
+
+                  <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-1 overflow-hidden">
+                    <span v-if="cell.info?.holiday" class="text-[11px] text-orange-700 font-semibold text-center leading-tight line-clamp-2">{{ cell.info.holiday }}</span>
+                    <template v-else-if="cell.info?.duty">
+                      <img v-if="cell.info.duty.photo_url" :src="cell.info.duty.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"
+                           :class="cell.info.duty.computed ? 'opacity-60 border-2 border-dashed border-amber-400' : ''"/>
+                      <div v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
+                           :class="cell.info.duty.computed ? 'opacity-60 border-2 border-dashed border-amber-400' : ''"
+                           :style="{background: cell.info.duty.avatar_color || '#64748b'}">{{ avatarInitials(cell.info.duty.full_name) }}</div>
+                      <span class="text-xs truncate" :class="cell.info.duty.computed ? 'text-amber-600 italic' : 'text-slate-600'">{{ (cell.info.duty.full_name||'').split(' ')[0] }}</span>
+                    </template>
+                    <span v-else-if="!cell.isWorkDay" class="text-[11px] text-orange-600 font-semibold text-center">วันหยุดสุดสัปดาห์</span>
+                    <span v-else class="text-sm text-slate-300">-</span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Gantt view -->
+        <div v-if="view==='gantt'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-4 mb-4">
+          <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div class="flex items-center gap-2">
+              <button @click="prevGanttMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <div class="text-sm font-bold text-slate-700 min-w-[130px] text-center">{{ ganttMonthLabel }}</div>
+              <button @click="nextGanttMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-slate-500">
+              <span class="flex items-center gap-1.5"><span class="inline-flex items-center justify-center min-w-[26px] h-[22px] rounded-md bg-slate-100 text-slate-600 text-[11px] font-semibold px-1">5/5</span>รับครบแล้ว</span>
+              <span class="flex items-center gap-1.5"><span class="inline-flex items-center justify-center min-w-[26px] h-[22px] rounded-md bg-red-100 text-red-700 text-[11px] font-semibold px-1">3/5</span>รับแล้ว/ทั้งหมด (ยังไม่ครบ)</span>
+            </div>
+          </div>
+
+          <div v-if="ganttLoading" class="flex justify-center py-10"><div class="spinner w-8 h-8"></div></div>
+          <div v-else-if="!ganttData.length" class="text-center py-10 text-slate-400">ไม่มีงานมอบหมายเดือนนี้</div>
+          <template v-else>
+          <div class="overflow-x-auto">
+            <div :style="{minWidth: (150 + ganttDaysInMonth*26) + 'px'}">
+              <div class="grid" :style="{gridTemplateColumns: `150px repeat(${ganttDaysInMonth}, 26px)`}">
+                <div class="text-xs text-slate-400 pb-1.5 border-b border-slate-100">Sale</div>
+                <div v-for="d in ganttDaysInMonth" :key="d"
+                  class="text-center text-[10px] pb-1.5 border-b border-slate-100"
+                  :class="d===ganttToday ? 'text-red-600 font-bold' : 'text-slate-400'">{{ d }}</div>
+              </div>
+              <div v-for="s in ganttData" :key="s.sale_id" class="grid items-center border-b border-slate-50"
+                :style="{gridTemplateColumns: `150px repeat(${ganttDaysInMonth}, 26px)`}">
+                <div class="text-sm text-slate-700 py-2 truncate pr-2">{{ s.sale_name }}</div>
+                <div v-for="d in ganttDaysInMonth" :key="d" class="flex items-center justify-center py-1.5">
+                  <button v-if="s.days[d]" type="button"
+                    class="inline-flex items-center justify-center min-w-[26px] h-[22px] rounded-md text-[11px] font-semibold px-1 border-0 cursor-pointer"
+                    :class="s.days[d].accepted < s.days[d].total ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'"
+                    @click="openGanttDetail(s, d)">{{ s.days[d].accepted }}/{{ s.days[d].total }}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detail panel: งานของ sale คนนี้ที่มอบหมายวันนี้ -->
+          <div v-if="ganttDetail" class="mt-4 bg-slate-50 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-sm text-slate-500">{{ ganttDetail.saleName }} · วันที่ {{ ganttDetail.day }} {{ thMonths[ganttMonth] }}</p>
+              <button class="bg-transparent border-0 text-slate-400 hover:text-slate-600 text-xl leading-none cursor-pointer" @click="ganttDetail=null">×</button>
+            </div>
+            <div v-for="item in ganttDetail.items" :key="item.id"
+              class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 py-2.5 border-t border-slate-200 first:border-t-0">
+              <div class="min-w-0">
+                <p class="text-sm text-slate-700 mb-1 break-words">{{ item.project_name }}</p>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
+                  :class="item.accepted ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
+                  {{ item.accepted ? 'รับงานแล้ว' : 'ยังไม่กดรับ' }}
+                </span>
+              </div>
+              <div class="flex flex-wrap gap-2 sm:shrink-0">
+                <template v-if="!item.accepted">
+                  <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-100 border-0 cursor-pointer"
+                    @click="openNudgeModal({ id: item.id, project_name: item.project_name, sale_name: ganttDetail.saleName })">ส่งข้อความเร่งงาน</button>
+                  <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-100 border-0 cursor-pointer"
+                    @click="openReassignModal({ id: item.id, project_name: item.project_name, sale_name: ganttDetail.saleName, assigned_to: ganttDetail.saleId })">มอบหมายใหม่</button>
+                </template>
+                <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer"
+                  @click="openDetail(item.id, 'assign-detail')">ดูรายละเอียด</button>
+              </div>
+            </div>
+          </div>
+          </template>
+        </div>
+
+        <!-- Filter bar -->
+        <div v-if="view==='list'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4">
+          <div class="px-4 py-3.5">
+            <div class="flex flex-wrap gap-3 items-end">
+              <div class="flex flex-col gap-1">
+                <label class="block text-xs font-semibold text-slate-500">สถานะ</label>
+                <select v-model="filter.status"
+                  class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">ทั้งหมด</option>
+                  <option>รอดำเนินการ</option>
+                  <option>รับงาน/ศึกษา TOR</option>
+                  <option>จัดเตรียมยื่นข้อเสนอ</option>
+                  <option>รอประกาศผล</option>
+                  <option>ชนะการประมูล</option>
+                  <option>ส่งมอบแล้ว</option>
+                  <option>แพ้การประมูล</option>
+                  <option>ยกเลิก</option>
+                </select>
+              </div>
+              <div v-if="isSecretary" class="flex flex-col gap-1">
+                <label class="block text-xs font-semibold text-slate-500">Sales</label>
+                <select v-model="filter.assigned_to"
+                  class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">ทุกคน</option>
+                  <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                </select>
+              </div>
+              <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer"
+                @click="loadAssignments">กรอง</button>
+            </div>
+            <button type="button" @click="showStatusLegend=!showStatusLegend"
+              class="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 p-0 mt-3 cursor-pointer">
+              ℹ️ ลำดับสถานะงาน {{ showStatusLegend ? '▲' : '▼' }}
+            </button>
+            <div v-if="showStatusLegend" class="bg-slate-50 rounded-xl p-3 mt-2 text-xs text-slate-600 leading-relaxed">
+              รอดำเนินการ → รับงาน/ศึกษา TOR → จัดเตรียมยื่นข้อเสนอ → รอประกาศผล → <strong class="text-emerald-700">ชนะการประมูล</strong> → ส่งมอบแล้ว
+              <br>(หรือ <strong class="text-rose-700">แพ้การประมูล</strong> / ยกเลิก ได้ทุกขั้นตอน)
+            </div>
+          </div>
+        </div>
+
+        <template v-if="view==='list'">
+        <div v-if="loading" class="flex flex-col items-center justify-center py-12 text-slate-400">
+          <div class="spinner w-8 h-8 mx-auto"></div>
+        </div>
+        <div v-else-if="!assignments.length" class="flex flex-col items-center justify-center py-12 text-slate-400">
+          <div class="text-4xl mb-3">📭</div><p>ไม่พบงาน</p>
+        </div>
+        <div v-else class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+          <div v-for="a in assignments" :key="a.id"
+            class="bg-white rounded-xl p-4 shadow-sm ring-1 cursor-pointer hover:shadow-md transition-shadow"
+            :class="a.sla_status==='เกิน' ? 'ring-red-300 bg-red-50' : a.sla_status==='ใกล้ถึง' ? 'ring-amber-200 bg-amber-50' : 'ring-slate-100'"
+            @click="openDetail(a.id, 'assign-detail')">
+
+            <!-- badges row -->
+            <div class="flex items-center justify-between mb-2">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="statusBadge(a.status)">{{ a.status }}</span>
+              <div class="flex items-center gap-1.5">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(a.priority)">{{ a.priority }}</span>
+                <span class="w-2 h-2 rounded-full"
+                  :class="a.sla_status==='เกิน'?'bg-red-500':a.sla_status==='ใกล้ถึง'?'bg-amber-400':'bg-green-500'"></span>
+              </div>
+            </div>
+
+            <!-- price hero -->
+            <div v-if="a.price_median" class="text-xl font-bold text-slate-800 mb-1">฿{{ Number(a.price_median).toLocaleString() }}</div>
+
+            <!-- project title -->
+            <h4 class="font-bold text-slate-800 text-sm mb-0.5 line-clamp-2">{{ a.project_name }}</h4>
+
+            <!-- organization -->
+            <p class="text-xs text-slate-400 mb-2">{{ a.unit_name }}</p>
+
+            <div class="border-t border-slate-100 my-2"></div>
+
+            <!-- deadline + progress -->
+            <div v-if="a.close_date">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs text-slate-500">ปิดรับ {{ formatDateThai(a.close_date) }}</span>
+                <span class="text-xs font-bold" :style="{color: countdownColor(daysToClose(a.close_date))}">{{ countdownText(daysToClose(a.close_date)) }}</span>
+              </div>
+              <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-2">
+                <div class="h-full rounded-full" :style="{width: countdownBarWidth(a.close_date, a.assigned_at)+'%', background: countdownColor(daysToClose(a.close_date))}"></div>
+              </div>
+            </div>
+
+            <!-- sale person -->
+            <div class="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>{{ a.sale_name }}</span>
+            </div>
+
+            <!-- notes -->
+            <div v-if="a.secretary_notes" class="mt-2 text-xs bg-blue-50 text-blue-800 rounded-lg px-3 py-2">{{ a.secretary_notes }}</div>
+          </div>
+        </div>
+        </template>
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- MODALS -->
+    <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
+      v-if="modal.type" @click.self="closeModal">
+
+      <!-- Calendar Day Detail Modal: งานที่มอบหมายในวันที่คลิกจากมุมมองปฏิทิน (เป็น modal แทนที่จะดันความสูงหน้าเพจ กันเลื่อนจอตอน view==='calendar' ที่ล็อกเป็น h-screen) -->
+      <div v-if="modal.type==='cal-day'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">งานที่มอบหมายวันที่ {{ formatThaiDate(modal.data.date) }}</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div v-if="!modal.data.items.length" class="text-sm text-slate-400 py-2">ไม่มีงานมอบหมายวันนี้</div>
+          <div v-for="item in modal.data.items" :key="item.id"
+            class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 py-2.5 border-t border-slate-100 first:border-t-0">
+            <div class="min-w-0">
+              <p class="text-sm text-slate-700 mb-1 break-words">{{ item.project_name }}</p>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs text-slate-500">{{ item.sale_name }}</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
+                  :class="item.accepted ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
+                  {{ item.accepted ? 'รับงานแล้ว' : 'ยังไม่กดรับ' }}
+                </span>
+              </div>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer shrink-0"
+              @click="openDetail(item.id, 'assign-detail')">ดูรายละเอียด</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Assignment Detail Modal -->
+      <div v-if="modal.type==='assign-detail'" class="bg-white rounded-2xl w-full max-w-[680px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">รายละเอียดงาน</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="flex gap-2 flex-wrap mb-4">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
+            <span class="text-sm" :class="slaClass(modal.data.sla_status)">
+              {{ modal.data.sla_status==='เกิน' ? 'เกิน SLA' : modal.data.sla_status==='ใกล้ถึง' ? 'ใกล้ถึง SLA' : 'SLA ปกติ' }}
+            </span>
+          </div>
+
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ข้อมูลโครงการ</div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">เลขที่โครงการ</span><span class="text-sm text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ชื่อโครงการ</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.project_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">หน่วยงาน</span><span class="text-sm text-slate-700">{{ modal.data.unit_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-green-600">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">เข้าประมูล</span><span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span></div>
+            <div v-if="modal.data.url" class="flex gap-2 py-1.5 border-b border-slate-50">
+              <span class="text-sm text-slate-400 min-w-[120px] shrink-0">ลิงก์</span>
+              <a :href="modal.data.url" target="_blank" rel="noopener" class="text-blue-600 text-sm hover:underline">เปิดประกาศ ↗</a>
+            </div>
+          </div>
+
+          <div v-if="modal.data.items" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายการสินค้าและจำนวน</div>
+            <div class="rounded-lg bg-slate-50 p-3 max-h-[260px] overflow-y-auto">
+              <div v-if="parsedItems.summary" class="text-xs font-semibold text-slate-500 mb-2">{{ parsedItems.summary }}</div>
+              <div v-for="(row, i) in parsedItems.rows" :key="i" class="py-2" :class="i>0 ? 'border-t border-slate-200' : ''">
+                <template v-if="row.parsed">
+                  <div class="text-sm font-semibold text-slate-800 mb-1">{{ row.no }}. {{ row.name }}</div>
+                  <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
+                    <span>จำนวน: <strong class="text-teal-700">{{ row.qty }}{{ row.unit ? ' ' + row.unit : '' }}</strong></span>
+                    <span>ราคา/หน่วย: <strong>{{ formatNum(row.unitPrice) }}</strong> บาท</span>
+                    <span>รวม: <strong class="text-green-700">{{ formatNum(row.total) }}</strong> บาท</span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="text-sm text-slate-700 flex gap-2 leading-relaxed"><span class="text-teal-600 shrink-0">•</span><span>{{ row.text }}</span></div>
+                </template>
+              </div>
+            </div>
+          </div>
+          <div v-if="modal.data.spec" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">คุณลักษณะ (Spec)</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.spec }}</div>
+          </div>
+          <div v-if="modal.data.docs_required" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารที่ต้องเตรียม</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.docs_required }}</div>
+          </div>
+          <div v-if="modal.data.need_sample || modal.data.sample_detail" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายละเอียดตัวอย่าง</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700">
+              <div v-if="modal.data.need_sample" class="font-semibold mb-1.5">ต้องส่งตัวอย่าง: {{ modal.data.need_sample }}</div>
+              <div v-if="modal.data.sample_detail" class="whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.sample_detail }}</div>
+            </div>
+          </div>
+          <div v-if="modal.data.conditions" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เงื่อนไขพิเศษ</div>
+            <div class="text-sm p-3 rounded-lg bg-amber-50 text-amber-800 max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.conditions }}</div>
+          </div>
+
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารโครงการ</div>
+            <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
+            <template v-else-if="docs?.available && docs.files.length">
+              <a v-for="f in docs.files" :key="f.name"
+                 :href="`api/documents.php?action=download&id=${modal.data.id}&file=${encodeURIComponent(f.name)}`"
+                 target="_blank" rel="noopener"
+                 class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
+                <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
+                <span class="flex-1 min-w-0">
+                  <span class="block truncate font-medium">{{ docLabel(f.name) || f.name }}</span>
+                  <span v-if="docLabel(f.name)" class="block truncate text-[11px] text-slate-400">{{ f.name }}</span>
+                </span>
+                <span class="text-xs text-slate-400 shrink-0">{{ formatFileSize(f.size) }}</span>
+              </a>
+            </template>
+            <div v-else class="text-sm text-slate-400 py-1">
+              {{ docs?.available===false ? 'ยังไม่พบโฟลเดอร์เอกสารสำหรับโครงการนี้' : 'ไม่สามารถโหลดรายการเอกสารได้' }}
+              <button v-if="modal.data.announce_date" type="button" @click="openFolder(modal.data.announce_date)"
+                class="block mt-1 text-blue-600 text-xs hover:underline bg-transparent border-0 p-0 cursor-pointer text-left">
+                📋 คัดลอก path โฟลเดอร์แทน
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">การมอบหมาย</div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">มอบหมายให้</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.sale_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">มอบหมายโดย</span><span class="text-sm text-slate-700">{{ modal.data.secretary_name }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันที่มอบหมาย</span><span class="text-sm text-slate-700">{{ formatDateTimeThai(modal.data.assigned_at) }}</span></div>
+            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">SLA Deadline</span><span class="text-sm" :class="modal.data.sla_status!=='ปกติ'?'font-bold text-red-600':'text-slate-700'">{{ formatDateTimeThai(modal.data.sla_deadline) }}</span></div>
+          </div>
+
+          <div v-if="modal.data.secretary_notes" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">หมายเหตุจากธุรการ</div>
+            <div class="text-sm p-3 rounded-lg bg-blue-50 text-blue-800">{{ modal.data.secretary_notes }}</div>
+          </div>
+          <div v-if="modal.data.sale_notes" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">บันทึก Sales</div>
+            <div class="text-sm p-3 rounded-lg bg-green-50 text-green-800">{{ modal.data.sale_notes }}</div>
+          </div>
+          <div v-if="modal.data.bid_amount" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ราคาที่เสนอ</div>
+            <div class="text-xl font-bold text-green-600">{{ formatPrice(modal.data.bid_amount) }}</div>
+          </div>
+          <div v-if="modal.data.history?.length" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติการเปลี่ยนสถานะ</div>
+            <div v-for="h in modal.data.history" :key="h.id" class="flex gap-3 py-2">
+              <div class="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0 mt-1"></div>
+              <div class="flex-1">
+                <div class="text-sm font-medium text-slate-700">{{ h.changed_by_name }}</div>
+                <div class="text-xs text-slate-500">
+                  <span v-if="h.old_status">{{ h.old_status }} → </span>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadge(h.new_status)">{{ h.new_status }}</span>
+                  <span v-if="h.note"> · {{ h.note }}</span>
+                </div>
+                <div class="text-[11px] text-slate-400">{{ formatDateTimeThai(h.changed_at) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+          <button v-if="isSecretary" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="openNudgeModal(modal.data)">ส่งข้อความเร่งงาน</button>
+          <button v-if="isSecretary" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="openReassignModal(modal.data)">มอบหมายใหม่</button>
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="openStatusModal(modal.data)">อัพเดตสถานะ</button>
+        </div>
+      </div>
+
+      <!-- Reassign Modal -->
+      <div v-if="modal.type==='reassign'" class="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">มอบหมายใหม่</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <p class="text-sm text-slate-500 mb-3">ย้ายงาน "<strong class="text-slate-700">{{ modal.data.project_name }}</strong>" จาก <strong class="text-slate-700">{{ modal.data.sale_name }}</strong> ไปให้:</p>
+          <select v-model="reassignForm.assigned_to"
+            class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <option value="">เลือก sale</option>
+            <option v-for="u in salesUsers" :key="u.id" :value="u.id" :disabled="u.id===modal.data.assigned_to">{{ u.full_name }}</option>
+          </select>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="submitReassign">ยืนยันมอบหมายใหม่</button>
+        </div>
+      </div>
+
+      <!-- Nudge Message Modal -->
+      <div v-if="modal.type==='message'" class="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">ส่งข้อความเร่งงาน</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <p class="text-sm text-slate-500 mb-3">ส่งข้อความถึง <strong class="text-slate-700">{{ modal.data.sale_name }}</strong> เกี่ยวกับงาน "<strong class="text-slate-700">{{ modal.data.project_name }}</strong>" (ขึ้นที่กระดิ่งแจ้งเตือนของ sale)</p>
+          <textarea v-model="nudgeForm.message" rows="3" placeholder="เช่น รบกวนอัพเดตความคืบหน้าด้วยครับ"
+            class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="submitNudge">ส่ง</button>
+        </div>
+      </div>
+
+      <!-- Status Update Modal -->
+      <div v-if="modal.type==='status'" class="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">อัพเดตสถานะงาน</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">สถานะใหม่</label>
+              <select v-model="statusForm.status"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="รอดำเนินการ">รอดำเนินการ</option>
+                <option value="รับงาน/ศึกษา TOR">รับงาน/ศึกษา TOR</option>
+                <option value="จัดเตรียมยื่นข้อเสนอ">จัดเตรียมยื่นข้อเสนอ</option>
+                <option value="รอประกาศผล">รอประกาศผล</option>
+                <option value="ชนะการประมูล">ชนะการประมูล</option>
+                <option value="ส่งมอบแล้ว">ส่งมอบแล้ว</option>
+                <option value="แพ้การประมูล">แพ้การประมูล</option>
+                <option value="ยกเลิก">ยกเลิก</option>
+              </select>
+            </div>
+            <div v-if="['จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล'].includes(statusForm.status)" class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">ราคาที่เสนอ (บาท)</label>
+              <input type="number" v-model="statusForm.bid_amount" placeholder="0.00"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">บันทึก / ความคืบหน้า</label>
+              <textarea v-model="statusForm.sale_notes" rows="3" placeholder="ระบุความคืบหน้า, ปัญหา, หรือผลลัพธ์..."
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">หมายเหตุการเปลี่ยนสถานะ</label>
+              <input type="text" v-model="statusForm.note" placeholder="(ไม่บังคับ)"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="submitStatusUpdate">บันทึก</button>
+        </div>
+      </div>
+
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppTabBar, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      modal: { type: null, data: null },
+      docs: null,
+      docsLoading: false,
+      showStatusLegend: false,
+      loading: false,
+      assignments: [],
+      salesUsers: [],
+      filter: { status: '', assigned_to: '' },
+      statusForm: { id: null, status: '', sale_notes: '', bid_amount: null, note: '' },
+      reassignForm: { id: null, assigned_to: '' },
+      nudgeForm: { id: null, message: '' },
+      view: 'calendar',
+      ganttYear: new Date().getFullYear(),
+      ganttMonth: new Date().getMonth() + 1,
+      ganttData: [],
+      ganttLoading: false,
+      ganttTodayStr: null,
+      ganttDetail: null,
+      // มุมมองปฏิทิน (view==='calendar') — ภาพรวมทั้งทีมต่อวัน หน้าตาแบบเดียวกับ company-calendar.html
+      calYear: new Date().getFullYear(),
+      calMonth: new Date().getMonth() + 1,
+      calData: {}, // merge จาก 2 แหล่ง: api/calendar.php (holiday+เวร sale) + api/assignments.php (มอบหมาย/กดรับ) คีย์ด้วยวันที่เดียวกัน
+      companyWorkDays: [1,2,3,4,5,6], // ค่า default ระหว่างรอโหลดปฏิทิน CAL-01 จริง (จ-ส)
+      calLoading: false,
+      dayLabels: ['จ','อ','พ','พฤ','ศ','ส','อา'],
+      thMonths: ['','มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'],
+    };
+  },
+  computed: {
+    ganttMonthLabel() { return `${this.thMonths[this.ganttMonth]} ${this.ganttYear + 543}`; },
+    ganttDaysInMonth() { return new Date(this.ganttYear, this.ganttMonth, 0).getDate(); },
+    ganttToday() {
+      if (!this.ganttTodayStr) return null;
+      const [y, m, d] = this.ganttTodayStr.split('-').map(Number);
+      return (y === this.ganttYear && m === this.ganttMonth) ? d : null;
+    },
+    calMonthLabel() { return `${this.thMonths[this.calMonth]} ${this.calYear + 543}`; },
+    calendarCells() {
+      const first = new Date(this.calYear, this.calMonth - 1, 1);
+      const startOffset = (first.getDay() + 6) % 7; // จันทร์=0
+      const daysInMonth = new Date(this.calYear, this.calMonth, 0).getDate();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const cells = [];
+      for (let i = 0; i < startOffset; i++) cells.push(null);
+      for (let d = 1; d <= daysInMonth; d++) {
+        const mm = String(this.calMonth).padStart(2, '0');
+        const dd = String(d).padStart(2, '0');
+        const date = `${this.calYear}-${mm}-${dd}`;
+        const dow = new Date(this.calYear, this.calMonth - 1, d).getDay();
+        const isoDow = dow === 0 ? 7 : dow;
+        const isWorkDay = this.companyWorkDays.includes(isoDow);
+        const info = this.calData[date] || null;
+        cells.push({ date, day: d, isToday: date === todayStr, info, isWorkDay, isOff: !!info?.holiday || !isWorkDay });
+      }
+      return cells;
+    },
+    // จำนวนแถวจริงของเดือนนี้ (5 หรือ 6) — ให้แต่ละแถวยืด/หดเท่ากันจนเต็มพื้นที่ที่เหลือพอดี เหมือน company-calendar.html
+    calNumWeeks() { return Math.ceil(this.calendarCells.length / 7); },
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'ประกาศ', icon:'bell', href:'announcements.html' },
+        { label:'งาน', icon:'clipboard', active:true },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+    isAdmin()      { return this.currentUser?.role === 'admin'; },
+    isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
+    isSalesAdmin() { return ['admin','salesadmin'].includes(this.currentUser?.role); },
+    isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
+    isSale()       { return this.currentUser?.role === 'sale'; },
+    parsedItems() {
+      const raw = this.modal?.data?.items;
+      if (!raw) return { summary: '', rows: [] };
+      let t = raw.trim();
+      let summary = '';
+      const sm = t.match(/^(\d+\s*รายการ)\s*:\s*/);
+      if (sm) { summary = sm[1]; t = t.slice(sm[0].length); }
+      const lines = this.splitClauses(t);
+      const rows = lines.map(line => {
+        const m = line.match(/^\(?(\d+)\)?\s*(.+?)\s+(\d+(?:\.\d+)?)\s*(ชุด|ตัว|ชิ้น|อัน|เครื่อง|หน่วย|ห้อง|คัน|โต๊ะ|เตียง|ตู้|เก้าอี้)?\s*@\s*([\d,]+(?:\.\d+)?)\s*=\s*([\d,]+(?:\.\d+)?)\s*$/);
+        if (m) return { parsed: true, no: m[1], name: m[2].trim(), qty: m[3], unit: m[4] || '', unitPrice: m[5], total: m[6] };
+        return { parsed: false, text: line };
+      });
+      return { summary, rows };
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!['admin','salesadmin'].includes(this.currentUser.role)) {
+        window.location.href = 'dashboard.html'; return;
+      }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    this.loadCalendarView();
+    if (this.isSecretary) this.loadSales();
+  },
+  methods: {
+    // เรียกโหลดข้อมูลของมุมมองที่กำลังเปิดอยู่ตอนนี้ใหม่ — ใช้หลังอัพเดตสถานะ/มอบหมายใหม่จาก modal
+    // ซึ่งเปิดได้จากทุกมุมมอง (ปฏิทิน/Gantt/รายการ) กันข้อมูลค้างของมุมมองที่ผู้ใช้กำลังดูอยู่
+    refreshActiveView() {
+      if (this.view === 'calendar') this.loadCalMonth();
+      else if (this.view === 'gantt') this.loadGanttData();
+      else if (this.view === 'list') this.loadAssignments();
+    },
+
+    ...SharedMethods,
+
+    async loadAssignments() {
+      this.loading = true;
+      const q = new URLSearchParams({ action: 'list' });
+      if (this.filter.status)      q.set('status', this.filter.status);
+      if (this.filter.assigned_to) q.set('assigned_to', this.filter.assigned_to);
+      const res = await apiCall('GET', `api/assignments.php?${q}`);
+      if (res.success) this.assignments = res.data;
+      this.loading = false;
+    },
+
+    openStatusModal(assignment) {
+      this.statusForm = {
+        id:         assignment.id,
+        status:     assignment.status,
+        sale_notes: assignment.sale_notes || '',
+        bid_amount: assignment.bid_amount || null,
+        note:       '',
+      };
+      this.modal = { type: 'status', data: assignment };
+    },
+
+    async submitStatusUpdate() {
+      const res = await apiCall('POST', 'api/assignments.php?action=update', this.statusForm);
+      if (res.success) {
+        this.closeModal();
+        this.refreshActiveView();
+        await this.showAlert('อัพเดตสำเร็จ', 'success');
+      } else {
+        await this.showAlert(res.message, 'error');
+      }
+    },
+
+    async loadGanttData() {
+      this.ganttLoading = true;
+      this.ganttDetail = null;
+      const res = await apiCall('GET', `api/assignments.php?action=gantt&year=${this.ganttYear}&month=${this.ganttMonth}`);
+      if (res.success) {
+        this.ganttData = res.data.sales;
+        this.ganttTodayStr = res.data.today;
+      } else {
+        await this.showAlert(res.message, 'error');
+      }
+      this.ganttLoading = false;
+    },
+
+    prevGanttMonth() {
+      this.ganttMonth--; if (this.ganttMonth < 1) { this.ganttMonth = 12; this.ganttYear--; }
+      this.loadGanttData();
+    },
+    nextGanttMonth() {
+      this.ganttMonth++; if (this.ganttMonth > 12) { this.ganttMonth = 1; this.ganttYear++; }
+      this.loadGanttData();
+    },
+
+    openGanttDetail(sale, day) {
+      this.ganttDetail = { saleId: sale.sale_id, saleName: sale.sale_name, day, items: sale.days[day].items };
+    },
+
+    formatThaiDate(dateStr) {
+      const [y, m, d] = dateStr.split('-');
+      return `${parseInt(d)} ${this.thMonths[parseInt(m)]} ${parseInt(y) + 543}`;
+    },
+
+    async loadCalendarView() {
+      await this.loadCompanyWorkDays();
+      await this.loadCalMonth();
+    },
+
+    async loadCompanyWorkDays() {
+      const res = await apiCall('GET', 'api/calendars.php?action=list');
+      const cal = res.success ? res.data.find(c => c.code === 'CAL-01') : null;
+      this.companyWorkDays = cal ? cal.work_days.split(',').map(Number) : [1,2,3,4,5,6];
+    },
+
+    // รวมข้อมูล 2 แหล่งต่อวัน: วันหยุด+เวร sale (ของ e-Bidding เดียวกับที่ company-calendar.html ใช้) และจำนวนมอบหมาย/กดรับของหน้านี้เอง
+    async loadCalMonth() {
+      this.calLoading = true;
+      const [companyRes, assignRes] = await Promise.all([
+        apiCall('GET', `api/calendar.php?action=company_month&year=${this.calYear}&month=${this.calMonth}&source_type=egp`),
+        apiCall('GET', `api/assignments.php?action=calendar&year=${this.calYear}&month=${this.calMonth}`),
+      ]);
+      const merged = {};
+      if (companyRes.success) {
+        Object.keys(companyRes.data).forEach(date => {
+          merged[date] = { holiday: companyRes.data[date].holiday?.name || null, duty: companyRes.data[date].duty || null };
+        });
+      }
+      if (assignRes.success) {
+        Object.keys(assignRes.data).forEach(date => {
+          if (!merged[date]) merged[date] = { holiday: null, duty: null };
+          merged[date].assigned = assignRes.data[date].assigned;
+          merged[date].accepted = assignRes.data[date].accepted;
+          merged[date].items    = assignRes.data[date].items;
+        });
+      }
+      this.calData = merged;
+      this.calLoading = false;
+    },
+
+    prevCalMonth() {
+      this.calMonth--; if (this.calMonth < 1) { this.calMonth = 12; this.calYear--; }
+      this.loadCalMonth();
+    },
+    nextCalMonth() {
+      this.calMonth++; if (this.calMonth > 12) { this.calMonth = 1; this.calYear++; }
+      this.loadCalMonth();
+    },
+
+    openCalDay(date) {
+      const info = this.calData[date];
+      this.modal = { type: 'cal-day', data: { date, items: info?.items || [] } };
+    },
+
+    openReassignModal(assignment) {
+      this.reassignForm = { id: assignment.id, assigned_to: '' };
+      this.modal = { type: 'reassign', data: assignment };
+    },
+    async submitReassign() {
+      if (!this.reassignForm.assigned_to) { await this.showAlert('กรุณาเลือก sale', 'error'); return; }
+      const res = await apiCall('POST', 'api/assignments.php?action=reassign', this.reassignForm);
+      if (res.success) {
+        this.closeModal();
+        this.refreshActiveView();
+        await this.showAlert('มอบหมายใหม่สำเร็จ', 'success');
+      } else {
+        await this.showAlert(res.message, 'error');
+      }
+    },
+
+    openNudgeModal(assignment) {
+      this.nudgeForm = { id: assignment.id, message: '' };
+      this.modal = { type: 'message', data: assignment };
+    },
+    async submitNudge() {
+      if (!this.nudgeForm.message.trim()) { await this.showAlert('กรุณาระบุข้อความ', 'error'); return; }
+      const res = await apiCall('POST', 'api/assignments.php?action=nudge', this.nudgeForm);
+      if (res.success) {
+        this.closeModal();
+        await this.showAlert('ส่งข้อความสำเร็จ', 'success');
+      } else {
+        await this.showAlert(res.message, 'error');
+      }
+    },
+
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

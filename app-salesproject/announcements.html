@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ประกาศวันนี้</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="announcements" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+        <h2 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          ประกาศวันนี้
+        </h2>
+        <div v-if="rotationDuty" class="ml-auto flex items-center gap-2">
+          <span class="text-[.78rem] text-slate-500 whitespace-nowrap">เวรวันนี้:</span>
+          <div class="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-3 py-0.5">
+            <div :style="{background:rotationDuty.avatar_color||'#64748b'}"
+              class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[.6rem] font-bold shrink-0">
+              {{ rotationDuty.full_name?.charAt(0) }}
+            </div>
+            <span class="text-[.82rem] font-bold text-green-700 whitespace-nowrap">{{ rotationDuty.full_name }}</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <!-- Filters -->
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4">
+          <div class="px-5 py-4">
+            <div class="flex flex-wrap gap-3 items-end">
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">วันที่ประกาศ</label>
+                <input type="date" v-model="annDate" :disabled="annAllDates"
+                  class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white disabled:bg-slate-50 disabled:text-slate-400">
+                <label class="flex items-center gap-1.5 mt-1.5 text-xs text-slate-500 cursor-pointer">
+                  <input type="checkbox" v-model="annAllDates" class="w-3.5 h-3.5">
+                  ทุกวันที่
+                </label>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">สถานะการกรอง</label>
+                <select v-model="annFilterStatus"
+                  class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">ทั้งหมด</option>
+                  <option value="ตรง">ตรง</option>
+                  <option value="ต้องตรวจสอบ">ต้องตรวจสอบ</option>
+                  <option value="ไม่ตรง">ไม่ตรง</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">เข้าประมูล</label>
+                <select v-model="annCanBid"
+                  class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">ทั้งหมด</option>
+                  <option value="ได้">ได้</option>
+                  <option value="ต้องตรวจสอบ">ต้องตรวจสอบ</option>
+                  <option value="ไม่ได้">ไม่ได้</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">การมอบหมาย</label>
+                <label class="flex items-center gap-1.5 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm cursor-pointer min-h-[44px] bg-white">
+                  <input type="checkbox" v-model="annUnassignedOnly" class="w-4 h-4">
+                  เฉพาะที่ต้องมอบหมาย (ยังไม่มอบหมาย+ยังไม่หมดอายุ)
+                </label>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">ค้าง Action</label>
+                <label class="flex items-center gap-1.5 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm cursor-pointer min-h-[44px] bg-white">
+                  <input type="checkbox" v-model="annPendingActionOnly" class="w-4 h-4">
+                  เฉพาะที่ยังไม่ตัดสินใจ หรือตัดสินใจเข้าแล้วแต่ยังไม่มอบหมาย
+                </label>
+              </div>
+              <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white border-0 cursor-pointer min-h-[44px]"
+                @click="reloadDatatable">กรอง</button>
+              <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]"
+                @click="modal={type:'import',data:null}">นำเข้าข้อมูล</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+          <div class="p-5 overflow-x-auto">
+            <table id="announcements-table" class="display" style="width:100%">
+              <thead>
+                <tr>
+                  <th>เลขที่โครงการ</th><th>ชื่อโครงการ</th><th>หน่วยงาน</th>
+                  <th>วันปิดรับ</th><th>ราคากลาง (บาท)</th><th>เข้าประมูล</th>
+                  <th>มอบหมายให้</th><th>จัดการ</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- ===== MODALS ===== -->
+    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" v-if="modal.type" @click.self="closeModal">
+
+      <!-- Assign Modal -->
+      <div v-if="modal.type==='assign'" class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg m-0">มอบหมายงาน</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5">
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-2">มอบหมายให้ Sales <span class="text-red-500">*</span></label>
+            <div class="flex flex-col gap-2">
+              <div v-for="s in salesUsers" :key="s.id"
+                @click="assignForm.assigned_to = s.id"
+                :style="assignForm.assigned_to===s.id
+                  ? 'border:2px solid #3b82f6;background:#eff6ff'
+                  : 'border:1.5px solid #e2e8f0;background:#fff'"
+                class="rounded-xl px-3.5 py-2.5 cursor-pointer flex items-center gap-3 transition-all">
+                <img v-if="s.photo_url" :src="s.photo_url" class="w-9 h-9 rounded-full object-cover shrink-0"/>
+                <div v-else :style="{background: s.avatar_color||'#64748b'}"
+                  class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">
+                  {{ s.full_name.charAt(0) }}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="font-semibold text-sm text-slate-800">{{ s.full_name }}</span>
+                    <span v-if="s.overdue_tasks>0" class="text-[.7rem] bg-red-100 text-red-700 px-1.5 py-0.5 rounded">เกิน {{ s.overdue_tasks }}</span>
+                    <span v-if="s.urgent_tasks>0 && s.overdue_tasks===0" class="text-[.7rem] bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded">⚡ ด่วน {{ s.urgent_tasks }}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div :style="{width: Math.min(s.active_tasks*12,100)+'%',background: s.active_tasks>=7?'#ef4444':s.active_tasks>=4?'#f59e0b':'#22c55e'}"
+                        class="h-full rounded-full transition-all duration-400"></div>
+                    </div>
+                    <span class="text-[.75rem] text-slate-500 whitespace-nowrap min-w-[80px]">{{ s.active_tasks }} งาน active</span>
+                  </div>
+                </div>
+                <div class="flex flex-col items-end gap-1">
+                  <span v-if="rotationDuty && s.id===rotationDuty.id" class="text-[.7rem] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md whitespace-nowrap font-bold">📅 เวรวันนี้</span>
+                  <span v-if="assignForm.assigned_to===s.id" class="text-blue-500 text-xl leading-none">✓</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-2">ระดับความสำคัญ</label>
+            <div class="flex gap-2">
+              <div v-for="p in [{val:'ต่ำ',icon:'low',desc:'SLA 7 วัน',bg:'#eff6ff',border:'#bfdbfe',text:'#1d4ed8'},
+                                {val:'ปกติ',icon:'normal',desc:'SLA 3 วัน',bg:'#f0fdf4',border:'#bbf7d0',text:'#15803d'},
+                                {val:'เร่งด่วน',icon:'urgent',desc:'SLA 1 วัน',bg:'#fff1f2',border:'#fecdd3',text:'#be123c'}]"
+                :key="p.val" @click="assignForm.priority=p.val"
+                :style="assignForm.priority===p.val ? {background:p.bg, border:'2px solid '+p.border, color:p.text} : {background:'#f8fafc', border:'1.5px solid #e2e8f0', color:'#64748b'}"
+                class="flex-1 rounded-lg p-2.5 text-center cursor-pointer transition-all">
+                <div class="text-lg">{{ p.icon }}</div>
+                <div class="text-sm font-semibold">{{ p.val }}</div>
+                <div class="text-[.7rem] opacity-80">{{ p.desc }}</div>
+              </div>
+            </div>
+            <div v-if="assignForm.priority" class="mt-2 px-3 py-2.5 rounded-lg text-sm leading-relaxed"
+              :style="assignForm.priority==='ต่ำ' ? {background:'#eff6ff',color:'#1d4ed8',border:'1px solid #bfdbfe'} : assignForm.priority==='เร่งด่วน' ? {background:'#fff1f2',color:'#be123c',border:'1px solid #fecdd3'} : {background:'#f0fdf4',color:'#15803d',border:'1px solid #bbf7d0'}">
+              <span v-if="assignForm.priority==='ต่ำ'"><strong>SLA 7 วัน</strong> — Sales มีเวลาทยอยทำได้ภายใน 7 วัน</span>
+              <span v-else-if="assignForm.priority==='ปกติ'"><strong>SLA 3 วัน</strong> — Sales ต้องเตรียมเอกสารยื่นซองภายใน 3 วัน</span>
+              <span v-else-if="assignForm.priority==='เร่งด่วน'"><strong>SLA 1 วัน</strong> — Sales ต้องจัดการภายใน 24 ชั่วโมง</span>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">หมายเหตุสำหรับ Sales</label>
+            <textarea v-model="assignForm.secretary_notes" rows="2"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"
+              placeholder="เช่น ราคาไม่สูง, ต้องการเอกสาร Made in Thailand..."></textarea>
+          </div>
+          <div v-if="assignForm.assigned_to" class="bg-blue-50 rounded-lg px-3.5 py-2.5 text-sm text-blue-800">
+            ระบบจะส่ง LINE แจ้งเตือนไปยัง Sales ที่เลือก (ถ้าตั้งค่า LINE User ID ไว้แล้ว)
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white border-0 cursor-pointer min-h-[44px]" @click="submitAssign">มอบหมาย</button>
+        </div>
+      </div>
+
+      <!-- Rotation Settings Modal -->
+      <div v-if="modal.type==='rotation-settings'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg m-0">⚙ ตั้งค่าเวรประจำวัน</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5">
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">วันเริ่มนับเวร</label>
+            <input type="date" v-model="rotationConfig.start_date"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <div class="text-xs text-slate-400 mt-1">วันทำการแรกในตารางเวร ระบบจะนับต่อเนื่องจากวันนี้</div>
+          </div>
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-2">ลำดับเวร (วันทำการ จ–ศ)</label>
+            <div class="flex flex-col gap-2">
+              <div v-for="(uid, i) in rotationConfig.user_ids" :key="i" class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-slate-500 whitespace-nowrap min-w-[72px]">ลำดับที่ {{ i+1 }}</span>
+                <select v-model="rotationConfig.user_ids[i]"
+                  class="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                </select>
+                <button type="button" v-if="rotationConfig.user_ids.length > 1"
+                  @click="rotationConfig.user_ids.splice(i,1)"
+                  class="px-2 py-1.5 border border-slate-200 rounded-lg bg-white text-red-500 cursor-pointer text-sm hover:bg-red-50 border-0">✕</button>
+              </div>
+            </div>
+            <button type="button" @click="rotationConfig.user_ids.push(salesUsers[0]?.id)"
+              class="mt-2 w-full text-sm text-blue-600 bg-transparent border border-dashed border-blue-200 rounded-lg py-2 cursor-pointer hover:bg-blue-50">
+              + เพิ่มคนในเวร
+            </button>
+          </div>
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-2">วิธีการมอบหมายงาน</label>
+            <div class="flex flex-col gap-2">
+              <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all"
+                :style="rotationConfig.method==='roundrobin' ? 'border-color:#3b82f6;background:#eff6ff' : 'border-color:#e2e8f0;background:#fff'">
+                <input type="radio" v-model="rotationConfig.method" value="roundrobin" class="mt-0.5 accent-blue-600">
+                <div>
+                  <div class="text-sm font-semibold text-blue-800">วนเวียนตามเวร (Round-Robin)</div>
+                  <div class="text-xs text-slate-500 mt-0.5">แจกทีละคน วนซ้ำ · ไม่คำนึงถึงจำนวนงานที่มีอยู่</div>
+                </div>
+              </label>
+              <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all"
+                :style="rotationConfig.method==='workload' ? 'border-color:#3b82f6;background:#eff6ff' : 'border-color:#e2e8f0;background:#fff'">
+                <input type="radio" v-model="rotationConfig.method" value="workload" class="mt-0.5 accent-blue-600">
+                <div>
+                  <div class="text-sm font-semibold text-blue-800">วนเวียน + จำกัดภาระงาน</div>
+                  <div class="text-xs text-slate-500 mt-0.5">ถ้างาน active ≥ จำนวนที่กำหนด → ข้ามไปคนถัดไปในเวร</div>
+                </div>
+              </label>
+            </div>
+          </div>
+          <div v-if="rotationConfig.method==='workload'" class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">จำนวนงาน active สูงสุดต่อคน</label>
+            <div class="flex items-center gap-3">
+              <input type="number" v-model.number="rotationConfig.workload_cap" min="1" max="99"
+                class="w-24 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <span class="text-sm text-slate-500">งาน (ถ้าเต็มทุกคน → ใช้เวรปกติ)</span>
+            </div>
+          </div>
+          <div class="bg-green-50 rounded-lg px-3.5 py-2.5 text-sm text-green-700">
+            วันทำการที่ 1 → ลำดับที่ 1 · วันที่ 2 → ลำดับที่ 2 · วนซ้ำอัตโนมัติ
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white border-0 cursor-pointer min-h-[44px]" @click="saveRotationConfig">บันทึก</button>
+        </div>
+      </div>
+
+      <!-- Announcement Detail Modal -->
+      <div v-if="modal.type==='ann-detail'" class="bg-white rounded-2xl w-full max-w-[720px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg m-0">รายละเอียดประกาศ</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5">
+          <div class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ข้อมูลโครงการ</div>
+            <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">เลขที่โครงการ</span><span class="text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
+            <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">ชื่อโครงการ</span><span class="text-slate-700 font-semibold">{{ modal.data.project_name }}</span></div>
+            <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">หน่วยงาน</span><span class="text-slate-700">{{ modal.data.unit_name }}</span></div>
+            <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">วันที่ประกาศ</span><span class="text-slate-700">{{ formatDateThai(modal.data.announce_date) }}</span></div>
+            <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">วันปิดรับ</span><span class="font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
+            <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">ราคากลาง</span><span class="font-semibold text-green-600">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <div class="flex py-1.5 border-b border-slate-50 text-sm items-center"><span class="w-32 shrink-0 text-slate-400 font-medium">เข้าประมูล</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span>
+            </div>
+            <div class="flex py-1.5 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">keyword</span><span class="text-blue-700 whitespace-pre-wrap break-words">{{ modal.data.keyword_match }}</span></div>
+          </div>
+          <div v-if="modal.data.reason" class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">เหตุผล</div>
+            <div class="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg p-3 whitespace-pre-wrap break-words">{{ modal.data.reason }}</div>
+          </div>
+          <div v-if="modal.data.items" class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">รายการสินค้า</div>
+            <div class="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg p-3 whitespace-pre-wrap break-words">{{ modal.data.items }}</div>
+          </div>
+          <div v-if="modal.data.spec" class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">คุณลักษณะ (Spec)</div>
+            <div class="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg p-3 whitespace-pre-wrap break-words">{{ modal.data.spec }}</div>
+          </div>
+          <div v-if="modal.data.docs_required" class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">เอกสารที่ต้องใช้</div>
+            <div class="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg p-3 whitespace-pre-wrap break-words">{{ modal.data.docs_required }}</div>
+          </div>
+          <div v-if="modal.data.conditions" class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">เงื่อนไข</div>
+            <div class="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg p-3 whitespace-pre-wrap break-words">{{ modal.data.conditions }}</div>
+          </div>
+          <div v-if="modal.data.need_sample==='ใช่'" class="bg-orange-50 rounded-lg p-3 mb-4 text-sm text-orange-800">
+            <div class="font-bold mb-1.5">⚠️ ต้องการตัวอย่าง</div>
+            <div v-if="modal.data.sample_detail" class="whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.sample_detail }}</div>
+          </div>
+          <div v-if="modal.data.url" class="mb-4">
+            <a :href="modal.data.url" target="_blank" rel="noopener noreferrer"
+              class="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 no-underline">
+              เปิดลิงก์ประกาศ
+            </a>
+          </div>
+          <div v-if="modal.data.assignments?.length" class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">การมอบหมาย</div>
+            <div v-for="pa in modal.data.assignments" :key="pa.id" class="flex items-center gap-2 py-1.5">
+              <img v-if="pa.photo_url" :src="pa.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"/>
+              <div v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[.65rem] font-bold shrink-0"
+                :style="{background:pa.avatar_color??'#94a3b8'}">{{ avatarInitials(pa.assigned_to_name) }}</div>
+              <span class="text-sm text-slate-700">{{ pa.assigned_to_name }}</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold" :class="statusBadge(pa.status)">{{ pa.status }}</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold" :class="priorityBadge(pa.priority)">{{ pa.priority }}</span>
+            </div>
+          </div>
+          <div v-if="modal.data.view_logs?.length" class="mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ประวัติการเข้าดู</div>
+            <div v-for="log in modal.data.view_logs" :key="log.viewed_at+log.full_name"
+              class="flex items-center gap-2 py-1.5 text-sm text-slate-500">
+              <span class="font-medium text-slate-700">{{ log.full_name }}</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">{{ log.role }}</span>
+              <span>{{ formatDateTime(log.viewed_at) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ปิด</button>
+          <button class="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white border-0 cursor-pointer min-h-[44px]" @click="openAssignModal(modal.data.id)">มอบหมายงาน</button>
+        </div>
+      </div>
+
+      <!-- Import Modal -->
+      <div v-if="modal.type==='import'" class="bg-white rounded-2xl w-full max-w-[720px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg m-0">นำเข้าข้อมูลประกาศ</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5">
+          <div class="mb-3">
+            <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">
+              เลือกไฟล์ JSON
+              <input type="file" accept=".json" class="hidden" @change="loadJsonFile">
+            </label>
+            <span v-if="importFileName" class="ml-3 text-sm text-slate-500">{{ importFileName }}</span>
+          </div>
+          <div class="mb-3">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">หรือวาง JSON Array ด้านล่าง</label>
+            <textarea v-model="importJson" rows="12"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"
+              placeholder='[{"project_no":"...","project_name":"...","announce_date":"2026-07-08",...}]'></textarea>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal;importJson='';importFileName=''">ยกเลิก</button>
+          <button class="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white border-0 cursor-pointer min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
+            @click="submitImport" :disabled="!importJson.trim()">นำเข้าเดี๋ยวนี้</button>
+        </div>
+      </div>
+
+    </div>
+  </template>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: { AppNav, AppTabBar, AppModal },
+  data() {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      authReady: false,
+      currentUser: null,
+      modal: { type: null, data: null },
+      annDate: today,
+      annAllDates: false, // เมื่อติ๊ก จะไม่ส่ง date ไปกรองเลย (ดูทุกวันที่) ใช้หา backlog ที่กระจายหลายวัน
+      annFilterStatus: '',
+      annCanBid: '',
+      annUnassignedOnly: false, // เฉพาะที่ยังไม่มอบหมาย + ยังไม่หมดอายุ (ตรงนิยามเดียวกับการ์ด "ค้างมอบหมาย" ใน dashboard)
+      annPendingActionOnly: false, // เฉพาะที่ยังไม่ตัดสินใจ (bid_decision IS NULL) หรือตัดสินใจเข้าประมูลแล้วแต่ยังไม่มอบหมาย —
+                                    // ตรงนิยามเดียวกับการ์ด "ค้าง Action" ใน dashboard salesadmin (ยืนยันจากผู้ใช้ 2026-09-02
+                                    // ให้รวม 2 ขั้นตอนเป็นตัวเลขเดียว ไม่กรอง close_date/can_bid)
+      salesUsers: [],
+      assignForm: { announcement_id: null, assigned_to: null, priority: 'ปกติ', secretary_notes: '' },
+      importJson: '',
+      importFileName: '',
+      dt: null,
+      rotationDuty: null,
+      rotationConfig: { start_date: '', user_ids: [], method: 'roundrobin', workload_cap: 5 },
+    };
+  },
+  computed: {
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'ประกาศ', icon:'bell', active:true },
+        { label:'งาน', icon:'clipboard', href:'assignments.html' },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+    isAdmin()      { return this.currentUser?.role === 'admin'; },
+    isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
+    isSalesAdmin() { return ['admin','salesadmin'].includes(this.currentUser?.role); },
+    isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
+    isSale()       { return this.currentUser?.role === 'sale'; },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!this.isSalesAdmin) { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    window.appVue = this;
+    // มาจากการ์ด "ค้างมอบหมาย" ของ dashboard.html (?unassigned=1) — ตั้งตัวกรองล่วงหน้าให้ตรงกับที่การ์ดนับไว้พอดี
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('unassigned') === '1') {
+      this.annAllDates       = true;
+      this.annCanBid         = 'ได้';
+      this.annUnassignedOnly = true;
+    }
+    // มาจากการ์ด "ค้าง Action" ของ dashboard.html (?pending_action=1)
+    if (urlParams.get('pending_action') === '1') {
+      this.annAllDates          = true;
+      this.annPendingActionOnly = true;
+    }
+    this.$nextTick(() => this.initDatatable());
+    this.loadSales();
+    this.loadRotationDuty(this.annDate);
+  },
+  beforeUnmount() { if (this.dt) { this.dt.destroy(); this.dt = null; } },
+  watch: {
+    annDate(newDate) {
+      this.rotationDuty = null;
+      this.loadRotationDuty(newDate);
+    },
+  },
+  methods: {
+    ...SharedMethods,
+
+    initDatatable() {
+      if (this.dt) { this.dt.destroy(); this.dt = null; }
+      const self = this;
+      this.dt = $('#announcements-table').DataTable({
+        processing: true, serverSide: true,
+        ajax: {
+          url: 'api/announcements.php?action=datatables', type: 'GET',
+          data(d) {
+            d.date          = self.annAllDates ? '' : self.annDate;
+            d.filter_status = self.annFilterStatus;
+            d.can_bid       = self.annCanBid;
+            if (self.annUnassignedOnly) {
+              d.has_assignment  = '0';
+              d.unexpired_only  = '1';
+            }
+            if (self.annPendingActionOnly) {
+              d.pending_action = '1';
+            }
+            return d;
+          },
+        },
+        columns: [
+          { data: 'project_no', title: 'เลขที่โครงการ',
+            render: d => `<span style="font-family:monospace;font-size:.8rem">${d}</span>` },
+          { data: 'project_name', title: 'ชื่อโครงการ',
+            render(d, t, row) {
+              const clsMap = { data_vendor: 'src-vendor', manual: 'src-manual' };
+              const lblMap = { egp: 'e-GP', data_vendor: 'ซื้อข้อมูล', manual: 'แจ้งเอง' };
+              const cls = clsMap[row.source_type] || 'src-egp';
+              const lbl = lblMap[row.source_type] || 'e-GP';
+              const badge = `<span class="src-badge ${cls}" style="vertical-align:middle;margin-left:4px">${lbl}</span>`;
+              return `<div style="max-width:260px;white-space:normal;font-size:.85rem;line-height:1.6">${d}${badge}</div>`;
+            } },
+          { data: 'unit_name', title: 'หน่วยงาน',
+            render: d => `<div style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem;color:#64748b" title="${d??''}">${d??'-'}</div>` },
+          { data: 'close_date', title: 'วันปิดรับ',
+            render: d => `<span style="font-size:.85rem;font-weight:600;color:#dc2626">${formatDateThai(d)}</span>` },
+          { data: 'price_median', title: 'ราคากลาง (บาท)',
+            render: d => d ? `<span style="font-weight:600;color:#16a34a">${Number(d).toLocaleString('th-TH')}</span>` : '-' },
+          { data: 'can_bid', title: 'เข้าประมูล',
+            render(d) {
+              const cls = d==='ได้' ? 'background:#dcfce7;color:#166534' : d==='ไม่ได้' ? 'background:#fee2e2;color:#991b1b' : 'background:#fef9c3;color:#854d0e';
+              return `<span style="display:inline-block;padding:.15rem .6rem;border-radius:999px;font-size:.75rem;font-weight:600;${cls}">${d}</span>`;
+            }
+          },
+          { data: 'assigned_to_names', title: 'มอบหมายให้',
+            render: d => d ? `<span style="font-size:.8rem;color:#6d28d9">${d}</span>` : '<span style="color:#94a3b8;font-size:.8rem">-</span>' },
+          { data: null, title: '', orderable: false,
+            render(d, t, row) {
+              let btns = `<button class="btn-dt-detail" data-id="${row.id}" style="padding:.2rem .55rem;border:1px solid #e2e8f0;border-radius:5px;font-size:.75rem;cursor:pointer;background:#f8fafc;color:#475569;margin-right:3px">ดู</button>`;
+              if (window.appVue?.isSalesAdmin) {
+                btns += `<button class="btn-dt-assign" data-id="${row.id}" style="padding:.2rem .55rem;border:none;border-radius:5px;font-size:.75rem;cursor:pointer;background:#2563eb;color:#fff">มอบหมาย</button>`;
+              }
+              return btns;
+            }
+          },
+        ],
+        language: {
+          search: 'ค้นหา:', lengthMenu: 'แสดง _MENU_ รายการ',
+          info: 'แสดง _START_–_END_ จาก _TOTAL_ รายการ',
+          infoEmpty: 'ไม่มีข้อมูล', infoFiltered: '(กรองจาก _MAX_)',
+          paginate: { first:'แรก', last:'สุดท้าย', next:'ถัดไป', previous:'ก่อนหน้า' },
+          zeroRecords: 'ไม่พบข้อมูล', emptyTable: 'ไม่มีข้อมูลในตาราง', processing: 'กำลังโหลด...',
+        },
+        pageLength: 25, order: [[5, 'asc'], [4, 'desc']], scrollX: true, autoWidth: false,
+      });
+      $('#announcements-table').on('click', '.btn-dt-assign', function() {
+        window.appVue.openAssignModal($(this).data('id'));
+      });
+      $('#announcements-table').on('click', '.btn-dt-detail', function() {
+        window.appVue.openAnnouncementDetail($(this).data('id'));
+      });
+    },
+
+    reloadDatatable() {
+      if (this.dt) this.dt.ajax.reload(null, false);
+      else this.$nextTick(() => this.initDatatable());
+    },
+
+    openAssignModal(announcementId) {
+      this.assignForm = {
+        announcement_id: announcementId,
+        assigned_to: this.rotationDuty?.id ?? null,
+        priority: 'ปกติ',
+        secretary_notes: '',
+      };
+      this.modal = { type: 'assign', data: { id: announcementId } };
+    },
+
+    async loadRotationDuty(date) {
+      const d = date || new Date().toISOString().slice(0, 10);
+      const r = await apiCall('GET', `api/rotation.php?action=duty&date=${d}`);
+      this.rotationDuty = (r.success && r.data.user) ? r.data.user : null;
+    },
+
+    async openRotationSettings() {
+      const r = await apiCall('GET', 'api/rotation.php?action=config');
+      if (r.success) this.rotationConfig = {
+        start_date:   r.data.start_date,
+        user_ids:     [...r.data.user_ids],
+        method:       r.data.method || 'roundrobin',
+        workload_cap: r.data.workload_cap || 5,
+      };
+      this.modal = { type: 'rotation-settings', data: null };
+    },
+
+    async saveRotationConfig() {
+      if (!this.rotationConfig.start_date || !this.rotationConfig.user_ids.length) {
+        await this.showAlert('กรุณากรอกข้อมูลให้ครบ', 'error'); return;
+      }
+      const r = await apiCall('POST', 'api/rotation.php?action=save', this.rotationConfig);
+      if (r.success) {
+        this.closeModal();
+        this.loadRotationDuty(this.annDate);
+        await this.showAlert('บันทึกเรียบร้อย', 'success');
+      } else {
+        await this.showAlert(r.message, 'error');
+      }
+    },
+
+    async openAnnouncementDetail(id) {
+      const res = await apiCall('GET', `api/announcements.php?action=detail&id=${id}`);
+      if (res.success) this.modal = { type: 'ann-detail', data: res.data };
+    },
+
+    async submitAssign() {
+      if (!this.assignForm.assigned_to) { await this.showAlert('กรุณาเลือก Sales', 'error'); return; }
+      const res = await apiCall('POST', 'api/assignments.php?action=create', this.assignForm);
+      if (res.success) {
+        this.closeModal();
+        this.reloadDatatable();
+        await this.showAlert(res.message, 'success');
+      } else {
+        await this.showAlert(res.message, 'error');
+      }
+    },
+
+
+    async submitImport() {
+      let items;
+      try { items = JSON.parse(this.importJson); } catch { await this.showAlert('JSON ไม่ถูกต้อง', 'error'); return; }
+      if (!Array.isArray(items)) items = [items];
+      const res = await apiCall('POST', 'api/announcements.php?action=import', { items });
+      if (res.success) {
+        this.closeModal();
+        this.importJson = '';
+        this.reloadDatatable();
+        await this.showAlert(res.message, 'success');
+      } else {
+        await this.showAlert(res.message, 'error');
+      }
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

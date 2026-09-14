@@ -1,0 +1,37 @@
+--TEST Run Project ใน Terminal 
+--project port  8000
+
+cd "D:\TAIYO\Project\Project_Claude\webfront_saleproject" ; .\start.ps1
+
+cd "D:\TAIYO\Project\Project_Claude\webfront_saleproject" ; .\start.ps1 -Port 8000
+
+
+
+--phpmyadmin  port 8090 
+
+เวลา run script ใช้ phpmyadmin สร้าง 
+
+http://localhost:8090/phpmyadmin/
+เปิด xampm
+
+
+
+Reset ทั้งหมดเรียบร้อย:
+
+| username | password |
+|----------|----------|
+| `admin` | `admin` |
+| `salesadmin` | `salesadmin` |
+| `mew` | `mew` |
+| `napat` | `napat` |
+| `tan` | `tan` |
+| `aoey` | `aoey` |
+| `manager01` | `manager01` |
+
+
+
+--Run Web php 
+--กรณี deply  ใช้ folder แทน subdomain 
+
+เข้าใน folder project ก่อน
+D:\TAIYO\Project\Project_Claude\webfront_saleproject\app-salesproject> php -S localhost:8060

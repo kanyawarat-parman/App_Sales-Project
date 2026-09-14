@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เข้าสู่ระบบ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=1">
+</head>
+<body class="font-sans">
+
+<div id="app" class="min-h-screen bg-gradient-to-br from-teal-100 via-sky-100 to-slate-100 flex items-center justify-center p-4">
+
+  <!-- Loading check -->
+  <div v-if="checking" class="flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <!-- Login card -->
+  <div v-else class="bg-white rounded-2xl p-10 w-full max-w-sm shadow-2xl shadow-slate-200/80">
+
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <div class="mb-3 flex justify-center">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#008074" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+          <polyline points="17 6 23 6 23 12"/>
+        </svg>
+      </div>
+      <h1 class="text-[1.35rem] font-extrabold text-slate-800 leading-snug">
+        {{ appConfig.brand_line1 }}<br><span class="text-base font-semibold text-slate-500">{{ appConfig.brand_line2 }}</span>
+      </h1>
+      <p class="text-sm text-slate-400 mt-1">กรุณาเข้าสู่ระบบเพื่อดำเนินการ</p>
+    </div>
+
+    <!-- Form -->
+    <form @submit.prevent="doLogin" class="space-y-4">
+      <div>
+        <label class="block text-sm font-semibold text-slate-600 mb-1.5">Username</label>
+        <input v-model="form.username" type="text" placeholder="กรอก username"
+               autocomplete="username" required autofocus
+               class="w-full border-[1.5px] border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none
+                      focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white transition-all placeholder:text-slate-300">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-600 mb-1.5">Password</label>
+        <input v-model="form.password" type="password" placeholder="กรอก password"
+               autocomplete="current-password" required
+               class="w-full border-[1.5px] border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none
+                      focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white transition-all placeholder:text-slate-300">
+      </div>
+
+      <div v-if="form.error" class="bg-red-50 border border-red-200 text-red-700 text-sm font-medium rounded-xl px-4 py-2.5 text-center">
+        {{ form.error }}
+      </div>
+
+      <button type="submit"
+              class="w-full flex items-center justify-center gap-2 bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm py-3 rounded-xl border-0 cursor-pointer transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              :disabled="form.loading">
+        <div v-if="form.loading" class="spinner w-4 h-4" style="border-width:2px"></div>
+        <span v-else>เข้าสู่ระบบ</span>
+      </button>
+    </form>
+
+    <p class="text-center text-[.72rem] text-slate-300 mt-6">
+      {{ appConfig.brand_line1 }} {{ appConfig.brand_line2 }} v0.1.0
+    </p>
+  </div>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=1"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      checking: true,
+      form: { username: '', password: '', loading: false, error: '' },
+      appConfig: window.APP_CONFIG,
+    };
+  },
+
+  async mounted() {
+    window.APP_CONFIG_READY?.then(cfg => { this.appConfig = cfg; });
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (res.success) { window.location.href = 'dashboard.html'; return; }
+    } catch {}
+    this.checking = false;
+  },
+
+  methods: {
+    async doLogin() {
+      this.form.loading = true;
+      this.form.error   = '';
+      try {
+        const res = await apiCall('POST', 'api/auth.php?action=login', {
+          username: this.form.username,
+          password: this.form.password,
+        });
+        if (res.success) {
+          window.location.href = 'dashboard.html';
+        } else {
+          this.form.error = res.message || 'Username หรือ Password ไม่ถูกต้อง';
+        }
+      } catch {
+        this.form.error = 'เกิดข้อผิดพลาด กรุณาลองใหม่';
+      }
+      this.form.loading = false;
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

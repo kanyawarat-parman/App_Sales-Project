@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>งานประมูล</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<!-- DataTables (ใช้เฉพาะมุมมองตารางของหน้านี้ — jQuery plugin ควบคุมตารางแยกจาก Vue โดยเจตนา เหมือน sources.html/calendars.html) -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<style>
+  #bidPipelineTable_wrapper { padding: 0 1rem 1rem; }
+  #bidPipelineTable_wrapper .dataTables_length,
+  #bidPipelineTable_wrapper .dataTables_filter { float: none; margin-bottom: .75rem; }
+  #bidPipelineTable_wrapper .dataTables_length label,
+  #bidPipelineTable_wrapper .dataTables_filter label { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: .8125rem; color: #64748b; white-space: nowrap; }
+  #bidPipelineTable_wrapper .dataTables_filter input { flex: 0 0 320px; width: 320px; }
+  @media (min-width: 640px) {
+    #bidPipelineTable_wrapper { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; }
+    #bidPipelineTable_wrapper .dataTables_length,
+    #bidPipelineTable_wrapper .dataTables_filter,
+    #bidPipelineTable_wrapper .dataTables_info,
+    #bidPipelineTable_wrapper .dataTables_paginate { margin-bottom: 0; }
+    #bidPipelineTable_wrapper > table { width: 100%; }
+  }
+  #bidPipelineTable_wrapper .dataTables_filter input,
+  #bidPipelineTable_wrapper .dataTables_length select { border-radius: .5rem; border: 1px solid #e2e8f0; padding: .375rem .75rem; outline: none; }
+  #bidPipelineTable_wrapper .dataTables_filter input:focus,
+  #bidPipelineTable_wrapper .dataTables_length select:focus { border-color: #2dd4bf; box-shadow: 0 0 0 2px #ccfbf1; }
+  #bidPipelineTable_wrapper .dataTables_info { font-size: .8125rem; color: #94a3b8; }
+  #bidPipelineTable_wrapper .dataTables_paginate { display: flex; gap: .25rem; flex-wrap: wrap; }
+  #bidPipelineTable_wrapper .dataTables_paginate .paginate_button.current { background: #0f766e !important; color: #fff !important; border-radius: .375rem; border: none !important; }
+  #bidPipelineTable_wrapper .dataTables_paginate .paginate_button { border-radius: .375rem; padding: .25rem .6rem; }
+  #bidPipelineTable thead th { background: #f8fafc; }
+  #bidPipelineTable tbody tr { cursor: pointer; }
+  #bidPipelineTable tbody tr:hover { background: #f8fafc; }
+</style>
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="bid-pipeline" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#008074" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/>
+          </svg>
+          งานประมูล
+        </h1>
+        <button @click="loadData"
+          class="ml-auto p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 border-0 bg-transparent cursor-pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+          </svg>
+        </button>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <!-- Stats row: แบ่งเป็น 2 กลุ่ม (label + การ์ดของกลุ่มนั้น) อยู่แถวเดียวกันในทุกขนาดจอ
+             กลุ่ม 1 (งานที่ยังไม่จบ) กว้าง 3 คอลัมน์ ในนั้นมี sub-group 2 อัน: งานทั้งหมด (ทุกสถานะ) 1 คอลัมน์ + งานในมือ/รอประกาศผล/Weighted Pipeline 3 คอลัมน์
+             กลุ่ม 2 (ผลลัพธ์ที่จบแล้ว) กว้าง 1 คอลัมน์ = ชนะประมูล (+ Win Rate)
+             "งานทั้งหมด (ทุกสถานะ)" ตาม pattern เดียวกับหน้างานขายตรง (sales-pipeline.html) — ป้ายกำกับแยกจาก "งานที่ยังไม่จบ" เพราะคนละ concept -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 items-start">
+          <div class="md:col-span-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <!-- ป้ายย่อย: งานทั้งหมด (ทุกสถานะ) — คลุมแค่การ์ดเดียว -->
+            <div class="md:col-span-1 flex flex-col">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="text-xs font-bold text-slate-500">📊 งานทั้งหมด (ทุกสถานะ)</span>
+                <button @click="modal = {type:'total-all-info'}"
+                  class="w-5 h-5 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[12px] font-black leading-none" title="งานทั้งหมด คืออะไร">i</button>
+              </div>
+              <div class="bg-white rounded-xl px-5 py-4 ring-1 ring-slate-100 shadow-sm flex-1">
+                <div>
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">จำนวนงานทั้งหมด</span>
+                  </div>
+                  <div class="text-[1.75rem] font-black leading-none text-purple-700">{{ stats.total_all ?? 0 }} <span class="text-sm font-semibold text-slate-400">งาน</span></div>
+                </div>
+                <div class="mt-3 pt-3 border-t border-slate-100">
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M6 12h.01M18 12h.01"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">มูลค่ารวมทั้งหมด</span>
+                  </div>
+                  <div class="text-[1.3rem] font-black leading-none text-purple-700">฿{{ formatNumber(stats.total_all_value) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ป้ายย่อย: งานที่ยังไม่จบ (คาดการณ์) -->
+            <div class="md:col-span-3 flex flex-col">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="text-xs font-bold text-slate-500">📈 งานที่ยังไม่จบ (คาดการณ์)</span>
+                <button @click="modal = {type:'forecast-info'}"
+                  class="w-5 h-5 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[12px] font-black leading-none" title="งานที่ยังไม่จบ (คาดการณ์) คืออะไร">i</button>
+              </div>
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 flex-1">
+                <div class="bg-white rounded-xl px-5 py-4 shadow-sm ring-1 ring-slate-100">
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">งานในมือ</span>
+                  </div>
+                  <div class="flex items-baseline gap-2">
+                    <span class="text-[1.75rem] font-black leading-none text-sky-700">{{ stats.active ?? 0 }}</span>
+                    <span v-if="statsValues.active" class="text-slate-300 font-normal">/</span>
+                    <span v-if="statsValues.active" class="text-[1.3rem] font-black leading-none text-sky-600">{{ formatValueShort(statsValues.active) }}</span>
+                  </div>
+                  <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ยังดำเนินการอยู่ · ข้อมูลล่าสุด ณ ตอนนี้</div>
+                  <div v-if="stats.active_7d_ago != null" class="text-[.7rem] font-semibold mt-1"
+                    :class="activeDeltaCount > 0 ? 'text-emerald-600' : activeDeltaCount < 0 ? 'text-rose-500' : 'text-slate-400'">
+                    {{ activeDeltaCount > 0 ? '▲' : activeDeltaCount < 0 ? '▼' : '—' }}
+                    {{ activeDeltaCount > 0 ? '+' : '' }}{{ activeDeltaCount }} งาน ({{ formatDelta(activeDeltaValue) }}) จาก 7 วันก่อน
+                  </div>
+                </div>
+                <div class="bg-white rounded-xl px-5 py-4 shadow-sm ring-1 ring-slate-100">
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">รอประกาศผล</span>
+                  </div>
+                  <div class="flex items-baseline gap-2">
+                    <span class="text-[1.75rem] font-black leading-none text-violet-700">{{ stats.submitted ?? 0 }}</span>
+                    <span v-if="statsValues.submitted" class="text-slate-300 font-normal">/</span>
+                    <span v-if="statsValues.submitted" class="text-[1.3rem] font-black leading-none text-violet-600">{{ formatValueShort(statsValues.submitted) }}</span>
+                  </div>
+                  <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ยื่นแล้ว รอผลประกาศ · ข้อมูลล่าสุด ณ ตอนนี้</div>
+                </div>
+                <div class="bg-white rounded-xl px-5 py-4 shadow-sm ring-1 ring-slate-100">
+                  <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                    <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-6 3 3 4-7"/></svg>
+                    <span class="text-xs text-slate-400 font-medium">Weighted Pipeline</span>
+                  </div>
+                  <div class="text-[1.3rem] font-black leading-none text-indigo-700">฿{{ formatNumber(weightedPipeline) }}</div>
+                  <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ถ่วงน้ำหนักตามโอกาสสำเร็จ (10%/50%) · ข้อมูลล่าสุด ณ ตอนนี้</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- กลุ่ม: ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) -->
+          <div class="md:col-span-1 flex flex-col">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="text-xs font-bold text-slate-500">✅ ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง)</span>
+              <button @click="modal = {type:'results-info'}"
+                class="w-5 h-5 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[12px] font-black leading-none" title="ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) คืออะไร">i</button>
+            </div>
+            <div class="bg-white rounded-xl px-5 py-4 shadow-sm ring-1 ring-slate-100 flex-1">
+            <!-- ชนะประมูล + Win Rate เรียง 2 คอลัมน์ ฝั่งซ้ายชนะประมูล ฝั่งขวา Win Rate -->
+            <div class="grid grid-cols-2 gap-4">
+              <!-- ชนะประมูล -->
+              <div>
+                <div class="flex items-center gap-1.5 mb-2.5 flex-wrap">
+                  <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8M12 17v4M7 4H5a2 2 0 00-2 2v2a4 4 0 004 4h.5M17 4h2a2 2 0 012 2v2a4 4 0 01-4 4h-.5M7 4h10v4a5 5 0 01-10 0V4z"/></svg>
+                  <span class="text-xs text-slate-400 font-medium">ชนะประมูล</span>
+                </div>
+                <div class="flex items-baseline gap-2 flex-wrap">
+                  <span class="text-[1.75rem] font-black leading-none text-emerald-700">{{ stats.won ?? 0 }}</span>
+                  <span v-if="statsValues.won" class="text-slate-300 font-normal">/</span>
+                  <span v-if="statsValues.won" class="text-[1.3rem] font-black leading-none text-emerald-600">{{ formatValueShort(statsValues.won) }}</span>
+                </div>
+                <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ตลอดกาล (ทุกช่วงเวลา)</div>
+              </div>
+              <!-- Win Rate -->
+              <div class="text-right">
+                <div class="flex items-center justify-end gap-1.5 mb-2.5 flex-wrap">
+                  <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
+                  <span class="text-xs text-slate-400 font-medium">Win Rate</span>
+                </div>
+                <div class="text-[1.75rem] font-black leading-none text-amber-600">{{ stats.win_rate != null ? stats.win_rate + '%' : '-' }}</div>
+                <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">จากงานที่มีผลแล้ว · ตลอดกาล</div>
+                <div class="text-[.7rem] text-slate-300 font-normal mt-1">ชนะ {{ stats.won ?? 0 }} · แพ้ {{ stats.lost ?? 0 }} งาน</div>
+              </div>
+            </div>
+            <div class="mt-2.5 pt-2.5 border-t border-slate-100 grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-baseline">
+              <span class="text-xs text-slate-400">เดือนนี้</span>
+              <span class="text-sm font-bold text-slate-700 text-right whitespace-nowrap">{{ stats.won_month?.count ?? 0 }} งาน</span>
+              <span class="text-xs text-emerald-600 font-semibold text-right whitespace-nowrap">{{ formatValueShort(stats.won_month?.value) || '-' }}</span>
+
+              <span class="text-xs text-slate-400">ไตรมาสนี้</span>
+              <span class="text-sm font-bold text-slate-700 text-right whitespace-nowrap">{{ stats.won_quarter?.count ?? 0 }} งาน</span>
+              <span class="text-xs text-emerald-600 font-semibold text-right whitespace-nowrap">{{ formatValueShort(stats.won_quarter?.value) || '-' }}</span>
+
+              <span class="text-xs text-slate-400">ปีนี้</span>
+              <span class="text-sm font-bold text-slate-700 text-right whitespace-nowrap">{{ stats.won_year?.count ?? 0 }} งาน</span>
+              <span class="text-xs text-emerald-600 font-semibold text-right whitespace-nowrap">{{ formatValueShort(stats.won_year?.value) || '-' }}</span>
+            </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Team summary (manager only) -->
+        <div v-if="isManager && perSale.length && !filter.assigned_to"
+          class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4 overflow-hidden">
+          <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <span class="font-bold text-slate-700 text-sm">ภาพรวมทีม Sales</span>
+            <span class="text-xs text-slate-400">คลิกแถวเพื่อกรอง · ข้อมูลตลอดกาล (all-time)</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full border-collapse text-sm">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="px-4 py-2.5 text-left text-[.72rem] font-bold text-slate-500 uppercase border-b border-slate-100">Sales</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b border-slate-100">งานในมือ</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b border-slate-100">รอผล</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b border-slate-100">ชนะ</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b border-slate-100">แพ้</th>
+                  <th class="px-3 py-2.5 text-center text-[.72rem] font-bold text-slate-500 uppercase border-b border-slate-100">Win Rate</th>
+                  <th class="px-4 py-2.5 text-right text-[.72rem] font-bold text-slate-500 uppercase border-b border-slate-100">มูลค่าชนะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in perSale" :key="s.id"
+                  @click="filter.assigned_to = s.id; loadData()"
+                  class="border-b border-slate-50 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <img v-if="s.photo_url" :src="s.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"/>
+                      <div v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[.72rem] font-bold shrink-0"
+                        :style="{background:s.avatar_color||'#64748b'}">{{ avatarInitials(s.full_name) }}</div>
+                      <span class="font-semibold text-slate-800">{{ s.full_name }}</span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 text-center font-bold text-sky-600">{{ s.active }}</td>
+                  <td class="px-3 py-3 text-center font-semibold text-violet-600">{{ s.submitted }}</td>
+                  <td class="px-3 py-3 text-center font-bold text-emerald-600">{{ s.won }}</td>
+                  <td class="px-3 py-3 text-center text-rose-500">{{ s.lost }}</td>
+                  <td class="px-3 py-3 text-center">
+                    <span v-if="s.win_rate != null" class="font-bold text-sm"
+                      :style="{color: s.win_rate>=60?'#059669':s.win_rate>=40?'#d97706':'#dc2626'}">{{ s.win_rate }}%</span>
+                    <span v-else class="text-slate-400">—</span>
+                  </td>
+                  <td class="px-4 py-3 text-right font-semibold text-emerald-600 text-sm">
+                    {{ s.won_value > 0 ? '฿'+formatNumber(s.won_value) : '—' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4 px-4 py-3 flex items-center gap-3 flex-wrap">
+          <select v-if="isManager" v-model="filter.assigned_to" @change="loadData()"
+            class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white min-w-[160px]">
+            <option value="">— Sales ทั้งหมด —</option>
+            <option v-for="s in salesUsers" :key="s.id" :value="s.id">{{ s.full_name }}</option>
+          </select>
+          <button v-if="isManager && filter.assigned_to"
+            class="inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold ring-1 ring-red-200 text-red-600 bg-white hover:bg-red-50 border-0 cursor-pointer"
+            @click="filter.assigned_to=''; loadData()">✕ ล้างตัวกรอง</button>
+          <select v-model="filter.period" @change="loadData()" title="กรองเฉพาะการ์ดใน Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน"
+            class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white min-w-[130px]">
+            <option value="all">ทั้งหมด</option>
+            <option value="month">เดือนนี้</option>
+            <option value="quarter">ไตรมาสนี้</option>
+            <option value="year">ปีนี้</option>
+          </select>
+          <button @click="modal = {type:'adv-filter'}"
+            class="inline-flex items-center gap-1.5 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold bg-white text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors"
+            :class="{'!border-teal-400 !text-teal-700 !bg-teal-50': advFilterCount>0}">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
+            ตัวกรองเพิ่มเติม
+            <span v-if="advFilterCount" class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-teal-600 text-white text-[10px] font-bold">{{ advFilterCount }}</span>
+          </button>
+          <label v-if="view==='kanban'" class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <input type="checkbox" v-model="showClosed" class="rounded accent-teal-600"> แสดงงานปิด
+            <span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-500 min-w-[20px]">{{ totalKanbanCount }}</span>
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-500 min-w-[20px]">{{ closedCount }} ปิด</span>
+          </label>
+          <div v-if="loading" class="flex items-center gap-1.5 text-xs text-slate-500 ml-auto">
+            <div class="spinner w-4 h-4" style="border-width:2px"></div> กำลังโหลด...
+          </div>
+          <!-- View toggle -->
+          <div class="flex border-[1.5px] border-slate-200 rounded-xl overflow-hidden" :class="loading ? '' : 'ml-auto'">
+            <button @click="view='kanban'"
+              class="px-4 py-1.5 text-xs font-semibold border-0 cursor-pointer transition-colors"
+              :class="view==='kanban' ? 'bg-teal-700 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'">แยกตามสถานะ</button>
+            <button @click="view='table'"
+              class="px-4 py-1.5 text-xs font-semibold border-0 cursor-pointer transition-colors"
+              :class="view==='table' ? 'bg-teal-700 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'">ตาราง</button>
+          </div>
+        </div>
+
+        <!-- KANBAN -->
+        <div v-show="view==='kanban'" class="flex gap-3 overflow-x-auto pb-4">
+          <div v-for="stage in visibleStages" :key="stage.key" class="flex-shrink-0 w-56 flex flex-col">
+            <!-- Column header -->
+            <div class="text-white px-3 py-2.5 flex items-center justify-between rounded-t-xl font-semibold text-sm"
+              :style="{background: stage.color}">
+              <span class="truncate">{{ stage.label }}</span>
+              <span class="ml-1 bg-white/20 rounded-full px-2 py-0.5 text-xs shrink-0">{{ (kanban[stage.key]||[]).length }}</span>
+            </div>
+            <!-- Column value bar -->
+            <div class="px-3 py-1.5 text-xs font-medium text-white/80 truncate" :style="{background: stage.darkColor}">
+              {{ stageValue(stage.key) }}&nbsp;
+            </div>
+            <!-- Cards -->
+            <div class="flex-1 flex flex-col gap-2 p-2 bg-slate-100 rounded-b-xl overflow-y-auto" style="min-height:200px;max-height:68vh">
+              <div v-if="!(kanban[stage.key]||[]).length"
+                class="text-center text-slate-400 text-xs py-8">ไม่มีงานในขั้นนี้</div>
+              <div v-for="card in (kanban[stage.key]||[])" :key="card.id"
+                class="bg-white rounded-xl p-3 shadow-sm ring-1 ring-slate-100 cursor-pointer hover:shadow-md transition-shadow"
+                @click="openDetail(card.id)">
+                <!-- รหัสงานกลาง (project_code) + เลขโครงการ e-GP (project_no) -->
+                <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                  <span v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ card.project_code }}</span>
+                  <span class="text-[.68rem] text-slate-400 font-mono">{{ card.project_no }}</span>
+                </div>
+                <!-- Project name -->
+                <div class="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1">{{ card.project_name }}</div>
+                <!-- Price -->
+                <div v-if="card.price_median" class="text-base font-bold text-slate-700 mb-0.5">฿{{ formatNumber(card.price_median) }}</div>
+                <!-- Client -->
+                <div class="text-xs text-slate-400 mb-2 truncate">{{ card.unit_name }}</div>
+                <!-- Sale avatar + priority -->
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1">
+                    <img v-if="card.sale_photo_url" :src="card.sale_photo_url" class="w-5 h-5 rounded-full object-cover"/>
+                    <div v-else class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[.62rem] font-bold"
+                      :style="{background:card.sale_color||'#64748b'}">{{ avatarInitials(card.sale_name) }}</div>
+                    <span class="text-[.72rem] text-slate-500 truncate max-w-[70px]">{{ (card.sale_name||'').split(' ')[0] }}</span>
+                  </div>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="priorityBadge(card.priority)">{{ card.priority }}</span>
+                </div>
+                <!-- Deadline countdown -->
+                <div v-if="card.close_date" class="mt-1.5 text-right text-[.7rem]"
+                  :style="{color: countdownColor(daysToClose(card.close_date))}">
+                  {{ countdownText(daysToClose(card.close_date)) }}
+                </div>
+                <!-- Win/Loss reason -->
+                <div v-if="card.win_loss_reason"
+                  class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-1">
+                  {{ card.win_loss_reason }}
+                </div>
+                <!-- Action buttons -->
+                <div v-if="canMove(card.status)" class="flex gap-1 mt-2" @click.stop>
+                  <!-- Prev button -->
+                  <button v-if="prevStage(card.status)"
+                    @click.stop="moveCard(card, prevStage(card.status))"
+                    class="text-xs font-semibold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer">← ถอย</button>
+                  <!-- Next / Win-Loss buttons -->
+                  <template v-if="card.status === 'รอประกาศผล'">
+                    <button @click.stop="openWinLoss(card,'ชนะการประมูล')"
+                      class="flex-1 text-xs font-semibold px-1.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0 cursor-pointer">ชนะ</button>
+                    <button @click.stop="openWinLoss(card,'แพ้การประมูล')"
+                      class="flex-1 text-xs font-semibold px-1.5 py-1 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 border-0 cursor-pointer">แพ้</button>
+                  </template>
+                  <button v-else-if="nextStage(card.status)"
+                    @click.stop="moveCard(card, nextStage(card.status))"
+                    class="flex-1 text-xs font-semibold px-2 py-1 rounded-lg bg-sky-100 text-sky-700 hover:bg-sky-200 border-0 cursor-pointer">ส่งต่อ →</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABLE VIEW -->
+        <div v-show="view==='table'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 gap-3 flex-wrap">
+            <span class="font-bold text-slate-700 flex items-center gap-2">
+              <span class="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
+              </span>
+              รายการงานประมูล
+            </span>
+            <button @click="exportTable"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export Excel
+            </button>
+          </div>
+          <div class="p-4 overflow-x-auto">
+            <!-- ตารางนี้ DataTables (jQuery) เป็นผู้คุมทั้งหมด เหมือน sources.html/calendars.html — ห้ามใส่ v-for ในนี้เด็ดขาด -->
+            <table id="bidPipelineTable" class="display w-full min-w-[900px] text-sm"></table>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- Modals -->
+    <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
+      v-if="modal.type" @click.self="closeModal">
+
+      <!-- Detail Modal -->
+      <div v-if="modal.type==='detail'" class="bg-white rounded-2xl w-full max-w-[680px] shadow-2xl overflow-hidden my-8">
+        <div class="text-white px-6 py-5 flex items-center justify-between"
+          :style="{background: `linear-gradient(135deg, ${modalStageColor.darkColor}, ${modalStageColor.color})`}">
+          <h3 class="font-bold text-lg">รายละเอียดงานประมูล</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="flex gap-2 flex-wrap mb-4">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
+            <span class="text-sm" :class="slaClass(modal.data.sla_status)">
+              {{ modal.data.sla_status==='เกิน' ? 'เกิน SLA' : modal.data.sla_status==='ใกล้ถึง' ? 'ใกล้ถึง SLA' : '' }}
+            </span>
+          </div>
+          <div class="mb-4 space-y-0">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ข้อมูลโครงการ</div>
+            <div v-if="modal.data.project_code" class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">รหัสงาน</span><span class="text-sm font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block">{{ modal.data.project_code }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">เลขโครงการ</span><span class="text-sm text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">ชื่อโครงการ</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.project_name }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">หน่วยงาน</span><span class="text-sm text-slate-700">{{ modal.data.unit_name }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-emerald-600">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">เข้าประมูล</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span>
+            </div>
+          </div>
+
+          <div v-if="modal.data.items" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายการสินค้าและจำนวน</div>
+            <div class="rounded-lg bg-slate-50 p-3 max-h-[260px] overflow-y-auto">
+              <div v-if="parsedItems.summary" class="text-xs font-semibold text-slate-500 mb-2">{{ parsedItems.summary }}</div>
+              <div v-for="(row, i) in parsedItems.rows" :key="i" class="py-2" :class="i>0 ? 'border-t border-slate-200' : ''">
+                <template v-if="row.parsed">
+                  <div class="text-sm font-semibold text-slate-800 mb-1">{{ row.no }}. {{ row.name }}</div>
+                  <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
+                    <span>จำนวน: <strong class="text-teal-700">{{ row.qty }}{{ row.unit ? ' ' + row.unit : '' }}</strong></span>
+                    <span>ราคา/หน่วย: <strong>{{ formatNum(row.unitPrice) }}</strong> บาท</span>
+                    <span>รวม: <strong class="text-green-700">{{ formatNum(row.total) }}</strong> บาท</span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="text-sm text-slate-700 flex gap-2 leading-relaxed"><span class="text-teal-600 shrink-0">•</span><span>{{ row.text }}</span></div>
+                </template>
+              </div>
+            </div>
+          </div>
+          <div v-if="modal.data.spec" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">คุณลักษณะ (Spec)</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.spec }}</div>
+          </div>
+          <div v-if="modal.data.docs_required" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารที่ต้องเตรียม</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.docs_required }}</div>
+          </div>
+          <div v-if="modal.data.need_sample || modal.data.sample_detail" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายละเอียดตัวอย่าง</div>
+            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700">
+              <div v-if="modal.data.need_sample" class="font-semibold mb-1.5">ต้องส่งตัวอย่าง: {{ modal.data.need_sample }}</div>
+              <div v-if="modal.data.sample_detail" class="whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.sample_detail }}</div>
+            </div>
+          </div>
+          <div v-if="modal.data.conditions" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เงื่อนไขพิเศษ</div>
+            <div class="text-sm p-3 rounded-lg bg-amber-50 text-amber-800 max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.conditions }}</div>
+          </div>
+
+          <div class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารโครงการ</div>
+            <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
+            <template v-else-if="docs?.available && docs.files.length">
+              <a v-for="f in docs.files" :key="f.name"
+                 :href="`api/documents.php?action=download&id=${modal.data.id}&file=${encodeURIComponent(f.name)}`"
+                 target="_blank" rel="noopener"
+                 class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
+                <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
+                <span class="flex-1 min-w-0">
+                  <span class="block truncate font-medium">{{ docLabel(f.name) || f.name }}</span>
+                  <span v-if="docLabel(f.name)" class="block truncate text-[11px] text-slate-400">{{ f.name }}</span>
+                </span>
+                <span class="text-xs text-slate-400 shrink-0">{{ formatFileSize(f.size) }}</span>
+              </a>
+            </template>
+            <div v-else class="text-sm text-slate-400 py-1">
+              {{ docs?.available===false ? 'ยังไม่พบโฟลเดอร์เอกสารสำหรับโครงการนี้' : 'ไม่สามารถโหลดรายการเอกสารได้' }}
+              <button v-if="modal.data.announce_date" type="button" @click="openFolder(modal.data.announce_date)"
+                class="block mt-1 text-blue-600 text-xs hover:underline bg-transparent border-0 p-0 cursor-pointer text-left">
+                📋 คัดลอก path โฟลเดอร์แทน
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4 mt-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">การมอบหมาย</div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">มอบหมายให้</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.sale_name }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">มอบหมายโดย</span><span class="text-sm text-slate-700">{{ modal.data.secretary_name }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">SLA Deadline</span><span class="text-sm text-slate-700">{{ formatDateTimeThai(modal.data.sla_deadline) }}</span></div>
+          </div>
+          <div v-if="modal.data.secretary_notes" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">หมายเหตุจาก SalesAdmin</div>
+            <div class="text-sm p-3 rounded-xl bg-amber-50 text-amber-800">{{ modal.data.secretary_notes }}</div>
+          </div>
+          <div v-if="modal.data.sale_notes" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">บันทึก Sale</div>
+            <div class="text-sm p-3 rounded-xl bg-sky-50 text-sky-800">{{ modal.data.sale_notes }}</div>
+          </div>
+          <div v-if="modal.data.bid_amount" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ราคาที่เสนอ</div>
+            <div class="text-xl font-bold text-emerald-600">{{ formatPrice(modal.data.bid_amount) }}</div>
+          </div>
+          <div v-if="modal.data.win_loss_reason" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+              {{ modal.data.status==='ชนะการประมูล'||modal.data.status==='ส่งมอบแล้ว' ? 'เหตุผลที่ชนะ' : 'เหตุผลที่แพ้' }}
+            </div>
+            <div class="text-sm p-3 rounded-xl"
+              :class="(modal.data.status==='ชนะการประมูล'||modal.data.status==='ส่งมอบแล้ว') ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'">
+              {{ modal.data.win_loss_reason }}<span v-if="modal.data.win_loss_note"> — {{ modal.data.win_loss_note }}</span>
+            </div>
+          </div>
+          <div v-if="modal.data.history?.length" class="mb-2">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติสถานะ</div>
+            <div v-for="h in modal.data.history" :key="h.id" class="flex gap-3 py-2 border-b border-slate-50">
+              <div class="w-2 h-2 rounded-full bg-teal-400 shrink-0 mt-1.5"></div>
+              <div class="flex-1">
+                <div class="text-xs text-slate-700 font-semibold">{{ h.changed_by_name }}</div>
+                <div class="text-xs text-slate-500 flex items-center gap-1 flex-wrap mt-0.5">
+                  <span v-if="h.old_status" class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{{ h.old_status }}</span>
+                  <span v-if="h.old_status">→</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadge(h.new_status)">{{ h.new_status }}</span>
+                  <span v-if="h.note" class="text-slate-400">· {{ h.note }}</span>
+                </div>
+                <div class="text-[11px] text-slate-400 mt-0.5">{{ formatDateTimeThai(h.changed_at) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
+      <!-- Win/Loss Modal -->
+      <div v-if="modal.type==='win-loss'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between border-b"
+          :style="winLossForm.newStatus==='ชนะการประมูล' ? 'background:#f0fdf4;border-color:#bbf7d0' : 'background:#fff1f2;border-color:#fecdd3'">
+          <h3 class="font-bold text-lg" :style="winLossForm.newStatus==='ชนะการประมูล' ? 'color:#15803d' : 'color:#b91c1c'">
+            {{ winLossForm.newStatus==='ชนะการประมูล' ? 'บันทึก — ชนะการประมูล' : 'บันทึก — แพ้การประมูล' }}
+          </h3>
+          <button class="bg-transparent border-0 text-2xl cursor-pointer leading-none text-slate-500 hover:text-slate-700" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="text-sm font-semibold text-slate-800 mb-4 px-3 py-2.5 bg-slate-50 rounded-xl ring-1 ring-slate-200 line-clamp-2">
+            {{ modal.data?.project_name }}
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-semibold text-slate-600 mb-2">เหตุผลหลัก <span class="text-red-500">*</span></label>
+            <div class="flex gap-2 flex-wrap">
+              <div v-for="r in (winLossForm.newStatus==='ชนะการประมูล' ? wonReasons : lostReasons)" :key="r"
+                @click="winLossForm.reason = r"
+                class="px-3 py-1.5 rounded-xl border-[1.5px] text-sm font-semibold cursor-pointer transition-all"
+                :style="winLossForm.reason===r
+                  ? (winLossForm.newStatus==='ชนะการประมูล' ? 'background:#166534;color:#fff;border-color:#166534' : 'background:#b91c1c;color:#fff;border-color:#b91c1c')
+                  : (winLossForm.newStatus==='ชนะการประมูล' ? 'background:#f0fdf4;color:#166534;border-color:#86efac' : 'background:#fff1f2;color:#b91c1c;border-color:#fca5a5')">
+                {{ r }}
+              </div>
+            </div>
+          </div>
+          <div v-if="winLossForm.newStatus==='ชนะการประมูล'" class="mb-4">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่เสนอ (บาท)</label>
+            <input type="number" v-model="winLossForm.bid_amount" placeholder="0.00"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-semibold text-slate-600 mb-1">รายละเอียดเพิ่มเติม</label>
+            <textarea v-model="winLossForm.note" rows="3"
+              :placeholder="winLossForm.newStatus==='ชนะการประมูล' ? 'เช่น ราคาต่างจากคู่แข่ง / จุดแข็งที่ทำให้ชนะ...' : 'เช่น ชื่อผู้ชนะ / ราคาที่ต่างกัน / สเปกที่ขาด...'"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="px-5 py-2 rounded-xl text-sm font-bold text-white border-0 cursor-pointer"
+            :class="winLossForm.newStatus==='ชนะการประมูล' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'"
+            @click="submitWinLoss">
+            {{ winLossForm.newStatus==='ชนะการประมูล' ? 'ยืนยันชนะ ✓' : 'ยืนยันแพ้' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- งานทั้งหมด Info Modal -->
+      <div v-if="modal.type==='total-all-info'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">งานทั้งหมด คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <p class="text-sm text-slate-600 leading-relaxed mb-3">
+            ภาพรวมสะสม<b>ทุกงานประมูลที่เคยมอบหมายในระบบ</b> นับทุกสถานะรวมกัน (<code>รอดำเนินการ</code>, <code>รับงาน/ศึกษา TOR</code>, <code>จัดเตรียมยื่นข้อเสนอ</code>, <code>รอประกาศผล</code>, <code>ชนะการประมูล</code>, <code>ส่งมอบแล้ว</code>, <code>แพ้การประมูล</code>, <code>ยกเลิก</code>) — คนละแนวคิดกับ "งานในมือ" ที่ตัดงานที่จบแล้วออก การ์ดนี้ตอบคำถาม "ตลอดมามอบหมายงานไปทั้งหมดกี่งาน มูลค่ารวมเท่าไหร่" ไม่ใช่ประมาณการ
+          </p>
+          <div class="rounded-xl bg-purple-50 border border-purple-100 px-3 py-2.5">
+            <div class="text-xs font-bold text-purple-700 mb-0.5">กรอบเวลา</div>
+            <div class="text-sm text-slate-600 leading-relaxed">ตลอดกาล (all-time) — นับรวมงานที่ชนะ/แพ้/ยกเลิกไปแล้วด้วย เพราะเป็นตัวเลขสะสมของงานที่เคยมอบหมาย ไม่ใช่ประมาณการโอกาสสำเร็จ</div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
+      <!-- งานที่ยังไม่จบ (คาดการณ์) Info Modal — รวม งานในมือ + รอประกาศผล + Weighted Pipeline ไว้ modal เดียว ตรงกับปุ่ม i เดียวที่ label กลุ่ม -->
+      <div v-if="modal.type==='forecast-info'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">งานที่ยังไม่จบ (คาดการณ์) คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <div class="mb-4">
+            <div class="text-xs font-bold text-sky-700 mb-1.5">งานในมือ</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              งานประมูลที่<b>ยังไม่ตัดสินผล</b> นับรวม 3 stage: <code>รอดำเนินการ</code>, <code>รับงาน/ศึกษา TOR</code>, <code>จัดเตรียมยื่นข้อเสนอ</code> (ยังไม่ได้ยื่นซองประมูล) มูลค่าที่แสดงคือผลรวมราคากลางของงานกลุ่มนี้
+            </p>
+            <div class="rounded-xl bg-sky-50 border border-sky-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-sky-700 mb-0.5">กรอบเวลา</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ปัจจุบัน (real-time) — ไม่มีกรอบเวลา นับงานที่สถานะยังเป็น รอดำเนินการ/รับงาน-TOR/จัดเตรียมยื่นข้อเสนอ ทั้งหมด ไม่ว่าประกาศเมื่อไหร่</div>
+            </div>
+            <p class="text-sm text-slate-600 leading-relaxed">
+              ตัวเลขเทียบ 7 วัน (▲) คือการเทียบกับ<b>สถานะจริง ณ 7 วันก่อน</b> โดยดูย้อนหลังจากประวัติการเปลี่ยนสถานะของแต่ละงาน (ไม่ใช่แค่นับงานใหม่ที่เข้ามา) จึงแม่นยำว่าจำนวน/มูลค่างานในมือเพิ่มขึ้นหรือลดลงจริงเท่าไหร่ในช่วง 7 วันที่ผ่านมา
+            </p>
+          </div>
+          <div class="mb-4 pt-4 border-t border-slate-100">
+            <div class="text-xs font-bold text-violet-700 mb-1.5">รอประกาศผล</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              งานที่ทีมขาย<b>ยื่นซองประมูลเรียบร้อยแล้ว</b> อยู่ระหว่างรอหน่วยงานราชการประกาศผลตัดสิน — ทีมขายทำอะไรเพิ่มไม่ได้แล้วในขั้นนี้ นอกจากรอผล
+            </p>
+            <div class="rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-violet-700 mb-0.5">กรอบเวลา</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ปัจจุบัน (real-time) — ไม่มีกรอบเวลา นับงานสถานะ รอประกาศผล ทั้งหมด ไม่ว่าประกาศเมื่อไหร่</div>
+            </div>
+            <p class="text-xs text-slate-400">* เมื่อหน่วยงานประกาศผลแล้ว งานจะถูกย้ายไปเป็น <code>ชนะการประมูล</code> หรือ <code>แพ้การประมูล</code> ตามผลจริง</p>
+          </div>
+          <div class="pt-4 border-t border-slate-100">
+            <div class="text-xs font-bold text-indigo-700 mb-1.5">Weighted Pipeline</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              มูลค่าประมาณการของงานที่ยัง<b>ไม่ตัดสินผล</b> โดยเอาราคากลางของแต่ละงานคูณด้วย <b>โอกาสสำเร็จ</b> ตามขั้นตอนที่งานอยู่
+            </p>
+            <div class="rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-indigo-700 mb-0.5">กรอบเวลา</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ปัจจุบัน (real-time) — ไม่มีกรอบเวลา คำนวณจาก งานในมือ×10% + รอประกาศผล×50% ของขณะนี้</div>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm border-collapse mb-2">
+                <thead>
+                  <tr class="bg-slate-50">
+                    <th class="px-3 py-2 text-left text-xs font-bold text-slate-500 border-b border-slate-200">กลุ่มงาน</th>
+                    <th class="px-3 py-2 text-center text-xs font-bold text-slate-500 border-b border-slate-200">โอกาส</th>
+                    <th class="px-3 py-2 text-right text-xs font-bold text-slate-500 border-b border-slate-200">มูลค่ารวม</th>
+                    <th class="px-3 py-2 text-right text-xs font-bold text-slate-500 border-b border-slate-200">Weighted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in weightedBreakdown" :key="row.label" class="border-b border-slate-50">
+                    <td class="px-3 py-2.5 text-slate-700">
+                      {{ row.label }}
+                      <div class="text-[11px] text-slate-400 font-normal mt-0.5">({{ row.stages.join(', ') }})</div>
+                    </td>
+                    <td class="px-3 py-2.5 text-center font-semibold text-indigo-600 align-top">{{ row.weightPct }}%</td>
+                    <td class="px-3 py-2.5 text-right text-slate-500 align-top">฿{{ formatNumber(row.total) }}</td>
+                    <td class="px-3 py-2.5 text-right font-semibold text-slate-700 align-top">฿{{ formatNumber(row.weighted) }}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="3" class="px-3 py-2.5 text-right font-bold text-slate-700">รวม Weighted Pipeline</td>
+                    <td class="px-3 py-2.5 text-right font-black text-indigo-700">฿{{ formatNumber(weightedPipeline) }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">* งานที่ตัดสินผลแล้ว (ชนะการประมูล, ส่งมอบแล้ว, แพ้การประมูล, ยกเลิก) ไม่นับรวมในตัวเลขนี้ เพราะรู้ผลแน่นอนแล้ว ไม่ต้องคาดการณ์</p>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
+      <!-- ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) Info Modal — รวม ชนะประมูล + Win Rate ไว้ modal เดียว ตรงกับปุ่ม i เดียวที่ label กลุ่ม -->
+      <div v-if="modal.type==='results-info'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg">ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) คืออะไร</h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <div class="mb-4">
+            <div class="text-xs font-bold text-emerald-700 mb-1.5">ชนะประมูล</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              จำนวนงานที่<b>ชนะการประมูล</b> นับรวม<b>ตลอดกาล</b> ไม่จำกัดช่วงเวลา — แถบด้านล่างแยกให้ดูเฉพาะปีนี้/ไตรมาสนี้/เดือนนี้ได้ในตัว โดยไม่ต้องไปตั้งตัวกรองที่ Kanban board
+            </p>
+            <div class="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-emerald-700 mb-0.5">กรอบเวลา — ตัวเลขใหญ่</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ตลอดกาล (all-time) — ไม่มีกรอบเวลา นับงานที่ชนะ/ส่งมอบแล้วทั้งหมดที่เคยมีในระบบ</div>
+            </div>
+            <div class="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5">
+              <div class="text-xs font-bold text-emerald-700 mb-0.5">กรอบเวลา — แถบ ปีนี้/ไตรมาสนี้/เดือนนี้</div>
+              <div class="text-sm text-slate-600 leading-relaxed">อิงวันประกาศ (announce_date) เทียบกับวันนี้เสมอ</div>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">* นับรวม <code>ชนะการประมูล</code> + <code>ส่งมอบแล้ว</code> เพราะส่งมอบแล้วคือสถานะถัดจากชนะ — ตัวเลขนี้ใช้เป็นตัวตั้งในการคำนวณ Win Rate ด้วย</p>
+          </div>
+          <div class="pt-4 border-t border-slate-100">
+            <div class="text-xs font-bold text-amber-700 mb-1.5">Win Rate</div>
+            <p class="text-sm text-slate-600 leading-relaxed mb-2">
+              อัตราชนะ โดยนับ<b>เฉพาะงานที่ตัดสินผลแล้ว</b> (ชนะหรือแพ้) เท่านั้น — งานที่ยังอยู่ระหว่างดำเนินการหรือรอผล (งานในมือ, รอประกาศผล) ยังไม่นับรวมเพราะยังไม่รู้ผล
+            </p>
+            <div class="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 mb-2">
+              <div class="text-xs font-bold text-amber-700 mb-0.5">กรอบเวลา</div>
+              <div class="text-sm text-slate-600 leading-relaxed">ตลอดกาล (all-time) — ใช้ชนะ/แพ้สะสมทั้งหมดเหมือนการ์ดชนะประมูล</div>
+            </div>
+            <div class="rounded-xl bg-slate-50 p-3 mb-2 text-sm text-slate-600 text-center font-semibold">
+              Win Rate = ชนะ ÷ (ชนะ + แพ้) × 100
+            </div>
+            <p class="text-xs text-slate-400">* "ชนะ" นับรวม <code>ชนะการประมูล</code> + <code>ส่งมอบแล้ว</code> เพราะส่งมอบแล้วคือสถานะถัดจากชนะ — ผลลัพธ์ปัดเป็นจำนวนเต็ม ไม่มีทศนิยม</p>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
+      <!-- ตัวกรองเพิ่มเติม Modal: กรองเฉพาะ Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน (เหมือนตัวกรองช่วงเวลา) -->
+      <div v-if="modal.type==='adv-filter'" class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
+          <h3 class="font-bold text-lg flex items-center gap-2">
+            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
+            ตัวกรองเพิ่มเติม
+          </h3>
+          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs text-slate-400 font-medium block mb-1.5">ความสำคัญ</label>
+            <select v-model="filter.priority" @change="loadData()"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <option value="">ทั้งหมด</option>
+              <option value="เร่งด่วน">เร่งด่วน</option>
+              <option value="ปกติ">ปกติ</option>
+              <option value="ต่ำ">ต่ำ</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 font-medium block mb-1.5">สถานะ SLA</label>
+            <select v-model="filter.sla_status" @change="loadData()"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <option value="">ทั้งหมด</option>
+              <option value="เกิน">เกิน</option>
+              <option value="ใกล้ถึง">ใกล้ถึง</option>
+              <option value="ปกติ">ปกติ</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 font-medium block mb-1.5">หน่วยงาน</label>
+            <input v-model="filter.unit_name" @keyup.enter="loadData()" @blur="loadData()" type="text" placeholder="ค้นหาชื่อหน่วยงาน..."
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 font-medium block mb-1.5">วันที่ประกาศ</label>
+            <input v-model="filter.announce_date" @change="loadData()" type="date"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 font-medium block mb-1.5">วันปิดรับ</label>
+            <input v-model="filter.close_date" @change="loadData()" type="date"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="text-xs text-slate-400 font-medium block mb-1.5">ช่วงราคากลาง (บาท)</label>
+            <div class="flex items-center gap-2">
+              <input v-model="filter.price_min" @keyup.enter="loadData()" @blur="loadData()" type="number" min="0" placeholder="จาก"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <span class="text-slate-400 text-sm shrink-0">ถึง</span>
+              <input v-model="filter.price_max" @keyup.enter="loadData()" @blur="loadData()" type="number" min="0" placeholder="ถึง"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-between">
+          <button v-if="advFilterCount" @click="filter.priority=''; filter.sla_status=''; filter.unit_name=''; filter.announce_date=''; filter.close_date=''; filter.price_min=''; filter.price_max=''; loadData()"
+            class="inline-flex items-center px-3 py-2 rounded-xl text-sm font-semibold ring-1 ring-red-200 text-red-600 bg-white hover:bg-red-50 border-0 cursor-pointer">✕ ล้างตัวกรอง</button>
+          <span v-else></span>
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="closeModal">เสร็จสิ้น</button>
+        </div>
+      </div>
+
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script>
+const { createApp } = Vue;
+
+const STAGES = [
+  { key: 'รอดำเนินการ',           label: 'รอรับงาน',              color: '#64748b', darkColor: '#475569', terminal: false },
+  { key: 'รับงาน/ศึกษา TOR',      label: 'รับงาน / ศึกษา TOR',   color: '#0284c7', darkColor: '#0369a1', terminal: false },
+  { key: 'จัดเตรียมยื่นข้อเสนอ', label: 'จัดเตรียมยื่นข้อเสนอ', color: '#4f46e5', darkColor: '#4338ca', terminal: false },
+  { key: 'รอประกาศผล',            label: 'รอประกาศผล',            color: '#7c3aed', darkColor: '#6d28d9', terminal: false },
+  { key: 'ชนะการประมูล',          label: 'ชนะการประมูล',          color: '#059669', darkColor: '#047857', terminal: false },
+  { key: 'ส่งมอบแล้ว',           label: 'ส่งมอบแล้ว',            color: '#008074', darkColor: '#00665D', terminal: true },
+  { key: 'แพ้การประมูล',          label: 'แพ้การประมูล',          color: '#e11d48', darkColor: '#be123c', terminal: true },
+  { key: 'ยกเลิก',               label: 'ยกเลิก',                color: '#94a3b8', darkColor: '#64748b', terminal: true },
+];
+
+const NEXT_MAP = {
+  'รับงาน/ศึกษา TOR':      'จัดเตรียมยื่นข้อเสนอ',
+  'จัดเตรียมยื่นข้อเสนอ': 'รอประกาศผล',
+  'ชนะการประมูล':          'ส่งมอบแล้ว',
+};
+const PREV_MAP = {
+  'จัดเตรียมยื่นข้อเสนอ': 'รับงาน/ศึกษา TOR',
+  'รอประกาศผล':            'จัดเตรียมยื่นข้อเสนอ',
+};
+
+createApp({
+  components: { AppNav, AppTabBar, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      modal: { type: null, data: null },
+      docs: null,
+      docsLoading: false,
+      kanban: {},
+      stats: {},
+      perSale: [],
+      salesUsers: [],
+      filter: { assigned_to: '', period: 'all', priority: '', sla_status: '', unit_name: '', announce_date: '', close_date: '', price_min: '', price_max: '' },
+      loading: false,
+      showClosed: false,
+      view: 'kanban',
+      winLossForm: { id: null, newStatus: '', reason: '', note: '', bid_amount: null },
+    };
+  },
+  computed: {
+    tabItems() {
+      return [
+        { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
+        { label:'งาน', icon:'doc', href:'my-assignments.html' },
+        { label:'ประมูล', icon:'cols3', active:true },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+    isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
+    isSale()    { return this.currentUser?.role === 'sale'; },
+
+    visibleStages() {
+      if (this.showClosed) return STAGES;
+      return STAGES.filter(s => !s.terminal);
+    },
+
+    tableData() {
+      return STAGES.flatMap(s => (this.kanban[s.key] || []));
+    },
+
+    closedCount() {
+      return STAGES.filter(s => s.terminal).reduce((n, s) => n + (this.kanban[s.key]||[]).length, 0);
+    },
+
+    totalKanbanCount() {
+      return STAGES.reduce((n, s) => n + (this.kanban[s.key]||[]).length, 0);
+    },
+
+    advFilterCount() {
+      let n = 0;
+      if (this.filter.priority)      n++;
+      if (this.filter.sla_status)    n++;
+      if (this.filter.unit_name)     n++;
+      if (this.filter.announce_date) n++;
+      if (this.filter.close_date)    n++;
+      if (this.filter.price_min || this.filter.price_max) n++;
+      return n;
+    },
+
+    wonReasons()  { return ['ราคากลาง','คุณสมบัติตรงสเปก','ความสัมพันธ์ลูกค้า','ส่งเร็วกว่าคู่แข่ง','อื่นๆ']; },
+    lostReasons() { return ['ราคาสูงกว่าคู่แข่ง','ตกสเปก','เอกสารไม่ครบ','เวลาไม่พอ','ลูกค้าเลื่อน/ยกเลิก','อื่นๆ']; },
+
+    parsedItems() {
+      const raw = this.modal?.data?.items;
+      if (!raw) return { summary: '', rows: [] };
+      let t = raw.trim();
+      let summary = '';
+      const sm = t.match(/^(\d+\s*รายการ)\s*:\s*/);
+      if (sm) { summary = sm[1]; t = t.slice(sm[0].length); }
+      const lines = this.splitClauses(t);
+      const rows = lines.map(line => {
+        const m = line.match(/^\(?(\d+)\)?\s*(.+?)\s+(\d+(?:\.\d+)?)\s*(ชุด|ตัว|ชิ้น|อัน|เครื่อง|หน่วย|ห้อง|คัน|โต๊ะ|เตียง|ตู้|เก้าอี้)?\s*@\s*([\d,]+(?:\.\d+)?)\s*=\s*([\d,]+(?:\.\d+)?)\s*$/);
+        if (m) return { parsed: true, no: m[1], name: m[2].trim(), qty: m[3], unit: m[4] || '', unitPrice: m[5], total: m[6] };
+        return { parsed: false, text: line };
+      });
+      return { summary, rows };
+    },
+
+    modalStageColor() {
+      const s = STAGES.find(s => s.key === this.modal?.data?.status);
+      return s ? { color: s.color, darkColor: s.darkColor } : { color: '#008074', darkColor: '#1e293b' };
+    },
+
+    statsValues() {
+      // มาจาก stats.*_value ที่ backend คำนวณแบบไม่กรองตามช่วงเวลาของ Kanban board เสมอ (การ์ดสถิติเป็นอิสระจากตัวกรอง)
+      return {
+        active:    this.stats.active_value ?? 0,
+        submitted: this.stats.submitted_value ?? 0,
+        won:       this.stats.won_value ?? 0,
+      };
+    },
+
+    weightedPipeline() {
+      // งานในมือที่ยังไม่ได้ยื่นซองประมูล = โอกาสสำเร็จ 10%, ยื่นซองแล้วรอประกาศผล = โอกาสสำเร็จ 50%
+      // อิง statsValues (การ์ดสถิติ ไม่ขึ้นกับตัวกรอง period ของ Kanban board) ไม่ใช่ this.kanban
+      return Math.round(this.statsValues.active * 0.10 + this.statsValues.submitted * 0.50);
+    },
+
+    weightedBreakdown() {
+      return [
+        { label: 'ยังไม่ยื่นซองประมูล', stages: ['รอรับงาน', 'รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ'],
+          weightPct: 10, total: this.statsValues.active,    weighted: Math.round(this.statsValues.active * 0.10) },
+        { label: 'ยื่นซองแล้ว รอประกาศผล', stages: ['รอประกาศผล'],
+          weightPct: 50, total: this.statsValues.submitted, weighted: Math.round(this.statsValues.submitted * 0.50) },
+      ];
+    },
+
+    activeDeltaCount() {
+      return (this.stats.active ?? 0) - (this.stats.active_7d_ago ?? 0);
+    },
+    activeDeltaValue() {
+      return Math.round((this.statsValues.active ?? 0) - (this.stats.active_7d_ago_value ?? 0));
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (!['admin','manager','sale'].includes(this.currentUser.role)) {
+        window.location.href = 'dashboard.html'; return;
+      }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.$nextTick(); // รอให้ Vue วาง <table id="bidPipelineTable"> ลง DOM ก่อน ค่อยให้ jQuery จับ
+    this.bindTableEvents();
+    if (this.isManager) this.loadSales();
+    this.loadData();
+  },
+  methods: {
+    ...SharedMethods,
+
+    esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+
+    /** ผูก event คลิกแถว "ครั้งเดียว" ตอน mounted ด้วย delegated listener บน #bidPipelineTable (element แม่ที่ DataTables ไม่ทำลายทิ้งตอน destroy:true) */
+    bindTableEvents() {
+      const self = this;
+      $('#bidPipelineTable').on('click', 'tbody tr', function () {
+        const card = $('#bidPipelineTable').DataTable().row(this).data();
+        if (card) self.openDetail(card.id);
+      });
+    },
+
+    /** สร้าง/รีเซ็ต DataTable ใหม่ทุกครั้งที่ tableData เปลี่ยน (โหลดข้อมูล/เปลี่ยนตัวกรอง) — ใช้ destroy:true กันเวลา init ซ้ำ error
+        คอลัมน์ render เป็น HTML string ล้วน เพราะ DataTables วาด DOM เอง ไม่ผ่าน Vue template */
+    initDataTable() {
+      const self = this;
+      const columns = [
+        {
+          data: null, title: 'ชื่อโครงการ',
+          render: (d, type, card) => {
+            let html = '<div class="flex items-center gap-1.5 mb-0.5 flex-wrap">';
+            if (card.project_code) html += `<span class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">${self.esc(card.project_code)}</span>`;
+            html += `<span class="text-[.68rem] text-slate-400 font-mono">${self.esc(card.project_no)}</span></div>`;
+            html += `<div class="font-semibold text-sm leading-snug text-slate-800">${self.esc(card.project_name)}</div>`;
+            return html;
+          },
+        },
+        { data: 'unit_name', title: 'หน่วยงาน', render: d => `<span class="text-xs text-slate-500">${self.esc(d)}</span>` },
+      ];
+      if (self.isManager) {
+        columns.push({
+          data: null, title: 'Sales', orderable: false,
+          render: (d, type, card) => {
+            const avatar = card.sale_photo_url
+              ? `<img src="${self.esc(card.sale_photo_url)}" class="w-6 h-6 rounded-full object-cover"/>`
+              : `<div class="w-6 h-6 rounded-full flex items-center justify-center text-white text-[.65rem] font-bold" style="background:${card.sale_color||'#64748b'}">${self.esc(self.avatarInitials(card.sale_name))}</div>`;
+            return `<div class="flex items-center gap-1.5">${avatar}<span class="text-xs text-slate-600">${self.esc((card.sale_name||'').split(' ')[0])}</span></div>`;
+          },
+        });
+      }
+      columns.push(
+        {
+          data: 'price_median', title: 'ราคากลาง', className: 'text-right',
+          render: d => d ? `<span class="font-semibold text-emerald-600 text-sm">฿${self.formatNumber(d)}</span>` : '<span class="text-slate-300">-</span>',
+        },
+        {
+          data: null, title: 'วันปิดรับ', className: 'text-center',
+          render: (d, type, card) => {
+            const days = self.daysToClose(card.close_date);
+            return `<span class="text-xs" style="color:${self.countdownColor(days)};font-weight:${days<=3?'700':'400'}">${self.esc(self.formatDateThai(card.close_date))}</span>`;
+          },
+        },
+        {
+          data: 'priority', title: 'Priority', className: 'text-center', orderable: false,
+          render: d => `<span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-bold ${self.priorityBadge(d)}">${self.esc(d)}</span>`,
+        },
+        {
+          data: 'status', title: 'Stage', orderable: false,
+          render: d => `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${self.statusBadge(d)}">${self.esc(d)}</span>`,
+        },
+        {
+          data: null, title: 'หมายเหตุ', orderable: false,
+          render: (d, type, card) => {
+            if (card.win_loss_reason) {
+              const cls = ['ชนะการประมูล','ส่งมอบแล้ว'].includes(card.status) ? 'text-emerald-600' : 'text-rose-500';
+              return `<span class="text-xs ${cls}">${self.esc(card.win_loss_reason)}</span>`;
+            }
+            if (card.status === 'รอประกาศผล') return `<span class="text-xs text-violet-500">⏳ รอผล</span>`;
+            return `<span class="text-xs text-slate-300">—</span>`;
+          },
+        },
+      );
+
+      $('#bidPipelineTable').DataTable({
+        data: this.tableData,
+        destroy: true,
+        autoWidth: false,
+        language: {
+          search: 'ค้นหา:',
+          lengthMenu: 'แสดง _MENU_ รายการ',
+          info: 'แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ',
+          infoEmpty: 'ไม่มีข้อมูล',
+          infoFiltered: '(กรองจาก _MAX_ รายการทั้งหมด)',
+          zeroRecords: 'ไม่มีข้อมูล',
+          paginate: { previous: 'ก่อนหน้า', next: 'ถัดไป' },
+        },
+        columns,
+      });
+    },
+
+    async loadData() {
+      this.loading = true;
+      const q = new URLSearchParams({ action: 'kanban' });
+      if (this.filter.assigned_to) q.set('assigned_to', this.filter.assigned_to);
+      if (this.filter.period && this.filter.period !== 'all') q.set('period', this.filter.period);
+      if (this.filter.priority)      q.set('priority', this.filter.priority);
+      if (this.filter.sla_status)    q.set('sla_status', this.filter.sla_status);
+      if (this.filter.unit_name)     q.set('unit_name', this.filter.unit_name.trim());
+      if (this.filter.announce_date) q.set('announce_date', this.filter.announce_date);
+      if (this.filter.close_date)    q.set('close_date', this.filter.close_date);
+      if (this.filter.price_min)     q.set('price_min', this.filter.price_min);
+      if (this.filter.price_max)     q.set('price_max', this.filter.price_max);
+      try {
+        const res = await apiCall('GET', `api/assignments.php?${q}`);
+        if (res.success) {
+          this.kanban  = res.data.kanban  || {};
+          this.stats   = res.data.stats   || {};
+          this.perSale = res.data.per_sale || [];
+        }
+      } catch {}
+      this.loading = false;
+      await this.$nextTick();
+      this.initDataTable();
+    },
+
+    // export ตามลำดับ/ตัวกรองที่ DataTables แสดงอยู่ตอนนี้ (search:'applied') ไม่ใช่ข้อมูลดิบทั้งหมดเสมอไป — เหมือน sources.html/calendars.html
+    exportTable() {
+      const headers = ['รหัสงาน', 'เลขที่โครงการ', 'ชื่อโครงการ', 'หน่วยงาน'];
+      if (this.isManager) headers.push('Sales');
+      headers.push('ราคากลาง', 'วันปิดรับ', 'Priority', 'Stage', 'หมายเหตุ');
+
+      const cards = $('#bidPipelineTable').DataTable().rows({ search: 'applied' }).data().toArray();
+      const rows = cards.map(card => {
+        let noteText = '—';
+        if (card.win_loss_reason) noteText = card.win_loss_reason;
+        else if (card.status === 'รอประกาศผล') noteText = 'รอผล';
+        const row = [card.project_code || '', card.project_no, card.project_name, card.unit_name];
+        if (this.isManager) row.push(card.sale_name || '');
+        row.push(
+          card.price_median ? Number(card.price_median) : '',
+          card.close_date ? this.formatDateThai(card.close_date) : '',
+          card.priority,
+          card.status,
+          noteText,
+        );
+        return row;
+      });
+      this.exportExcel('งานประมูล', headers, rows);
+    },
+
+    stageValue(key) {
+      const cards = this.kanban[key] || [];
+      const total = cards.reduce((s, c) => s + parseFloat(c.price_median || 0), 0);
+      return this.formatValueShort(total);
+    },
+
+    formatValueShort(total) {
+      if (!total) return '';
+      return '฿' + Math.round(total).toLocaleString('th-TH');
+    },
+
+    formatDelta(v) {
+      if (!v) return '0';
+      const abs = this.formatValueShort(Math.abs(v)) || ('฿' + Math.abs(v).toLocaleString('th-TH'));
+      return (v > 0 ? '+' : '-') + abs;
+    },
+
+    canMove(status) {
+      return ['รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล'].includes(status);
+    },
+    nextStage(status) { return NEXT_MAP[status] || null; },
+    prevStage(status) { return PREV_MAP[status] || null; },
+
+    async moveCard(card, newStatus) {
+      const res = await apiCall('POST', 'api/assignments.php?action=update', { id: card.id, status: newStatus });
+      if (res.success) {
+        this.loadData();
+        await this.showAlert('ย้ายสถานะสำเร็จ', 'success');
+      } else {
+        await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+      }
+    },
+
+    openWinLoss(card, newStatus) {
+      this.winLossForm = { id: card.id, newStatus, reason: '', note: '', bid_amount: card.bid_amount || null };
+      this.modal = { type: 'win-loss', data: card };
+    },
+
+    async submitWinLoss() {
+      if (!this.winLossForm.reason) { await this.showAlert('กรุณาเลือกเหตุผล', 'error'); return; }
+      const payload = {
+        id:              this.winLossForm.id,
+        status:          this.winLossForm.newStatus,
+        win_loss_reason: this.winLossForm.reason,
+        win_loss_note:   this.winLossForm.note,
+      };
+      if (this.winLossForm.bid_amount) payload.bid_amount = this.winLossForm.bid_amount;
+      const res = await apiCall('POST', 'api/assignments.php?action=update', payload);
+      if (res.success) {
+        this.closeModal();
+        this.loadData();
+        await this.showAlert('บันทึกผลสำเร็จ', 'success');
+      } else {
+        await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+      }
+    },
+
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

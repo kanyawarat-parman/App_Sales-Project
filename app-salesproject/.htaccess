@@ -1,0 +1,30 @@
+Options -Indexes
+ServerSignature Off
+
+# UTF-8 encoding
+AddDefaultCharset UTF-8
+
+# PHP settings
+<IfModule mod_php.c>
+  php_flag display_errors Off
+  php_flag log_errors On
+  php_value session.cookie_httponly 1
+  php_value session.cookie_samesite "Lax"
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-XSS-Protection "1; mode=block"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Block access to sensitive directories
+<FilesMatch "\.(sql|log|env)$">
+  Require all denied
+</FilesMatch>
+
+# Protect config/includes directories (ป้องกันจริงต้องมี .htaccess "Require all denied"
+# วางอยู่ข้างในโฟลเดอร์ config/ และ includes/ เอง — <Directory> ใช้ใน .htaccess ไม่ได้
+# (Apache อนุญาตเฉพาะใน server/vhost config เท่านั้น)

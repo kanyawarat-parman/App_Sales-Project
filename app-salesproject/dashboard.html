@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ภาพรวม</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="dashboard" ref="nav"></app-nav>
+
+    <div class="min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+          ภาพรวม
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <div v-if="!data" class="flex items-center justify-center py-12">
+          <div class="spinner w-10 h-10"></div>
+        </div>
+        <template v-else>
+          <dashboard-salesadmin v-if="currentUser.role === 'salesadmin'" :data="data"></dashboard-salesadmin>
+          <dashboard-manager v-else-if="currentUser.role === 'manager'" :data="data"></dashboard-manager>
+          <dashboard-sale v-else-if="currentUser.role === 'sale'" :data="data"></dashboard-sale>
+          <dashboard-admin v-else :data="data"></dashboard-admin>
+        </template>
+      </main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <app-tab-bar :tabs="tabItems"></app-tab-bar>
+
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=33"></script>
+<script src="shared/dashboard-salesadmin.js?v=14"></script>
+<script src="shared/dashboard-manager.js?v=3"></script>
+<script src="shared/dashboard-sale.js?v=11"></script>
+<script src="shared/dashboard-admin.js?v=3"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  components: {
+    AppNav, AppTabBar,
+    DashboardSalesadmin, DashboardManager, DashboardSale, DashboardAdmin,
+  },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      data: null,
+    };
+  },
+  computed: {
+    /* แถบเมนูลัดล่างจอมือถือ แยกตาม role เพราะแต่ละ role กดเข้าหน้าที่ตัวเองไม่มีสิทธิ์ไม่ได้อยู่แล้ว
+       (เช่น assignments.html/bid_decision.html จำกัดแค่ admin/salesadmin — manager/sale เข้าจะโดนเด้งกลับหน้านี้ทันที)
+       ให้ตรงกับเมนูจริงที่แต่ละ role เห็นในแถบบน (ดู AppNav's navGroups() ใน shared/app.js) */
+    tabItems() {
+      const role = this.currentUser?.role;
+      if (role === 'manager') {
+        return [
+          { label:'ภาพรวม', icon:'home', active:true },
+          { label:'งานประมูล', icon:'cols3', href:'bid-pipeline.html' },
+          { label:'งานขาย', icon:'briefcase', href:'sales-pipeline.html' },
+          { label:'ออก', icon:'logout', action:'logout' },
+        ];
+      }
+      if (role === 'sale') {
+        return [
+          { label:'ภาพรวม', icon:'home', active:true },
+          { label:'งานที่ได้รับ', icon:'doc', href:'my-assignments.html' },
+          { label:'งานขาย', icon:'briefcase', href:'sales-pipeline.html' },
+          { label:'ออก', icon:'logout', action:'logout' },
+        ];
+      }
+      // salesadmin, admin
+      return [
+        { label:'ภาพรวม', icon:'home', active:true },
+        { label:'ประกาศ', icon:'bell', href:'bid_decision.html' },
+        { label:'งาน', icon:'clipboard', href:'assignments.html' },
+        { label:'ออก', icon:'logout', action:'logout' },
+      ];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    this.loadDashboard();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async loadDashboard() {
+      try {
+        const res = await apiCall('GET', 'api/dashboard.php');
+        if (res.success) this.data = res.data;
+      } catch {}
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
