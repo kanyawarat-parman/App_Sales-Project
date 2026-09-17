@@ -1107,11 +1107,10 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
             html += `<button class="sp-delivered-btn text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0 cursor-pointer whitespace-nowrap">ส่งสินค้าแล้ว</button>`;
           }
           html += `<button class="sp-edit-btn text-xs font-semibold px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer">แก้ไข</button>`;
-          if (self.isSecretary) {
-            html += `<button class="sp-delete-btn text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 border-0 cursor-pointer">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-            </button>`;
-          }
+          // ลบได้ทั้ง sale เจ้าของงานและ secretary/admin — backend (api/pipeline_items.php's deleteItem()) เช็ค assigned_to ให้อยู่แล้วสำหรับ role sale
+          html += `<button class="sp-delete-btn text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 border-0 cursor-pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          </button>`;
           html += '</div>';
           return html;
         },

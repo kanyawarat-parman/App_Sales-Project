@@ -440,6 +440,11 @@
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">เข้าประมูล</span>
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span>
             </div>
+            <div v-if="historyQuotationId" class="flex gap-2 py-2 border-b border-slate-50 items-center">
+              <span class="text-sm text-slate-400 w-32 shrink-0">เลขที่ใบเสนอราคา</span>
+              <button type="button" @click="openQuotationDetail(historyQuotationId)" :disabled="quotationDetailLoading"
+                class="font-mono font-bold text-sm underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-sky-700 hover:text-sky-600 disabled:opacity-50">{{ historyQuotationId }}</button>
+            </div>
           </div>
 
           <div v-if="modal.data.items" class="mb-4">
@@ -552,6 +557,108 @@
         </div>
         <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
           <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
+      <!-- Quotation Detail Modal (ใบเสนอราคาเก่าที่นำเข้ามาเป็นงานประมูลนี้ — เปิดจากลิงก์เลขที่ใบใน "บันทึก Sale" ของ Detail Modal) -->
+      <div v-if="modal.type==='quotation-detail'" class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-sky-700 text-white px-6 py-5">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-lg flex items-center flex-wrap gap-2">
+              <span>รายละเอียดใบเสนอราคา {{ modal.data.quotation_id }}<span v-if="modal.data.reverend !== null && modal.data.reverend !== undefined" class="text-sm font-semibold opacity-80"> (Rev {{ modal.data.reverend }})</span></span>
+              <span v-if="modal.data.status_quotation != null" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="quotationStatusBadge(modal.data.status_quotation)">{{ quotationStatusLabel(modal.data.status_quotation) }}</span>
+              <span v-else class="text-xs text-white/70">-</span>
+            </h3>
+            <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+          </div>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="mb-4 space-y-0">
+            <div class="flex gap-2 py-2 border-b border-slate-50 items-center"><span class="text-sm text-slate-400 w-28 shrink-0">สถานะเปิด Order</span><span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="modal.data.take_order_status === 'Y' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ modal.data.take_order_status === 'Y' ? 'เปิด Order แล้ว' : 'ยังไม่เปิด Order' }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">วันที่</span><span class="text-sm text-slate-700">{{ formatDateThai(modal.data.quotation_date) }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">ลูกค้า</span><span class="text-sm font-semibold text-slate-700">{{ modal.data.customer_name }}</span></div>
+            <div v-if="modal.data.project_name" class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">โครงการ</span><span class="text-sm text-slate-700">{{ modal.data.project_name }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">พนักงานขาย</span><span class="text-sm text-slate-700">{{ modal.data.saleman_name }}<span v-if="modal.data.salemanid" class="text-slate-400"> ({{ modal.data.salemanid }})</span></span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">หมายเหตุ</span><span class="text-sm whitespace-pre-wrap break-words" :class="modal.data.comment_header ? 'text-amber-800' : 'text-slate-300'">{{ modal.data.comment_header || 'ไม่มี' }}</span></div>
+          </div>
+
+          <div v-if="modal.data.items?.length" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายการสินค้า</div>
+            <div class="rounded-lg border border-slate-200 overflow-hidden">
+              <table class="w-full text-sm border-collapse">
+                <thead>
+                  <tr class="bg-emerald-50 text-[11px] text-emerald-700">
+                    <th class="text-center font-semibold px-2 py-2 w-10 border-b border-slate-200">#</th>
+                    <th class="text-left font-semibold px-2 py-2 border-b border-slate-200">รายการ</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">จำนวน</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">ราคา/หน่วย</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">รวม (บาท)</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">เลขที่ Order</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(it, i) in modal.data.items" :key="i" :class="i>0 ? 'border-t border-slate-100' : ''">
+                    <td class="text-center text-slate-400 px-2 py-2 align-top">{{ i+1 }}</td>
+                    <td class="text-slate-800 font-medium px-2 py-2 whitespace-pre-line align-top">{{ it.product_descp }}</td>
+                    <td class="text-right text-slate-600 px-2 py-2 whitespace-nowrap align-top">{{ formatNum(it.quantity) }}{{ it.unit_name ? ' ' + it.unit_name : '' }}</td>
+                    <td class="text-right text-slate-600 px-2 py-2 whitespace-nowrap align-top">{{ formatNum(it.unit_price) }}</td>
+                    <td class="text-right text-slate-600 font-semibold px-2 py-2 whitespace-nowrap align-top">{{ formatNum(it.quantity * it.unit_price) }}</td>
+                    <td class="text-right px-2 py-2 whitespace-nowrap align-top" :class="it.order_no ? 'text-emerald-700 font-semibold' : 'text-slate-300'">{{ it.order_no || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div v-else class="mb-4 text-sm text-slate-400">ไม่มีรายการสินค้าแนบ</div>
+
+          <!-- ตารางสรุปยอด — ใช้ label 2 ภาษี (ไทย/อังกฤษ) ให้ตรงกับใบเสนอราคาตัวจริงเป๊ะๆ (รวมยอดรวมทั้งสิ้น/TOTAL, ส่วนลด/DISCOUNT %, สุทธิ/NET, ภาษีมูลค่าเพิ่ม/VAT, จำนวนเงินสุทธิ/GRAND TOTAL) -->
+          <div class="rounded-lg border border-slate-200 overflow-hidden text-sm mt-3">
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">รวมยอดรวมทั้งสิ้น/TOTAL</span>
+              <span></span>
+              <span class="text-right text-slate-700 min-w-[90px]">{{ formatPrice(modal.data.gross_amount) }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">ส่วนลด/DISCOUNT</span>
+              <span class="text-right text-slate-500 min-w-[46px]">{{ Number(modal.data.discount_percent) ? formatNum(modal.data.discount_percent) : '' }} %</span>
+              <span class="text-right min-w-[90px]" :class="Number(modal.data.discount_amount) ? 'text-rose-600' : 'text-slate-400'">{{ Number(modal.data.discount_amount) ? '-' + formatPrice(modal.data.discount_amount) : '- บาท' }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">สุทธิ/NET</span>
+              <span></span>
+              <span class="text-right text-slate-700 min-w-[90px]">{{ formatPrice(modal.data.gross_amount_net ?? modal.data.gross_amount) }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">ภาษีมูลค่าเพิ่ม/VAT</span>
+              <span class="text-right text-slate-500 min-w-[46px]">{{ formatNum(modal.data.vat_percent) }} %</span>
+              <span class="text-right text-slate-700 min-w-[90px]">{{ formatPrice(modal.data.vat_amount) }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2.5 bg-emerald-50">
+              <span class="font-bold text-emerald-700">จำนวนเงินสุทธิ/GRAND TOTAL</span>
+              <span></span>
+              <span class="text-right font-bold text-emerald-700 text-base min-w-[90px]">{{ formatPrice(modal.data.net_amount) }}</span>
+            </div>
+          </div>
+
+          <!-- ข้อมูลการดำเนินการ — sync มาจาก CreateBy/CreateDate, LastupdateBy/LastupdateDate, ApprovedBy/ApprovedDate ของ Quotation ในระบบเก่า -->
+          <div class="mt-4 pt-3 border-t border-slate-100">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ข้อมูลการดำเนินการ</div>
+            <div class="flex gap-2 py-1.5 text-xs">
+              <span class="text-slate-400 w-24 shrink-0">ผู้สร้าง</span>
+              <span class="text-slate-600">{{ modal.data.created_by || '-' }}<span v-if="modal.data.created_at" class="text-slate-400"> · {{ formatDateTimeThai(modal.data.created_at) }}</span></span>
+            </div>
+            <div class="flex gap-2 py-1.5 text-xs">
+              <span class="text-slate-400 w-24 shrink-0">ผู้แก้ไขล่าสุด</span>
+              <span class="text-slate-600">{{ modal.data.updated_by || '-' }}<span v-if="modal.data.updated_at" class="text-slate-400"> · {{ formatDateTimeThai(modal.data.updated_at) }}</span></span>
+            </div>
+            <div class="flex gap-2 py-1.5 text-xs">
+              <span class="text-slate-400 w-24 shrink-0">ผู้อนุมัติ</span>
+              <span class="text-slate-600">{{ modal.data.approved_by || '-' }}<span v-if="modal.data.approved_at" class="text-slate-400"> · {{ formatDateTimeThai(modal.data.approved_at) }}</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">{{ previousModal ? '‹ ย้อนกลับ' : 'ปิด' }}</button>
         </div>
       </div>
 
@@ -851,12 +958,14 @@ createApp({
       salesUsers: [],
       filter: { assigned_to: '', period: 'all', priority: '', sla_status: '', unit_name: '', announce_date: '', close_date: '', price_min: '', price_max: '' },
       loading: false,
-      showClosed: false,
+      showClosed: true,
       view: 'kanban',
       winLossForm: { id: null, newStatus: '', reason: '', note: '', bid_amount: null },
       editingUnitName: false,
       savingUnitName: false,
       unitNameDraft: '',
+      quotationDetailLoading: false,
+      previousModal: null, // เก็บ modal ก่อนหน้าไว้ตอนเปิด quotation-detail ทับ เพื่อย้อนกลับได้ตอนปิด (ดู closeModal() ที่ override ไว้ด้านล่าง)
     };
   },
   watch: {
@@ -928,6 +1037,13 @@ createApp({
       return { summary, rows };
     },
 
+    // เลขที่ใบเสนอราคา แกะจาก project_no ตรงๆ (รูปแบบ 'HIST-' + Quotationid เดิม ดู importQuotation() ใน api/quotation_import.php)
+    // ใช้แสดงแถว "เลขที่ใบเสนอราคา" คลิกได้ใน Detail Modal — เชื่อถือได้กว่า parse จาก sale_notes เพราะ field ตรงๆ ไม่ผ่านข้อความอิสระ
+    historyQuotationId() {
+      const projectNo = this.modal?.data?.project_no || '';
+      return projectNo.startsWith('HIST-') ? projectNo.slice(5) : null;
+    },
+
     modalStageColor() {
       const s = STAGES.find(s => s.key === this.modal?.data?.status);
       return s ? { color: s.color, darkColor: s.darkColor } : { color: '#008074', darkColor: '#1e293b' };
@@ -982,7 +1098,29 @@ createApp({
   methods: {
     ...SharedMethods,
 
+    // override SharedMethods.closeModal เฉพาะหน้านี้: ถ้ากำลังดู quotation-detail (เปิดทับ modal เดิมไว้) ให้ย้อนกลับไป modal ก่อนหน้าแทนที่จะปิดหมด
+    closeModal() {
+      if (this.modal.type === 'quotation-detail' && this.previousModal) {
+        this.modal = this.previousModal;
+        this.previousModal = null;
+      } else {
+        this.modal = { type: null, data: null };
+        this.previousModal = null;
+      }
+    },
+
     esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+
+    // รหัสสถานะใบเสนอราคาเก่า (StatusQuotation จากระบบ SalesManagement) — ยืนยันความหมายจากผู้ใช้ 2026-09-17
+    // รหัสอื่นนอกเหนือจากนี้ยังไม่ทราบความหมาย แสดงโค้ดดิบแทนการเดา
+    quotationStatusLabel(code) {
+      const map = { '0': 'ฉบับร่าง/ร่างแก้ไข Rev.', '1': 'บันทึกจริง', '2': 'ยืนยันแล้ว', '3': 'ยกเลิก' };
+      return map[String(code)] || `รหัส ${code}`;
+    },
+    quotationStatusBadge(code) {
+      const map = { '0': 'bg-slate-100 text-slate-600', '1': 'bg-sky-100 text-sky-700', '2': 'bg-emerald-100 text-emerald-700', '3': 'bg-rose-100 text-rose-700' };
+      return map[String(code)] || 'bg-yellow-100 text-yellow-700';
+    },
 
     /** ผูก event คลิกแถว "ครั้งเดียว" ตอน mounted ด้วย delegated listener บน #bidPipelineTable (element แม่ที่ DataTables ไม่ทำลายทิ้งตอน destroy:true) */
     bindTableEvents() {
@@ -1169,6 +1307,25 @@ createApp({
         await this.showAlert('ย้ายสถานะสำเร็จ', 'success');
       } else {
         await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+      }
+    },
+
+    // เปิด modal แสดงรายละเอียดใบเสนอราคาเก่า (header + รายการสินค้า) ให้ sale ดู — เรียกจากลิงก์เลขที่ใบใน "บันทึก Sale" ของ Detail Modal
+    // ใช้ modal.type/modal.data ตัวเดียวกับ modal อื่นในหน้านี้ (เหมือน win-loss) กด "ปิด" แล้วจบเลย ไม่ย้อนกลับไป Detail Modal เดิม
+    async openQuotationDetail(quotationId) {
+      this.quotationDetailLoading = true;
+      try {
+        const res = await apiCall('GET', `api/quotation_import.php?action=detail&id=${encodeURIComponent(quotationId)}`);
+        if (res.success) {
+          this.previousModal = { type: this.modal.type, data: this.modal.data };
+          this.modal = { type: 'quotation-detail', data: res.data };
+        } else {
+          this.showAlert(res.message || 'ไม่สามารถโหลดใบเสนอราคานี้ได้', 'error');
+        }
+      } catch {
+        this.showAlert('เกิดข้อผิดพลาดในการโหลดใบเสนอราคา', 'error');
+      } finally {
+        this.quotationDetailLoading = false;
       }
     },
 
