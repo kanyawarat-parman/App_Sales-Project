@@ -211,17 +211,17 @@
               ตัวกรองเพิ่มเติม
               <span v-if="spAdvFilterCount" class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white text-[10px] font-bold">{{ spAdvFilterCount }}</span>
             </button>
-            <div v-if="spLoading" class="flex items-center gap-1.5 text-xs text-slate-500 ml-auto">
+            <div v-if="spLoading" class="flex items-center gap-1.5 text-xs text-slate-500">
               <div class="spinner w-4 h-4" style="border-width:2px"></div> กำลังโหลด...
             </div>
-            <span v-else class="text-sm font-semibold text-slate-400 ml-auto">{{ spStats?.total ?? 0 }} งาน</span>
+            <span v-else class="text-sm font-semibold text-slate-400">{{ spStats?.total ?? 0 }} งาน</span>
             <div class="flex gap-1">
               <button class="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[36px] transition-all"
                 @click="spView='kanban'"
-                :class="spView==='kanban' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-200'">แยกตามสถานะ</button>
+                :class="spView==='kanban' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-200'">แสดงมุมมองสถานะ</button>
               <button class="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[36px] transition-all"
                 @click="spView='table'"
-                :class="spView==='table' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-200'">ตาราง</button>
+                :class="spView==='table' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-200'">แสดงมุมมองตาราง</button>
             </div>
           </div>
 
@@ -381,10 +381,10 @@
             <div class="ml-auto flex gap-1">
               <button class="px-3.5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[38px] transition-all"
                 @click="spView='kanban'"
-                :class="spView==='kanban' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'">แยกตามสถานะ</button>
+                :class="spView==='kanban' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'">แสดงมุมมองสถานะ</button>
               <button class="px-3.5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] min-h-[38px] transition-all"
                 @click="spView='table'"
-                :class="spView==='table' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'">ตาราง</button>
+                :class="spView==='table' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'">แสดงมุมมองตาราง</button>
               <button class="px-3.5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-[1.5px] border-slate-200 bg-white text-slate-500 min-h-[38px]"
                 @click="loadSpKanban()">↺</button>
             </div>
@@ -487,6 +487,13 @@
           <div v-if="spForm.project_code" class="flex gap-2 py-2 border-b border-slate-50 mb-2">
             <span class="text-sm text-slate-400 w-32 shrink-0">รหัสงาน</span>
             <span class="text-sm font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block">{{ spForm.project_code }}</span>
+          </div>
+
+          <!-- เลขที่ใบเสนอราคา — แสดงเฉพาะงานที่นำเข้าจากใบเสนอราคาเก่า (แกะจากข้อความใน notes) -->
+          <div v-if="spHistoryQuotationId" class="flex gap-2 py-2 border-b border-slate-50 items-center mb-2">
+            <span class="text-sm text-slate-400 w-32 shrink-0">เลขที่ใบเสนอราคา</span>
+            <button type="button" @click="openSpQuotationDetail(spHistoryQuotationId)" :disabled="spQuotationLoading"
+              class="font-mono font-bold text-sm underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-sky-700 hover:text-sky-600 disabled:opacity-50">{{ spHistoryQuotationId }}</button>
           </div>
 
           <!-- แหล่งที่มา -->
@@ -646,6 +653,111 @@
           <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitSpForm">
             {{ spForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มงานใหม่' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SP: Quotation Detail Modal (ใบเสนอราคาเก่าที่นำเข้ามาเป็นงานขายตรงนี้) — overlay แยกต่างหาก ไม่แตะ modal/spForm หลัก
+         กันไม่ให้ข้อมูลที่แก้ไขค้างไว้ในฟอร์ม sp-form หายไปตอนเปิด/ปิด modal นี้ซ้อนขึ้นมา (z-index สูงกว่า sp-form ให้ลอยทับอยู่บนสุด) -->
+    <div v-if="spQuotationModal.show" class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1100] p-4 overflow-y-auto" @click.self="closeSpQuotationModal">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden my-8">
+        <div class="bg-sky-700 text-white px-6 py-5">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-lg flex items-center flex-wrap gap-2">
+              <span>รายละเอียดใบเสนอราคา {{ spQuotationModal.data.quotation_id }}<span v-if="spQuotationModal.data.reverend !== null && spQuotationModal.data.reverend !== undefined" class="text-sm font-semibold opacity-80"> (Rev {{ spQuotationModal.data.reverend }})</span></span>
+              <span v-if="spQuotationModal.data.status_quotation != null" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="quotationStatusBadge(spQuotationModal.data.status_quotation)">{{ quotationStatusLabel(spQuotationModal.data.status_quotation) }}</span>
+              <span v-else class="text-xs text-white/70">-</span>
+            </h3>
+            <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeSpQuotationModal">×</button>
+          </div>
+        </div>
+        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div class="mb-4 space-y-0">
+            <div class="flex gap-2 py-2 border-b border-slate-50 items-center"><span class="text-sm text-slate-400 w-28 shrink-0">สถานะเปิด Order</span><span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="spQuotationModal.data.take_order_status === 'Y' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ spQuotationModal.data.take_order_status === 'Y' ? 'เปิด Order แล้ว' : 'ยังไม่เปิด Order' }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">วันที่</span><span class="text-sm text-slate-700">{{ formatDateThai(spQuotationModal.data.quotation_date) }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">ลูกค้า</span><span class="text-sm font-semibold text-slate-700">{{ spQuotationModal.data.customer_name }}</span></div>
+            <div v-if="spQuotationModal.data.project_name" class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">โครงการ</span><span class="text-sm text-slate-700">{{ spQuotationModal.data.project_name }}</span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">พนักงานขาย</span><span class="text-sm text-slate-700">{{ spQuotationModal.data.saleman_name }}<span v-if="spQuotationModal.data.salemanid" class="text-slate-400"> ({{ spQuotationModal.data.salemanid }})</span></span></div>
+            <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-28 shrink-0">หมายเหตุ</span><span class="text-sm whitespace-pre-wrap break-words" :class="spQuotationModal.data.comment_header ? 'text-amber-800' : 'text-slate-300'">{{ spQuotationModal.data.comment_header || 'ไม่มี' }}</span></div>
+          </div>
+
+          <div v-if="spQuotationModal.data.items?.length" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายการสินค้า</div>
+            <div class="rounded-lg border border-slate-200 overflow-hidden">
+              <table class="w-full text-sm border-collapse">
+                <thead>
+                  <tr class="bg-emerald-50 text-[11px] text-emerald-700">
+                    <th class="text-center font-semibold px-2 py-2 w-10 border-b border-slate-200">#</th>
+                    <th class="text-left font-semibold px-2 py-2 border-b border-slate-200">รายการ</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">จำนวน</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">ราคา/หน่วย</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">รวม (บาท)</th>
+                    <th class="text-right font-semibold px-2 py-2 border-b border-slate-200 whitespace-nowrap">เลขที่ Order</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(it, i) in spQuotationModal.data.items" :key="i" :class="i>0 ? 'border-t border-slate-100' : ''">
+                    <td class="text-center text-slate-400 px-2 py-2 align-top">{{ i+1 }}</td>
+                    <td class="text-slate-800 font-medium px-2 py-2 whitespace-pre-line align-top">{{ it.product_descp }}</td>
+                    <td class="text-right text-slate-600 px-2 py-2 whitespace-nowrap align-top">{{ formatNum(it.quantity) }}{{ it.unit_name ? ' ' + it.unit_name : '' }}</td>
+                    <td class="text-right text-slate-600 px-2 py-2 whitespace-nowrap align-top">{{ formatNum(it.unit_price) }}</td>
+                    <td class="text-right text-slate-600 font-semibold px-2 py-2 whitespace-nowrap align-top">{{ formatNum(it.quantity * it.unit_price) }}</td>
+                    <td class="text-right px-2 py-2 whitespace-nowrap align-top" :class="it.order_no ? 'text-emerald-700 font-semibold' : 'text-slate-300'">{{ it.order_no || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div v-else class="mb-4 text-sm text-slate-400">ไม่มีรายการสินค้าแนบ</div>
+
+          <!-- ตารางสรุปยอด — ใช้ label 2 ภาษี (ไทย/อังกฤษ) ให้ตรงกับใบเสนอราคาตัวจริงเป๊ะๆ -->
+          <div class="rounded-lg border border-slate-200 overflow-hidden text-sm mt-3">
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">รวมยอดรวมทั้งสิ้น/TOTAL</span>
+              <span></span>
+              <span class="text-right text-slate-700 min-w-[90px]">{{ formatPrice(spQuotationModal.data.gross_amount) }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">ส่วนลด/DISCOUNT</span>
+              <span class="text-right text-slate-500 min-w-[46px]">{{ Number(spQuotationModal.data.discount_percent) ? formatNum(spQuotationModal.data.discount_percent) : '' }} %</span>
+              <span class="text-right min-w-[90px]" :class="Number(spQuotationModal.data.discount_amount) ? 'text-rose-600' : 'text-slate-400'">{{ Number(spQuotationModal.data.discount_amount) ? '-' + formatPrice(spQuotationModal.data.discount_amount) : '- บาท' }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">สุทธิ/NET</span>
+              <span></span>
+              <span class="text-right text-slate-700 min-w-[90px]">{{ formatPrice(spQuotationModal.data.gross_amount_net ?? spQuotationModal.data.gross_amount) }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100">
+              <span class="text-slate-500">ภาษีมูลค่าเพิ่ม/VAT</span>
+              <span class="text-right text-slate-500 min-w-[46px]">{{ formatNum(spQuotationModal.data.vat_percent) }} %</span>
+              <span class="text-right text-slate-700 min-w-[90px]">{{ formatPrice(spQuotationModal.data.vat_amount) }}</span>
+            </div>
+            <div class="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2.5 bg-emerald-50">
+              <span class="font-bold text-emerald-700">จำนวนเงินสุทธิ/GRAND TOTAL</span>
+              <span></span>
+              <span class="text-right font-bold text-emerald-700 text-base min-w-[90px]">{{ formatPrice(spQuotationModal.data.net_amount) }}</span>
+            </div>
+          </div>
+
+          <!-- ข้อมูลการดำเนินการ -->
+          <div class="mt-4 pt-3 border-t border-slate-100">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ข้อมูลการดำเนินการ</div>
+            <div class="flex gap-2 py-1.5 text-xs">
+              <span class="text-slate-400 w-24 shrink-0">ผู้สร้าง</span>
+              <span class="text-slate-600">{{ spQuotationModal.data.created_by || '-' }}<span v-if="spQuotationModal.data.created_at" class="text-slate-400"> · {{ formatDateTimeThai(spQuotationModal.data.created_at) }}</span></span>
+            </div>
+            <div class="flex gap-2 py-1.5 text-xs">
+              <span class="text-slate-400 w-24 shrink-0">ผู้แก้ไขล่าสุด</span>
+              <span class="text-slate-600">{{ spQuotationModal.data.updated_by || '-' }}<span v-if="spQuotationModal.data.updated_at" class="text-slate-400"> · {{ formatDateTimeThai(spQuotationModal.data.updated_at) }}</span></span>
+            </div>
+            <div class="flex gap-2 py-1.5 text-xs">
+              <span class="text-slate-400 w-24 shrink-0">ผู้อนุมัติ</span>
+              <span class="text-slate-600">{{ spQuotationModal.data.approved_by || '-' }}<span v-if="spQuotationModal.data.approved_at" class="text-slate-400"> · {{ formatDateTimeThai(spQuotationModal.data.approved_at) }}</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeSpQuotationModal">ปิด</button>
         </div>
       </div>
     </div>
@@ -912,6 +1024,10 @@ createApp({
 spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client_name:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' },
       spFormHistory: [],
       spWinLossForm: { id:null, stage:'', title:'', reason:'', note:'', value:'' },
+      // modal แยกต่างหากสำหรับดูรายละเอียดใบเสนอราคาเก่า — ไม่ใช้ modal.type/modal.data ร่วมกับ sp-form
+      // เพราะ sp-form เป็นฟอร์มแก้ไขที่มีข้อมูลค้างอยู่ (title/notes ที่พิมพ์ไว้) ถ้าทับ modal เดิมจะเสียข้อมูลที่แก้ค้างไว้
+      spQuotationModal: { show: false, data: null },
+      spQuotationLoading: false,
     };
   },
   computed: {
@@ -926,6 +1042,15 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
     isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
     isSale()       { return this.currentUser?.role === 'sale'; },
+
+    // เลขที่ใบเสนอราคา แกะจากข้อความ spForm.notes ("นำเข้าจากใบเสนอราคาเก่า #QT260700028 ลงวันที่ ...")
+    // งานขายตรง (self_sourced) ไม่มี field project_no แบบ HIST- เหมือนงานประมูล ต้อง parse จาก notes แทน
+    // (รูปแบบข้อความคงที่ ดู importQuotation()'s self_sourced branch ใน api/quotation_import.php)
+    spHistoryQuotationId() {
+      const text = this.spForm?.notes || '';
+      const m = text.match(/นำเข้าจากใบเสนอราคาเก่า #(\S+)/);
+      return m ? m[1] : null;
+    },
 
     spAdvFilterCount() {
       let n = 0;
@@ -1011,6 +1136,35 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     ...SharedMethods,
 
     esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+
+    // รหัสสถานะใบเสนอราคาเก่า (StatusQuotation จากระบบ SalesManagement) — เหมือน bid-pipeline.html เป๊ะ ยืนยันความหมายจากผู้ใช้แล้ว
+    quotationStatusLabel(code) {
+      const map = { '0': 'ฉบับร่าง/ร่างแก้ไข Rev.', '1': 'บันทึกจริง', '2': 'ยืนยันแล้ว', '3': 'ยกเลิก' };
+      return map[String(code)] || `รหัส ${code}`;
+    },
+    quotationStatusBadge(code) {
+      const map = { '0': 'bg-slate-100 text-slate-600', '1': 'bg-sky-100 text-sky-700', '2': 'bg-emerald-100 text-emerald-700', '3': 'bg-rose-100 text-rose-700' };
+      return map[String(code)] || 'bg-yellow-100 text-yellow-700';
+    },
+
+    // เปิด modal แสดงรายละเอียดใบเสนอราคาเก่าให้ sale ดู — ใช้ state แยก (spQuotationModal) ไม่แตะ modal/spForm หลัก
+    // กันไม่ให้ข้อมูลที่แก้ไขค้างไว้ในฟอร์ม sp-form หายไปตอนเปิด/ปิด modal นี้ซ้อนขึ้นมา
+    async openSpQuotationDetail(quotationId) {
+      this.spQuotationLoading = true;
+      try {
+        const res = await apiCall('GET', `api/quotation_import.php?action=detail&id=${encodeURIComponent(quotationId)}`);
+        if (res.success) {
+          this.spQuotationModal = { show: true, data: res.data };
+        } else {
+          this.showAlert(res.message || 'ไม่สามารถโหลดใบเสนอราคานี้ได้', 'error');
+        }
+      } catch {
+        this.showAlert('เกิดข้อผิดพลาดในการโหลดใบเสนอราคา', 'error');
+      } finally {
+        this.spQuotationLoading = false;
+      }
+    },
+    closeSpQuotationModal() { this.spQuotationModal = { show: false, data: null }; },
 
     /** ผูก event คลิกปุ่ม action ในแถว "ครั้งเดียว" ตอน mounted ด้วย delegated listener บน #spTable (element แม่ที่ DataTables ไม่ทำลายทิ้งตอน destroy:true)
         หา card ต้นทางผ่าน DataTables row API (ไม่ใช้ data-id) เพราะ .row(tr).data() คืน object เดิมที่ผูกไว้ตอน initDataTable() ตรงๆ */
