@@ -276,15 +276,18 @@ const SharedMethods = {
     return s === 'เกิน' ? 'text-red-600 font-bold' : s === 'ใกล้ถึง' ? 'text-amber-600 font-semibold' : 'text-green-600';
   },
 
-  /* ── สี / Badge (สถานะ, priority, source, stage) ── */
+  /* ── สี / Badge (สถานะ, priority, source, stage) ──
+     จัดกลุ่มสีตามความหมายเดียวกับหัวคอลัมน์ Kanban ใน bid-pipeline.html (ยืนยันจากผู้ใช้ 2026-09-19):
+     เทา=กำลังลงมือทำงานจริง, อำพัน=รอคนอื่นขยับก่อน, เขียว=สำเร็จ, แดง=ไม่สำเร็จ, เทาจาง=ยกเลิก
+     ใช้ร่วมกันหลายหน้า (bid-pipeline.html, assignments.html, my-assignments.html, announcements.html, dashboard-sale.js, dashboard-admin.js) */
   statusBadge(s) {
     const m = {
-      'รอดำเนินการ':           'bg-slate-100 text-slate-600',
-      'รับงาน/ศึกษา TOR':     'bg-sky-100 text-sky-700',
-      'จัดเตรียมยื่นข้อเสนอ': 'bg-indigo-100 text-indigo-700',
-      'รอประกาศผล':            'bg-violet-100 text-violet-700',
+      'รอดำเนินการ':           'bg-amber-50 text-amber-700',
+      'รับงาน/ศึกษา TOR':     'bg-slate-100 text-slate-700',
+      'จัดเตรียมยื่นข้อเสนอ': 'bg-slate-100 text-slate-700',
+      'รอประกาศผล':            'bg-amber-50 text-amber-700',
       'ชนะการประมูล':          'bg-emerald-100 text-emerald-700',
-      'ส่งมอบแล้ว':            'bg-teal-100 text-teal-700',
+      'ส่งมอบแล้ว':            'bg-emerald-100 text-emerald-700',
       'แพ้การประมูล':          'bg-rose-100 text-rose-700',
       'ยกเลิก':                'bg-slate-200 text-slate-500',
     };
@@ -551,7 +554,10 @@ const AppNav = {
     },
   },
   template: `
-<div>
+  <!-- ยืนยันจากผู้ใช้ 2026-09-20: เดิม 2 overlay + header ถูกครอบด้วย <div> เดียว ทำให้ position:sticky ของ header ไม่ค้างจริงตอนเลื่อนจอ
+       เพราะ div ครอบสูงเท่า header พอดี (auto-height ตามเนื้อหา) header เลยไม่มี "ที่ว่างให้ค้าง" ภายใน parent ตัวเอง เลื่อนแป๊บเดียวก็หลุดตามไปด้วย
+       แก้โดยเอา <div> ครอบออก ให้ทั้ง 3 อย่างเป็น root node แยกกัน (Vue 3 รองรับ multi-root/fragment component) — parent ที่แท้จริงจะกลายเป็น div ของแต่ละหน้าที่เรียกใช้ <app-nav>
+       ซึ่งสูงเท่าทั้งหน้า header เลยมีที่ว่างให้ sticky ค้างได้ตลอดการเลื่อน -->
   <!-- Mobile menu click-away overlay -->
   <div v-if="sidebarOpen" class="fixed inset-0 bg-black/40 z-[39] md:hidden" @click="sidebarOpen=false"></div>
 
@@ -559,7 +565,10 @@ const AppNav = {
   <div v-if="notifOpen || openGroup" class="fixed inset-0 z-[39]" @click="notifOpen=false; openGroup=null"></div>
 
   <!-- Top Bar -->
-  <header class="sticky top-0 z-40 bg-white border-b border-slate-100 shadow-sm">
+  <!-- z-50 (ไม่ใช่ z-40): หลายหน้า (bid-pipeline.html, sales-pipeline.html, ...) มี <header class="sticky z-40"> ของตัวเอง (แถบชื่อหน้า/ตัวกรอง)
+       ถ้าใช้ z-40 เท่ากัน DOM ที่มาทีหลัง (header ของหน้าเพจ) จะทับบังเมนู dropdown มือถือ (sidebarOpen) 1-2 รายการบนสุด (ยืนยันบั๊กจากผู้ใช้ 2026-09-21)
+       ต้อง "มากกว่า" ทุก z-40 ที่หน้าเพจใช้เอง จึงตั้งเท่ากับ AppTabBar (z-50) ซึ่งเป็น chrome ระดับเดียวกัน -->
+  <header class="sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm">
     <div class="px-4 py-2.5 flex items-center gap-3 flex-wrap">
 
       <!-- Logo -->
@@ -731,7 +740,6 @@ const AppNav = {
       </div>
     </div>
   </header>
-</div>
   `,
 };
 
