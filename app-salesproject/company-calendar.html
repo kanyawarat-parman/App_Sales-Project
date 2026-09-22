@@ -17,10 +17,16 @@
 
   <template v-else>
     <!-- app-nav อยู่ในคอนเทนเนอร์ h-screen เดียวกับ header/main (ไม่ใช่ sibling แยกแบบหน้าอื่น) เพราะหน้านี้ตั้งใจให้พอดี
-         1 จอโดยไม่ต้องเลื่อน — ถ้าวาง app-nav ไว้นอก div แล้วให้ div เป็น h-screen จะสูงเกิน 100vh (นับซ้อนกับความสูง nav) -->
+         1 จอโดยไม่ต้องเลื่อน — ถ้าวาง app-nav ไว้นอก div แล้วให้ div เป็น h-screen จะสูงเกิน 100vh (นับซ้อนกับความสูง nav)
+         ⚠️ ห้ามใส่ md:ml-60 ที่ div นี้ (คอนเทนเนอร์รวม) — <app-nav> เป็นลูกอยู่ข้างในอยู่แล้ว (ต่างจากหน้าอื่นที่ app-nav เป็น sibling ก่อนหน้า)
+         header ของ AppNav เองมี md:ml-60 built-in อยู่แล้ว ถ้าใส่ซ้ำที่ div นี้อีกชั้นจะเลื่อนซ้อนกัน 2 เท่า (480px) เกิดช่องว่างขาว
+         ระหว่าง sidebar กับเนื้อหา (ยืนยันบั๊กจากผู้ใช้ 2026-09-21) — ต้องใส่ md:ml-60 ที่ header/main ของหน้าเพจเองแทน (บรรทัดถัดไป) -->
     <div class="h-screen flex flex-col overflow-hidden">
       <app-nav :user="currentUser" page="company-calendar" ref="nav"></app-nav>
 
+      <!-- ห่อ header+main ด้วย div นี้แทนใส่ md:ml-60 แยกที่ header/main แต่ละอัน — main มี mx-auto อยู่แล้ว (จัดกึ่งกลางเนื้อหา max-w-[1280px])
+           ถ้าใส่ ml-60 ตรงๆ ที่ main จะไปชนกับ mx-auto (margin-left ถูกกำหนด 2 ค่าซ้อนกันบน element เดียว ผลลัพธ์ไม่แน่นอน) -->
+      <div class="md:ml-60 flex-1 min-h-0 flex flex-col">
       <header class="bg-white border-b border-slate-100 px-5 py-2 flex items-center gap-3 shadow-sm flex-wrap min-h-[56px] shrink-0">
         <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -122,6 +128,7 @@
         </div>
 
       </main>
+      </div>
     </div>
 
     <app-modal ref="appModal"></app-modal>
@@ -129,7 +136,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=33"></script>
+<script src="shared/app.js?v=44"></script>
 <script>
 const { createApp } = Vue;
 createApp({

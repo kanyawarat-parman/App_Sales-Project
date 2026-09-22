@@ -833,7 +833,10 @@ function bottleneckAnalysis(PDO $db, array $user): void {
     if ($userIds) {
         $in   = implode(',', array_fill(0, count($userIds), '?'));
         $stmt = $db->prepare("SELECT id, full_name FROM users WHERE id IN ($in)");
-        $stmt->execute($userIds);
+        // array_unique() เก็บ key เดิมไว้ (ไม่ reindex) ถ้ามีค่าซ้ำถูกตัดออก key จะไม่เรียงต่อเนื่องจาก 0
+        // PDOStatement::execute() กับ positional placeholder (?) ต้องได้ array key 0,1,2,... เรียงติดกันเท่านั้น
+        // ไม่งั้น throw PDOException "Invalid parameter number" ต้อง array_values() รีเซ็ต key ก่อนเสมอ
+        $stmt->execute(array_values($userIds));
         foreach ($stmt->fetchAll() as $r) { $names[(int)$r['id']] = $r['full_name']; }
     }
 

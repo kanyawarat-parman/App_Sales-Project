@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/mail_helper.php';
 require_once __DIR__ . '/../includes/calendar_helper.php';
 require_once __DIR__ . '/../includes/project_code_helper.php';
+require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../api/line.php';
 
 $user   = requireAuth();
@@ -122,11 +123,12 @@ function getDetail(PDO $db, array $user): void {
                a.project_no, a.project_name, a.unit_name, a.announce_date, a.close_date,
                a.price_median, a.items, a.spec, a.can_bid, a.reason, a.docs_required,
                a.need_sample, a.sample_detail, a.conditions, a.url, a.keyword_match, a.filter_status,
-               a.source_type,
+               a.source_type, acc.account_type,
                u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url, u1.phone AS sale_phone,
                u2.full_name AS secretary_name
         FROM project_assignments pa
         JOIN announcements a ON a.id = pa.announcement_id
+        LEFT JOIN accounts acc ON acc.id = a.account_id
         JOIN users u1 ON u1.id = pa.assigned_to
         JOIN users u2 ON u2.id = pa.assigned_by
         WHERE pa.id = ? $extra
@@ -190,9 +192,18 @@ function createAssignment(PDO $db, array $user): void {
     $saleStmt->execute([$assignedTo]);
     $saleUser = $saleStmt->fetch();
 
-    $annStmt = $db->prepare('SELECT project_name, unit_name, close_date, price_median FROM announcements WHERE id = ?');
+    $annStmt = $db->prepare('SELECT project_name, unit_name, close_date, price_median, account_id FROM announcements WHERE id = ?');
     $annStmt->execute([$announcementId]);
     $ann = $annStmt->fetch();
+
+    // ผูก account อัตโนมัติ (ถ้ายังไม่เคยผูกไว้จากการมอบหมายครั้งก่อนหน้า)
+    if ($ann && empty($ann['account_id'])) {
+        $accountId = findOrCreateAccount($db, 'government', $ann['unit_name'] ?? '');
+        if ($accountId) {
+            $db->prepare('UPDATE announcements SET account_id = ? WHERE id = ?')->execute([$accountId, $announcementId]);
+            $ann['account_id'] = $accountId;
+        }
+    }
 
     // In-app notification
     if ($ann) {
@@ -213,14 +224,15 @@ function createAssignment(PDO $db, array $user): void {
         // งานฝั่ง ebidding ไม่ออก project_code ใหม่ซ้ำ — ใช้รหัสเดียวกับ project_assignments ที่เพิ่งออกด้านบน (รหัสเดียวเดินทางข้ามตารางได้)
         $db->prepare("
             INSERT INTO pipeline_items
-                (project_code, source_type, announcement_id, title, client_name, assigned_to,
+                (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
                  stage, priority, value, win_probability)
-            VALUES (?, 'ebidding', ?, ?, ?, ?, 'Interest', ?, ?, 0.20)
+            VALUES (?, 'ebidding', ?, ?, ?, ?, ?, 'Interest', ?, ?, 0.20)
         ")->execute([
             $projectCode,
             $announcementId,
             $ann['project_name'] ?? 'งาน e-Bidding',
             $ann['unit_name'] ?? '',
+            $ann['account_id'] ?? null,
             $assignedTo,
             $piPriority,
             $ann['price_median'] ?? null,
@@ -324,21 +336,32 @@ function updateAssignment(PDO $db, array $user): void {
             $existing = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ?");
             $existing->execute([$current['announcement_id'], $current['assigned_to']]);
             if (!$existing->fetch()) {
-                $ann = $db->prepare("SELECT project_name, unit_name, price_median FROM announcements WHERE id = ?");
+                $ann = $db->prepare("SELECT project_name, unit_name, price_median, account_id, source_type FROM announcements WHERE id = ?");
                 $ann->execute([$current['announcement_id']]);
                 $annRow = $ann->fetch();
                 $title = $annRow['project_name'] ?? 'งาน e-Bidding';
                 $client = $annRow['unit_name'] ?? '';
                 $value  = $annRow['price_median'] ?? null;
+                // ผูก account (เผื่อประกาศเก่าที่ยังไม่เคยผ่าน createAssignment() รุ่นใหม่ที่ auto-link ให้)
+                // ⚠️ ห้าม auto-สร้าง account ให้ source_type='legacy_quotation' ที่ยังไม่เคยผูกไว้ เพราะ unit_name ของงานกลุ่มนี้
+                // อาจยังเป็นค่า placeholder ตอนนำเข้าข้อมูลเก่า ไม่ใช่ชื่อจริง (เจอบั๊กจริง 2026-09-22 — สร้าง account ผิดชื่อผิดประเภทไปแล้วรอบหนึ่ง)
+                // ปล่อย account_id เป็น NULL ไว้ก่อน รอ sale แก้ไขชื่อให้ถูกผ่าน api/announcements.php's update_unit_name (มีให้เลือกประเภทด้วย) เอง
+                $accountId = $annRow['account_id'] ?? null;
+                if (!$accountId && $annRow['source_type'] !== 'legacy_quotation') {
+                    $accountId = findOrCreateAccount($db, 'government', $client);
+                    if ($accountId) {
+                        $db->prepare('UPDATE announcements SET account_id = ? WHERE id = ?')->execute([$accountId, $current['announcement_id']]);
+                    }
+                }
                 // งานฝั่ง ebidding ไม่ออก project_code ใหม่ — ใช้รหัสเดียวกับ project_assignments ที่ผูกอยู่แล้ว
                 $projectCode = $current['project_code'] ?? nextProjectCode($db);
                 $db->prepare("
                     INSERT INTO pipeline_items
-                        (project_code, source_type, announcement_id, title, client_name, assigned_to,
+                        (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
                          stage, priority, value, win_probability, order_date)
-                    VALUES (?, 'ebidding', ?, ?, ?, ?, 'Deal Signed', 'High', ?, 0.90, CURDATE())
+                    VALUES (?, 'ebidding', ?, ?, ?, ?, ?, 'Deal Signed', 'High', ?, 0.90, CURDATE())
                 ")->execute([
-                    $projectCode, $current['announcement_id'], $title, $client,
+                    $projectCode, $current['announcement_id'], $title, $client, $accountId,
                     $current['assigned_to'], $value
                 ]);
             }

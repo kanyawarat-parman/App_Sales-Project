@@ -58,8 +58,8 @@
     <!-- Overlay ปิด dropdown ตัวกรอง แหล่งที่มา/ช่วงเวลา เมื่อคลิกนอกกล่อง — pattern เดียวกับ bid-pipeline.html/AppNav's openGroup (shared/app.js) -->
     <div v-if="spOpenFilterDropdown" class="fixed inset-0 z-[39]" @click="spOpenFilterDropdown = null"></div>
 
-    <div class="min-h-screen flex flex-col">
-      <header class="sticky z-40 bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px] flex-wrap"
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="sticky z-40 bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap"
         :style="{top: spNavHeight + 'px'}">
         <h2 class="text-base font-bold text-slate-700 flex items-center gap-2">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -67,8 +67,8 @@
         </h2>
         <div class="ml-auto flex items-center gap-1.5 flex-wrap">
           <button v-if="['manager','sale'].includes(currentUser?.role)"
-            class="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer min-h-[40px]"
-            @click="openSpForm(null)">+ เพิ่มงานใหม่</button>
+            class="shrink-0 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-sm font-bold bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer min-h-[34px]"
+            @click="openSpForm(null)">+ สร้างงาน/ดีลใหม่</button>
           <!-- แหล่งที่มา + ช่วงเวลา: ตัวกรองระดับหน้า ยิง API ใหม่ กระทบข้อมูลทั้งหน้า (สถิติด้านบน + รายการด้านล่าง) จึงอยู่แถวหัวข้อ ไม่ใช่ในการ์ดรายการ
                ทำเป็น custom dropdown แบบเดียวกับ Sales/ช่วงเวลาของ bid-pipeline.html (ยืนยันจากผู้ใช้ 2026-09-21)
                ⚠️ เคยลอง overflow-x-auto (เลื่อนซ้าย/ขวา) แล้วพัง — overflow-x-auto บน container ไปบัง (clip) กล่อง dropdown ที่เปิดออกมาด้านล่างปุ่ม
@@ -78,7 +78,7 @@
             <div v-if="isSecretary" class="relative shrink-0">
               <button type="button" @click.stop="spOpenFilterDropdown = spOpenFilterDropdown==='sale' ? null : 'sale'"
                 title="กรองตาม Sale"
-                class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
+                class="flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
                 :class="spFilter.assigned_to ? spHeaderDropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>
                 <span>{{ spSelectedSaleLabel }}</span>
@@ -98,7 +98,7 @@
             <div v-if="isSecretary" class="relative shrink-0">
               <button type="button" @click.stop="spOpenFilterDropdown = spOpenFilterDropdown==='source' ? null : 'source'"
                 title="กรองตามแหล่งที่มา"
-                class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
+                class="flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
                 :class="spFilter.source_type ? spHeaderDropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a15 15 0 010 18a15 15 0 010-18"/></svg>
                 <span>{{ spSelectedSourceLabel }}</span>
@@ -117,7 +117,7 @@
             <div class="relative shrink-0">
               <button type="button" @click.stop="spOpenFilterDropdown = spOpenFilterDropdown==='period' ? null : 'period'"
                 title="กรองเฉพาะการ์ดใน Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน"
-                class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
+                class="flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
                 :class="spFilter.period!=='all' ? spHeaderDropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 <span>{{ spSelectedPeriodLabel }}</span>
@@ -132,7 +132,7 @@
             </div>
           </div>
           <button @click="loadSpKanban()" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล"
-            class="w-9 h-9 flex items-center justify-center rounded-full bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer shrink-0">
+            class="w-8 h-8 flex items-center justify-center rounded-full bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer shrink-0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
           </button>
         </div>
@@ -482,7 +482,7 @@
               <div class="flex items-center gap-1.5 mb-1 flex-wrap">
                 <span v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ card.project_code }}</span>
                 <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spSourceClass(card.source_type)">{{ card.source_label }}</span>
-                <span class="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :class="spStageClass(card.stage)">{{ card.stage }}</span>
+                <span class="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :style="spStageClass(card.stage)">{{ spStageLabel(card.stage, card.source_type) }}</span>
               </div>
               <div class="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1">{{ card.title }}</div>
               <div v-if="card.value" class="text-base font-bold text-green-600 mb-0.5">฿{{ formatNumber(card.value) }}</div>
@@ -535,14 +535,14 @@
     <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
       <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
         <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
-          <h3 class="font-bold text-lg text-slate-800 m-0">{{ spForm.id ? 'แก้ไขรายละเอียดงาน' : 'เพิ่มงานใหม่' }}</h3>
+          <h3 class="font-bold text-lg text-slate-800 m-0">{{ spForm.id ? 'แก้ไขรายละเอียดงาน' : 'สร้างงาน/ดีลใหม่' }}</h3>
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
         </div>
         <div class="flex-1 overflow-y-auto p-5">
 
           <!-- badge ขั้นตอนปัจจุบัน — ย้ายออกจากสีหัว modal เดิม (ยืนยันจากผู้ใช้ 2026-09-21 ให้หัว modal เป็นสีขาวกลาง เหมือน bid-pipeline.html) -->
           <div v-if="spForm.id" class="mb-3">
-            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :class="spStageClass(spForm.stage)">{{ spForm.stage }}</span>
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :style="spStageClass(spForm.stage)">{{ spStageLabel(spForm.stage, spForm.source_type) }}</span>
           </div>
 
           <!-- รหัสงาน -->
@@ -580,8 +580,59 @@
               <div class="text-xs text-slate-400 mt-0.5">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
             </div>
             <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">ชื่อลูกค้า / บริษัท</label>
-              <input v-model="spForm.client_name" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น บริษัท ABC จำกัด, สำนักงาน ก.">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">ชื่อลูกค้า / บริษัท <span v-if="!spForm.id" class="text-red-500">*</span></label>
+
+              <!-- เลือกแล้ว (หรือจองชื่อ account ใหม่ไว้ ยังไม่สร้างจริงจนกว่าจะบันทึกดีลสำเร็จ): แสดงเป็น chip -->
+              <div v-if="spForm.account_id || spForm.account_is_new" class="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 bg-slate-50">
+                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="spForm.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ spForm.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
+                <span class="text-sm flex-1 truncate">{{ spForm.account_name }}</span>
+                <span v-if="spForm.account_is_new" class="text-[10px] text-slate-400 shrink-0">(ใหม่)</span>
+                <button type="button" @click="removeSpAccount"
+                  class="border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-pointer p-1">✕</button>
+              </div>
+
+              <!-- ยังไม่ได้เลือก: ช่องค้นหา -->
+              <div v-else class="relative">
+                <input v-model="spAccountQuery" @input="searchSpAccounts" @focus="spAccountDropdownOpen = !!spAccountQuery.trim()"
+                  class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"
+                  placeholder="พิมพ์ค้นหาชื่อหน่วยงาน/บริษัท">
+                <div v-if="spAccountDropdownOpen" class="absolute left-0 right-0 top-[44px] bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-56 overflow-y-auto">
+                  <div v-for="a in spAccountResults" :key="a.id" @click="selectSpAccount(a)"
+                    class="px-3.5 py-2.5 cursor-pointer hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50">
+                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="a.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ a.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
+                    <span class="text-sm">{{ a.name }}</span>
+                  </div>
+                  <div @click="openSpAccountCreatePanel" class="px-3.5 py-2.5 cursor-pointer hover:bg-teal-50 text-teal-700 text-sm font-medium flex items-center gap-1.5">
+                    + สร้างใหม่{{ spAccountQuery.trim() ? ': "' + spAccountQuery.trim() + '"' : '' }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- แผงสร้างหน่วยงานใหม่ -->
+              <div v-if="spAccountCreating" class="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <label class="block text-xs font-semibold text-slate-500 mb-1">ชื่อหน่วยงาน/บริษัท (ใหม่)</label>
+                <input v-model="spAccountQuery" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white mb-2">
+                <label class="block text-xs font-semibold text-slate-500 mb-1">ประเภท</label>
+                <div class="flex gap-2 mb-3">
+                  <button type="button" @click="spNewAccountType='government'"
+                    class="flex-1 border rounded-lg py-1.5 text-sm font-medium" :class="spNewAccountType==='government' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'">ราชการ</button>
+                  <button type="button" @click="spNewAccountType='private'"
+                    class="flex-1 border rounded-lg py-1.5 text-sm font-medium" :class="spNewAccountType==='private' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'">เอกชน</button>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" @click="confirmSpAccountCreate" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">เพิ่ม</button>
+                  <button type="button" @click="spAccountCreating=false" class="flex-1 bg-white ring-1 ring-slate-200 text-slate-600 rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">ยกเลิก</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ผู้ติดต่อ — บังคับกรอกตอนสร้างดีลใหม่เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-22) ตอนแก้ไขดีลเก่าไม่บังคับ แต่โชว์ให้เห็น/แก้ไขได้ทันทีที่มี
+                 account ผูกอยู่ (ทั้งที่เคยผูกไว้แล้ว หรือเพิ่งเลือก/สร้างใหม่ระหว่างแก้ไข) — ดึงผู้ติดต่อที่เคยบันทึกไว้มาเติมให้อัตโนมัติใน openSpForm() -->
+            <div v-if="!spForm.id || spForm.account_id || spForm.account_is_new" class="mb-3 grid grid-cols-2 gap-2">
+              <div class="col-span-2 text-xs font-semibold text-slate-500">ผู้ติดต่อ <span v-if="!spForm.id" class="text-red-500">*</span></div>
+              <input v-model="spForm.contact_name" :placeholder="!spForm.id ? 'ชื่อผู้ติดต่อ *' : 'ชื่อผู้ติดต่อ'" class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <input v-model="spForm.contact_phone" :placeholder="!spForm.id ? 'เบอร์โทร *' : 'เบอร์โทร'" class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <input v-model="spForm.contact_position" placeholder="ตำแหน่ง (ไม่บังคับ)" class="col-span-2 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
             </div>
             <div class="mb-3">
               <label class="block text-sm font-semibold text-slate-600 mb-1">เจ้าของงานที่รับผิดชอบ</label>
@@ -700,9 +751,9 @@
               <div class="flex-1">
                 <div class="text-xs text-slate-700 font-semibold">{{ h.changed_by_name }}</div>
                 <div class="text-xs text-slate-500 flex items-center gap-1 flex-wrap mt-0.5">
-                  <span v-if="h.old_stage" class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{{ h.old_stage }}</span>
+                  <span v-if="h.old_stage" class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{{ spStageLabel(h.old_stage, spForm.source_type) }}</span>
                   <span v-if="h.old_stage">→</span>
-                  <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="spStageClass(h.new_stage)">{{ h.new_stage }}</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :style="spStageClass(h.new_stage)">{{ spStageLabel(h.new_stage, spForm.source_type) }}</span>
                   <span v-if="h.note" class="text-slate-400">· {{ h.note }}</span>
                 </div>
                 <div class="text-[11px] text-slate-400 mt-0.5">{{ formatDateTimeThai(h.changed_at) }}</div>
@@ -713,7 +764,7 @@
         <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
           <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
           <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitSpForm">
-            {{ spForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มงานใหม่' }}
+            {{ spForm.id ? 'บันทึกการแก้ไข' : 'สร้างงาน/ดีลใหม่' }}
           </button>
         </div>
       </div>
@@ -1065,7 +1116,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=33"></script>
+<script src="shared/app.js?v=44"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1084,8 +1135,14 @@ createApp({
       spSaleStats: [],
       spFilter: { assigned_to: '', source_type: '', period: 'all', priority: '', product_category: '', brand: '', client_q: '', value_min: '', value_max: '', segment: '', specialization: '' },
       spLoading: false,
-spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client_name:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' },
+spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' },
       spFormHistory: [],
+      // ช่องค้นหา/สร้างหน่วยงาน-บริษัทใหม่ ในฟอร์มสร้าง/แก้ไขดีล (ยืนยันจากผู้ใช้ 2026-09-22)
+      spAccountQuery: '',
+      spAccountResults: [],
+      spAccountDropdownOpen: false,
+      spAccountCreating: false,
+      spNewAccountType: '',
       spWinLossForm: { id:null, stage:'', title:'', reason:'', note:'', value:'' },
       // modal แยกต่างหากสำหรับดูรายละเอียดใบเสนอราคาเก่า — ไม่ใช้ modal.type/modal.data ร่วมกับ sp-form
       // เพราะ sp-form เป็นฟอร์มแก้ไขที่มีข้อมูลค้างอยู่ (title/notes ที่พิมพ์ไว้) ถ้าทับ modal เดิมจะเสียข้อมูลที่แก้ค้างไว้
@@ -1215,24 +1272,7 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     // ต่างจากงานประมูล e-Bidding ที่มี "รอประกาศผล" (รอคนนอกตัดสิน) แยกเป็นกลุ่มอำพันต่างหาก — Sales Hunt ไม่มี stage ลักษณะนั้น
     // (Negotiating คือกำลังเจรจาต่อรองเอง ไม่ใช่รอเฉยๆ) จึงใช้แค่ 3 กลุ่มพอ ใช้โทนสีเดียวกับ bid-pipeline.html ทุกประการเพื่อความ consistent ข้ามหน้า
     spStages() {
-      if (this.spFilter.source_type === 'ebidding') {
-        return [
-          { key:'Interest',    thLabel:'รับงาน/ศึกษา TOR', label:'รับงาน / ศึกษา TOR',   icon:'', bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
-          { key:'Send PI',     thLabel:'เตรียม/ยื่นซอง',   label:'เตรียม & ยื่นข้อเสนอ', icon:'', bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
-          { key:'Negotiating', thLabel:'รอประกาศผล',        label:'รอประกาศผล',           icon:'', bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
-          { key:'Deal Signed', thLabel:'ชนะประมูล',         label:'ชนะประมูล',            icon:'', bgLight:'#ecfdf5', bgLightMid:'#d1fae5', textLight:'#047857' },
-          { key:'Delivered',   thLabel:'ส่งมอบแล้ว',        label:'ส่งมอบแล้ว',           icon:'', bgLight:'#ecfdf5', bgLightMid:'#d1fae5', textLight:'#047857' },
-          { key:'Lost',        thLabel:'แพ้/ยกเลิก',        label:'แพ้ / ยกเลิก',         icon:'', bgLight:'#fff1f2', bgLightMid:'#fecdd3', textLight:'#be123c' },
-        ];
-      }
-      return [
-        { key:'Interest',    thLabel:'สนใจ/ติดต่อ',   label:'สนใจ / ติดต่อ',       icon:'', bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
-        { key:'Send PI',     thLabel:'ส่ง PI/ใบเสนอ', label:'ส่ง PI / ใบเสนอราคา', icon:'', bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
-        { key:'Negotiating', thLabel:'ต่อรอง/เจรจา',  label:'ต่อรอง / เจรจา',       icon:'', bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
-        { key:'Deal Signed', thLabel:'ปิดดีลแล้ว',    label:'ปิดดีลแล้ว',           icon:'', bgLight:'#ecfdf5', bgLightMid:'#d1fae5', textLight:'#047857' },
-        { key:'Delivered',   thLabel:'ส่งมอบแล้ว',    label:'ส่งมอบแล้ว',           icon:'', bgLight:'#ecfdf5', bgLightMid:'#d1fae5', textLight:'#047857' },
-        { key:'Lost',        thLabel:'ไม่สำเร็จ',      label:'ไม่สำเร็จ',            icon:'', bgLight:'#fff1f2', bgLightMid:'#fecdd3', textLight:'#be123c' },
-      ];
+      return this.spStagesFor(this.spFilter.source_type);
     },
 
     spSourceTypes() {
@@ -1291,14 +1331,17 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     }
     this.loadSpKanban();
 
-    // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky (เหมือน bid-pipeline.html)
-    // วัดซ้ำหลัง nextTick อีกครั้งด้วย setTimeout กัน race กับ Tailwind CDN (script ฉีด style ให้ element ที่ Vue เพิ่ง render ช้ากว่า $nextTick เล็กน้อย)
+    // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky กันซ้อนทับ (เหมือน bid-pipeline.html)
+    // ใช้ ResizeObserver แทน setTimeout เดา timing — เดิมวัดตอน mounted() แล้วสุ่มเสี่ยงได้ค่าตอน Tailwind CDN ยังฉีด style
+    // ให้ AppNav ไม่เสร็จ (สูงไม่ตรงจริง) ทำให้ header หน้านี้เด้ง top ผิดตำแหน่งแวบหนึ่งก่อนค่อยเลื่อนถูกที่ (ยืนยันบั๊กจากผู้ใช้ 2026-09-21)
+    // ResizeObserver ยิง callback ทันทีที่ขนาดจริงของ AppNav นิ่ง ไม่ต้องเดา delay และ handle resize จอไปในตัว
+    // เรียก updateSpNavHeight() ทันทีก่อน 1 ครั้งด้วย (เผื่อ browser/สถานการณ์ที่ ResizeObserver ยิง callback แรกช้า) — ResizeObserver จะแก้ค่าให้ถูกต้องอีกทีถ้าค่านี้ยังผิดอยู่
     this.updateSpNavHeight();
-    setTimeout(this.updateSpNavHeight, 300);
-    window.addEventListener('resize', this.updateSpNavHeight);
+    this.spNavHeightObserver = new ResizeObserver(() => this.updateSpNavHeight());
+    this.spNavHeightObserver.observe(document.querySelector('header'));
   },
   unmounted() {
-    window.removeEventListener('resize', this.updateSpNavHeight);
+    this.spNavHeightObserver?.disconnect();
   },
   methods: {
     ...SharedMethods,
@@ -1443,7 +1486,10 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
         },
         {
           data: 'stage', title: 'ขั้นตอน', orderable: false,
-          render: d => `<span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold ${self.spStageClass(d)}">${self.esc(d)}</span>`,
+          render: (d, type, card) => {
+            const c = self.spStageColor(d);
+            return `<span class="inline-block px-2 py-0.5 rounded-full text-[.75rem] font-semibold" style="background:${c.bgLight};color:${c.textLight}">${self.esc(self.spStageLabel(d, card.source_type))}</span>`;
+          },
         },
         {
           data: null, title: 'แหล่งที่มา', orderable: false,
@@ -1632,6 +1678,8 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
         this.spForm = {
           id: card.id, project_code: card.project_code || '', source_type: card.source_type || 'self_sourced',
           title: card.title, client_name: card.client_name || '',
+          account_id: card.account_id || null, account_is_new: false, account_name: card.account_name || '', account_type: card.account_type || '',
+          contact_name: '', contact_phone: '', contact_position: '',
           assigned_to: card.sale_id || '',
           stage: card.stage, segment: card.segment || '', priority: card.priority || 'Medium',
           product_category: card.product_category || '', brand: card.brand || '',
@@ -1641,20 +1689,93 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
           next_action: card.next_action || '', notes: card.notes || '',
         };
       } else {
-        this.spForm = { id:null, source_type:'self_sourced', title:'', client_name:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' };
+        this.spForm = { id:null, source_type:'self_sourced', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' };
       }
+      this.spAccountQuery = '';
+      this.spAccountResults = [];
+      this.spAccountDropdownOpen = false;
+      this.spAccountCreating = false;
+      this.spNewAccountType = '';
       this.modal = { type: 'sp-form', data: card };
 
       if (card) {
         try {
           const res = await apiCall('GET', `api/pipeline_items.php?action=one&id=${card.id}`);
-          if (res.success) this.spFormHistory = res.item.history || [];
+          if (res.success) {
+            this.spFormHistory = res.item.history || [];
+            // เติมข้อมูลผู้ติดต่อที่เคยบันทึกไว้ของ account นี้มาแสดง (ถ้ามี) ให้แก้ไขได้เลย ไม่ต้องกรอกใหม่ทั้งหมด
+            if (res.item.contact) {
+              this.spForm.contact_name = res.item.contact.full_name || '';
+              this.spForm.contact_phone = res.item.contact.phone || '';
+              this.spForm.contact_position = res.item.contact.position || '';
+            }
+          }
         } catch {}
       }
     },
 
+    // ค้นหาหน่วยงาน/บริษัทแบบ debounce เล็กน้อย กันยิง API ถี่เกินไปทุกครั้งที่พิมพ์
+    searchSpAccounts() {
+      clearTimeout(this._spAccountTimer);
+      const q = this.spAccountQuery.trim();
+      this.spAccountDropdownOpen = !!q;
+      if (!q) { this.spAccountResults = []; return; }
+      this._spAccountTimer = setTimeout(async () => {
+        const res = await apiCall('GET', 'api/accounts.php?action=search&q=' + encodeURIComponent(q));
+        if (res.success) this.spAccountResults = res.data;
+      }, 250);
+    },
+    selectSpAccount(a, isNew = false) {
+      this.spForm.account_id = a.id;
+      this.spForm.account_is_new = isNew;
+      this.spForm.account_name = a.name;
+      this.spForm.account_type = a.account_type;
+      this.spForm.client_name = a.name;
+      this.spAccountDropdownOpen = false;
+      this.spAccountCreating = false;
+      this.spAccountQuery = '';
+    },
+    removeSpAccount() {
+      this.spForm.account_id = null;
+      this.spForm.account_is_new = false;
+      this.spForm.account_name = '';
+      this.spForm.account_type = '';
+    },
+    openSpAccountCreatePanel() {
+      this.spAccountCreating = true;
+      this.spAccountDropdownOpen = false;
+      this.spNewAccountType = '';
+    },
+    // ยังไม่ยิง API สร้าง account จริงตรงนี้ — แค่ "จอง" ชื่อ+ประเภทไว้ในฟอร์มก่อน แล้วค่อยสร้างจริงตอน submitSpForm()
+    // ผ่าน validation ครบทุกอย่างแล้วเท่านั้น กันปัญหา account ถูกสร้างค้างไว้ใน DB ทั้งที่ดีลไม่ถูกบันทึก
+    // เพราะฟิลด์อื่นในฟอร์มยังไม่ครบ (เจอบั๊กจริงจากผู้ใช้ 2026-09-22 — account "หจด เพิ่มสิน" ค้างไม่มี contact/deal เลย)
+    async confirmSpAccountCreate() {
+      const name = this.spAccountQuery.trim();
+      if (!name) { await this.showAlert('กรุณาระบุชื่อหน่วยงาน/บริษัท', 'error'); return; }
+      if (!this.spNewAccountType) { await this.showAlert('กรุณาเลือกประเภทหน่วยงาน', 'error'); return; }
+      // เตือนก่อนถ้าเจอชื่อคล้ายกันอยู่แล้ว (กันสร้าง account ซ้ำโดยไม่ตั้งใจ — ยืนยันจากผู้ใช้ 2026-09-22)
+      const dup = await apiCall('GET', 'api/accounts.php?action=check_duplicate&q=' + encodeURIComponent(name));
+      if (dup.success && dup.data.length) {
+        const names = dup.data.map(a => a.name).join(', ');
+        const ok = await this.showConfirm('พบชื่อคล้ายกัน', `พบหน่วยงาน/บริษัทที่ชื่อคล้ายกันอยู่แล้ว: ${names} — ต้องการสร้างใหม่จริงหรือไม่? กด "ยกเลิก" เพื่อเลือกจากรายการที่พบแทน`, 'สร้างใหม่');
+        if (!ok) {
+          // กลับไปโชว์รายการที่เจอให้เลือกได้เลย แทนที่จะแค่ปิดหน้าต่างเฉยๆ (ยืนยันจากผู้ใช้ 2026-09-22)
+          this.spAccountCreating = false;
+          this.spAccountResults = dup.data;
+          this.spAccountDropdownOpen = true;
+          return;
+        }
+      }
+      this.selectSpAccount({ id: null, name, account_type: this.spNewAccountType }, true);
+    },
+
     async submitSpForm() {
       if (!this.spForm.title.trim()) { await this.showAlert('กรุณาระบุชื่อโครงการ/รายการ', 'error'); return; }
+      if (!this.spForm.id) {
+        if (!this.spForm.account_id && !this.spForm.account_is_new) { await this.showAlert('กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท', 'error'); return; }
+        if (!this.spForm.contact_name.trim())  { await this.showAlert('กรุณากรอกชื่อผู้ติดต่อ', 'error'); return; }
+        if (!this.spForm.contact_phone.trim()) { await this.showAlert('กรุณากรอกเบอร์โทรผู้ติดต่อ', 'error'); return; }
+      }
       const requiredDealFields = [
         { key: 'value',            label: 'มูลค่า (บาท)' },
         { key: 'win_probability',  label: 'โอกาสปิดดีล (%)' },
@@ -1672,6 +1793,16 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
           return;
         }
       }
+      // ผ่าน validation ทุกอย่างแล้วเท่านั้นถึงค่อยสร้าง account จริงลง DB (ถ้าเป็น account ใหม่ที่จองชื่อไว้)
+      // กันปัญหา account ถูกสร้างค้างไว้ทั้งที่ดีลไม่ถูกบันทึกเพราะฟิลด์อื่นไม่ครบ (เจอบั๊กจริงจากผู้ใช้ 2026-09-22)
+      // ใช้เงื่อนไข account_is_new เพียงอย่างเดียว (ไม่เช็ค !spForm.id) เพราะตอนแก้ไขดีลเก่าก็เลือก "+ สร้างใหม่" เพื่อผูก account ใหม่ได้เหมือนกัน
+      if (this.spForm.account_is_new) {
+        const accRes = await apiCall('POST', 'api/accounts.php?action=create', { name: this.spForm.account_name, account_type: this.spForm.account_type });
+        if (!accRes.success) { await this.showAlert(accRes.message || 'สร้างหน่วยงาน/บริษัทไม่สำเร็จ', 'error'); return; }
+        this.spForm.account_id = accRes.data.id;
+        this.spForm.account_is_new = false;
+      }
+
       const payload = { ...this.spForm };
       if (!payload.assigned_to) payload.assigned_to = this.currentUser.id;
       payload.win_probability = Math.min(100, Math.max(0, Number(payload.win_probability) || 0)) / 100;
@@ -1684,7 +1815,7 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
       if (res.success) {
         this.closeModal();
         this.loadSpKanban();
-        await this.showAlert(this.spForm.id ? 'แก้ไขสำเร็จ' : 'เพิ่มงานสำเร็จ', 'success');
+        await this.showAlert(this.spForm.id ? 'แก้ไขสำเร็จ' : 'สร้างงาน/ดีลสำเร็จ', 'success');
       } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 
@@ -1720,16 +1851,56 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
       return map[priority] || 'bg-slate-100 text-slate-500';
     },
 
-    spStageClass(stage) {
-      const map = {
-        'Interest':    'bg-slate-100 text-slate-600',
-        'Send PI':     'bg-cyan-100 text-cyan-700',
-        'Negotiating': 'bg-indigo-100 text-indigo-700',
-        'Deal Signed': 'bg-emerald-100 text-emerald-700',
-        'Delivered':   'bg-teal-100 text-teal-700',
-        'Lost':        'bg-red-100 text-red-700',
+    // แหล่งสีเดียว (single source of truth) ของสถานะ stage — ใช้ร่วมกันทั้ง badge (spStageClass) และหัวคอลัมน์/แท็บ Kanban (spStagesFor)
+    // จัดเป็น 3 กลุ่มตามความหมาย (ยืนยันจากผู้ใช้ 2026-09-21): เทา = กำลังดำเนินการ (Interest/Send PI/Negotiating ยังไม่ตัดสินผล),
+    // เขียว = ปิดได้ (Deal Signed/Delivered), แดง = ไม่สำเร็จ (Lost) — ไม่ขึ้นกับ source_type เพราะกลุ่มสีเหมือนกันทั้งฝั่งงานประมูล/ขายตรง ต่างแค่ label
+    // (เดิม badge กับ Kanban แยก mapping กันคนละชุด สีไม่ตรงกัน — ยืนยันจากผู้ใช้ 2026-09-21 ให้รวมเป็นชุดเดียว)
+    spStageColor(stage) {
+      const groups = {
+        'Interest':    { bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
+        'Send PI':     { bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
+        'Negotiating': { bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#334155' },
+        'Deal Signed': { bgLight:'#ecfdf5', bgLightMid:'#d1fae5', textLight:'#047857' },
+        'Delivered':   { bgLight:'#ecfdf5', bgLightMid:'#d1fae5', textLight:'#047857' },
+        'Lost':        { bgLight:'#fff1f2', bgLightMid:'#fecdd3', textLight:'#be123c' },
       };
-      return map[stage] || 'bg-slate-100 text-slate-500';
+      return groups[stage] || { bgLight:'#f8fafc', bgLightMid:'#e2e8f0', textLight:'#64748b' };
+    },
+
+    // สีสำหรับ badge (:style) — ดึงจาก spStageColor() แหล่งเดียวกับ Kanban แทนที่จะมี Tailwind class mapping แยกชุดเหมือนเดิม
+    spStageClass(stage) {
+      const c = this.spStageColor(stage);
+      return { background: c.bgLight, color: c.textLight };
+    },
+
+    // ดึงรายการ stage+label ไทย แยกชุดตาม source_type (ebidding ใช้ถ้อยคำงานประมูล, self_sourced/purchased_data ใช้ถ้อยคำขายตรง)
+    // แยกออกมาจาก spStages computed (เดิม inline ในนั้น) เพื่อให้ spStageLabel() เรียกใช้ตาม source_type ของแต่ละแถวได้ ไม่ต้องพึ่ง spFilter.source_type ที่เป็นตัวกรองส่วนกลาง (ยืนยันจากผู้ใช้ 2026-09-21)
+    // สี (bgLight/bgLightMid/textLight) ดึงจาก spStageColor() แหล่งเดียวกับ badge เสมอ — เหลือแค่ label/thLabel ที่ต่างกันตาม sourceType
+    spStagesFor(sourceType) {
+      if (sourceType === 'ebidding') {
+        return [
+          { key:'Interest',    thLabel:'รับงาน/ศึกษา TOR', label:'รับงาน / ศึกษา TOR',   icon:'', ...this.spStageColor('Interest') },
+          { key:'Send PI',     thLabel:'เตรียม/ยื่นซอง',   label:'เตรียม & ยื่นข้อเสนอ', icon:'', ...this.spStageColor('Send PI') },
+          { key:'Negotiating', thLabel:'รอประกาศผล',        label:'รอประกาศผล',           icon:'', ...this.spStageColor('Negotiating') },
+          { key:'Deal Signed', thLabel:'ชนะประมูล',         label:'ชนะประมูล',            icon:'', ...this.spStageColor('Deal Signed') },
+          { key:'Delivered',   thLabel:'ส่งมอบแล้ว',        label:'ส่งมอบแล้ว',           icon:'', ...this.spStageColor('Delivered') },
+          { key:'Lost',        thLabel:'แพ้/ยกเลิก',        label:'แพ้ / ยกเลิก',         icon:'', ...this.spStageColor('Lost') },
+        ];
+      }
+      return [
+        { key:'Interest',    thLabel:'สนใจ/ติดต่อ',   label:'สนใจ / ติดต่อ',       icon:'', ...this.spStageColor('Interest') },
+        { key:'Send PI',     thLabel:'ส่ง PI/ใบเสนอ', label:'ส่ง PI / ใบเสนอราคา', icon:'', ...this.spStageColor('Send PI') },
+        { key:'Negotiating', thLabel:'ต่อรอง/เจรจา',  label:'ต่อรอง / เจรจา',       icon:'', ...this.spStageColor('Negotiating') },
+        { key:'Deal Signed', thLabel:'ปิดดีลแล้ว',    label:'ปิดดีลแล้ว',           icon:'', ...this.spStageColor('Deal Signed') },
+        { key:'Delivered',   thLabel:'ส่งมอบแล้ว',    label:'ส่งมอบแล้ว',           icon:'', ...this.spStageColor('Delivered') },
+        { key:'Lost',        thLabel:'ไม่สำเร็จ',      label:'ไม่สำเร็จ',            icon:'', ...this.spStageColor('Lost') },
+      ];
+    },
+
+    // ป้ายไทยของ stage ใช้กับ badge ทุกจุด (การ์ด Kanban/การ์ด, หัวฟอร์มใบเสนอราคา, ประวัติ stage, คอลัมน์ตาราง) — เดิมโชว์ค่าดิบภาษาอังกฤษจาก DB ตรงๆ
+    // ขัดกับแท็บ/หัวคอลัมน์ Kanban ที่แปลไทยไว้แล้ว (ยืนยันบั๊กจากผู้ใช้ 2026-09-21) ใช้ thLabel (สั้นกว่า label) เพราะเป็น badge พื้นที่จำกัด
+    spStageLabel(stage, sourceType) {
+      return this.spStagesFor(sourceType).find(s => s.key === stage)?.thLabel || stage;
     },
   },
 }).mount('#app');

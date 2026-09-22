@@ -19,8 +19,8 @@
   <template v-else>
     <app-nav :user="currentUser" page="analytics" ref="nav"></app-nav>
 
-    <div class="min-h-screen flex flex-col">
-      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px]">
         <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
@@ -808,7 +808,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=33"></script>
+<script src="shared/app.js?v=44"></script>
 <script>
 const { createApp } = Vue;
 

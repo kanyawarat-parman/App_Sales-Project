@@ -3,6 +3,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/account_helper.php';
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -214,9 +215,11 @@ function updateUnitName(PDO $db, array $user): void {
     $body           = getJsonBody();
     $announcementId = (int)($body['announcement_id'] ?? 0);
     $unitName       = trim($body['unit_name'] ?? '');
+    $accountType    = $body['account_type'] ?? '';
 
     if (!$announcementId) jsonResponse(false, null, 'กรุณาระบุ announcement_id', 400);
     if ($unitName === '') jsonResponse(false, null, 'กรุณาระบุชื่อหน่วยงาน', 400);
+    if (!in_array($accountType, ['government', 'private'], true)) jsonResponse(false, null, 'กรุณาระบุประเภทหน่วยงาน', 400);
     if ($user['role'] !== 'sale') jsonResponse(false, null, 'เฉพาะ sale เจ้าของงานเท่านั้นที่แก้ไขได้', 403);
 
     $stmt = $db->prepare("
@@ -235,8 +238,11 @@ function updateUnitName(PDO $db, array $user): void {
         jsonResponse(false, null, 'คุณไม่ใช่เจ้าของงานนี้', 403);
     }
 
-    $upd = $db->prepare("UPDATE announcements SET unit_name = ?, updated_at = NOW() WHERE id = ?");
-    $upd->execute([$unitName, $announcementId]);
+    // ผูก/สร้าง account ใหม่ตามชื่อ+ประเภทที่แก้ไขจริง (ไม่เดาจากชื่อเดิมที่อาจเป็นแค่ placeholder ตอนนำเข้าข้อมูลเก่า)
+    $accountId = findOrCreateAccount($db, $accountType, $unitName);
+
+    $upd = $db->prepare("UPDATE announcements SET unit_name = ?, account_id = ?, updated_at = NOW() WHERE id = ?");
+    $upd->execute([$unitName, $accountId, $announcementId]);
     jsonResponse(true, null, 'บันทึกชื่อหน่วยงานสำเร็จ');
 }
 

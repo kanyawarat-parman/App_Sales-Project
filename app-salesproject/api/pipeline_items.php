@@ -92,10 +92,12 @@ function fetchPipelineRows(PDO $db, string $where, array $params): array {
                pi.expected_close, pi.next_action, pi.notes,
                pi.win_loss_reason, pi.win_loss_note,
                pi.order_date, pi.delivered_date,
+               pi.account_id, a.name AS account_name, a.account_type AS account_type,
                u.id AS sale_id, u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url,
                pi.created_at, pi.updated_at
         FROM pipeline_items pi
         JOIN users u ON u.id = pi.assigned_to
+        LEFT JOIN accounts a ON a.id = pi.account_id
         {$where}
         ORDER BY FIELD(pi.priority,'High','Medium','Low'), pi.updated_at DESC
     ";
@@ -278,9 +280,11 @@ function getKanban(PDO $db, array $user): void {
 function getList(PDO $db, array $user): void {
     [$where, $params] = buildWhere($user);
     $sql = "
-        SELECT pi.*, u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url
+        SELECT pi.*, a.name AS account_name, a.account_type AS account_type,
+               u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url
         FROM pipeline_items pi
         JOIN users u ON u.id = pi.assigned_to
+        LEFT JOIN accounts a ON a.id = pi.account_id
         {$where}
         ORDER BY FIELD(pi.stage,'Interest','Send PI','Negotiating','Deal Signed','Delivered','Lost'),
                  FIELD(pi.priority,'High','Medium','Low')
@@ -295,7 +299,7 @@ function getList(PDO $db, array $user): void {
 // ─── GET one ─────────────────────────────────────────────────────────────────
 function getOne(PDO $db, array $user, int $id): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
-    $stmt = $db->prepare("SELECT pi.*, u.full_name AS sale_name FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to WHERE pi.id = ?");
+    $stmt = $db->prepare("SELECT pi.*, a.name AS account_name, a.account_type AS account_type, u.full_name AS sale_name FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to LEFT JOIN accounts a ON a.id = pi.account_id WHERE pi.id = ?");
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
@@ -308,6 +312,14 @@ function getOne(PDO $db, array $user, int $id): void {
     ");
     $hist->execute([$id]);
     $row['history'] = $hist->fetchAll();
+
+    // ผู้ติดต่อหลักของ account ที่ผูกไว้ (ถ้ามี) — ให้หน้าแก้ไขดีลเติมข้อมูลผู้ติดต่อที่เคยบันทึกไว้มาแสดงอัตโนมัติ แทนที่จะเป็นช่องว่างเปล่า
+    $row['contact'] = null;
+    if ($row['account_id']) {
+        $c = $db->prepare('SELECT * FROM contacts WHERE account_id = ? ORDER BY is_primary DESC, id ASC LIMIT 1');
+        $c->execute([$row['account_id']]);
+        $row['contact'] = $c->fetch() ?: null;
+    }
 
     echo json_encode(['success' => true, 'item' => $row], JSON_UNESCAPED_UNICODE);
 }
@@ -333,6 +345,18 @@ function createItem(PDO $db, array $user, array $body): void {
     $sourceType    = $body['source_type']     ?? 'self_prospect';
     $announcementId = $body['announcement_id'] ?? null;
 
+    // บังคับผูกหน่วยงาน/บริษัท (account) + ผู้ติดต่อ (ชื่อ+เบอร์โทร) ตอนสร้างดีลใหม่ฝั่งขายตรงเท่านั้น (ยืนยันจากผู้ใช้ 2026-09-22)
+    // ไม่บังคับฝั่ง ebidding (mirror งานประมูลที่ auto สร้างจาก api/assignments.php) เพราะตอนนั้นยังไม่มีใครติดต่อหน่วยงานจริงเลย
+    $accountId      = !empty($body['account_id']) ? (int)$body['account_id'] : null;
+    $contactName    = trim($body['contact_name']     ?? '');
+    $contactPhone   = trim($body['contact_phone']    ?? '');
+    $contactPosition = trim($body['contact_position'] ?? '');
+    if ($sourceType !== 'ebidding') {
+        if (!$accountId)    jsonError(400, 'กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท');
+        if (!$contactName)  jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');
+        if (!$contactPhone) jsonError(400, 'กรุณากรอกเบอร์โทรผู้ติดต่อ');
+    }
+
     // รหัสงานกลาง (project_code): ถ้ามี announcement ต้นทาง (มาจากงานประมูล) ให้ copy รหัสเดิมจาก project_assignments มาใช้ ไม่ออกรหัสใหม่ซ้ำ
     // ถ้าไม่มี (งานขายตรงที่ sale หาเอง) ออกรหัสใหม่ตั้งแต่สร้าง
     // (แก้บั๊ก 2026-09-07: เดิม query ผิดตาราง "announcements" ซึ่งไม่มีคอลัมน์ project_code เลย ต้อง query project_assignments แทน)
@@ -346,10 +370,10 @@ function createItem(PDO $db, array $user, array $body): void {
 
     $stmt = $db->prepare("
         INSERT INTO pipeline_items
-            (project_code, source_type, announcement_id, title, client_name, assigned_to,
+            (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
              stage, segment, priority, product_category, brand, fee_structure,
              specialization, value, win_probability, expected_close, next_action, notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ");
     $stmt->execute([
         $projectCode,
@@ -357,6 +381,7 @@ function createItem(PDO $db, array $user, array $body): void {
         $announcementId,
         $title,
         $body['client_name']      ?? null,
+        $accountId,
         $assignTo,
         $body['stage']            ?? 'Interest',
         !empty($body['segment'])          ? $body['segment']          : null,
@@ -373,10 +398,24 @@ function createItem(PDO $db, array $user, array $body): void {
     ]);
     $id = $db->lastInsertId();
 
+    upsertDealContact($db, $accountId, $contactName, $contactPhone, $contactPosition);
+
     $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, ?, 'สร้างดีลใหม่')")
        ->execute([$id, $projectCode, $user['id'], $body['stage'] ?? 'Interest']);
 
     echo json_encode(['success' => true, 'id' => $id, 'message' => 'เพิ่มรายการสำเร็จ'], JSON_UNESCAPED_UNICODE);
+}
+
+// ผูกผู้ติดต่อเข้ากับ account ที่ระบุ — ใช้เบอร์โทรเช็คก่อนว่ามีคนนี้อยู่แล้วหรือยัง (เช่น sale เพิ่มดีลที่ 2 ให้บริษัทเดิม คุยกับคนเดิม) กันสร้างซ้ำ
+// ใช้ร่วมกันทั้งตอนสร้างดีลใหม่ (createItem, บังคับกรอก) และแก้ไขดีลเก่า (updateItem, ไม่บังคับ — เรียกเฉพาะเมื่อมีข้อมูลส่งมา)
+function upsertDealContact(PDO $db, ?int $accountId, string $contactName, string $contactPhone, string $contactPosition): void {
+    if (!$accountId || !$contactName || !$contactPhone) return;
+    $existingContact = $db->prepare('SELECT id FROM contacts WHERE account_id = ? AND phone = ?');
+    $existingContact->execute([$accountId, $contactPhone]);
+    if (!$existingContact->fetch()) {
+        $db->prepare('INSERT INTO contacts (account_id, full_name, phone, position) VALUES (?, ?, ?, ?)')
+           ->execute([$accountId, $contactName, $contactPhone, $contactPosition ?: null]);
+    }
 }
 
 // ─── PUT update ──────────────────────────────────────────────────────────────
@@ -384,7 +423,7 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
 
     // Ownership check
-    $owner = $db->prepare("SELECT assigned_to, stage, project_code FROM pipeline_items WHERE id = ?");
+    $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id FROM pipeline_items WHERE id = ?");
     $owner->execute([$id]);
     $row = $owner->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
@@ -393,7 +432,7 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     $allowed = ['stage','priority','segment','product_category','brand','fee_structure',
                 'specialization','value','win_probability','expected_close',
                 'next_action','notes','win_loss_reason','win_loss_note',
-                'order_date','delivered_date','title','client_name','source_type','assigned_to'];
+                'order_date','delivered_date','title','client_name','source_type','assigned_to','account_id'];
 
     $fields = []; $params = [];
     foreach ($allowed as $f) {
@@ -415,6 +454,10 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
 
     $params[] = $id;
     $db->prepare("UPDATE pipeline_items SET " . implode(', ', $fields) . " WHERE id = ?")->execute($params);
+
+    // ผู้ติดต่อไม่บังคับตอนแก้ไข (ต่างจากตอนสร้างดีลใหม่) — บันทึกเฉพาะเมื่อ user กรอกชื่อ+เบอร์มาจริง
+    $updatedAccountId = array_key_exists('account_id', $body) ? (int)($body['account_id'] ?: 0) : (int)($row['account_id'] ?? 0);
+    upsertDealContact($db, $updatedAccountId ?: null, trim($body['contact_name'] ?? ''), trim($body['contact_phone'] ?? ''), trim($body['contact_position'] ?? ''));
 
     // บันทึก log เฉพาะตอน stage เปลี่ยนค่าจริงๆ (ไม่ใช่ทุกครั้งที่ update ฟิลด์อื่น)
     if (isset($body['stage']) && $body['stage'] !== $row['stage']) {

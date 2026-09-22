@@ -60,8 +60,8 @@
     <!-- Overlay ปิด dropdown ตัวกรอง Sales/ช่วงเวลา เมื่อคลิกนอกกล่อง — pattern เดียวกับ AppNav's openGroup (shared/app.js) -->
     <div v-if="openFilterDropdown" class="fixed inset-0 z-[39]" @click="openFilterDropdown = null"></div>
 
-    <div class="min-h-screen flex flex-col">
-      <header class="sticky z-40 bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px] flex-wrap"
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="sticky z-40 bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap"
         :style="{top: navHeight + 'px'}">
         <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -75,7 +75,7 @@
           <div class="flex items-center gap-1.5 bg-slate-50 rounded-full p-1">
             <div v-if="isManager" class="relative">
               <button type="button" @click.stop="openFilterDropdown = openFilterDropdown==='sales' ? null : 'sales'"
-                class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors"
+                class="flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors"
                 :class="filter.assigned_to ? 'ring-teal-600 text-teal-700 font-semibold' : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>
                 {{ selectedSaleLabel }}
@@ -94,7 +94,7 @@
             <div class="relative">
               <button type="button" @click.stop="openFilterDropdown = openFilterDropdown==='period' ? null : 'period'"
                 title="กรองเฉพาะการ์ดใน Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน"
-                class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors"
+                class="flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors"
                 :class="filter.period!=='all' ? 'ring-teal-600 text-teal-700 font-semibold' : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 {{ selectedPeriodLabel }}
@@ -109,7 +109,7 @@
             </div>
           </div>
           <button @click="loadData" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล"
-            class="w-9 h-9 flex items-center justify-center rounded-full bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer shrink-0">
+            class="w-8 h-8 flex items-center justify-center rounded-full bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer shrink-0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
           </button>
         </div>
@@ -603,18 +603,26 @@
             <div class="flex gap-2 py-2 border-b border-slate-50 items-start">
               <span class="text-sm text-slate-400 w-32 shrink-0 pt-1.5">หน่วยงาน</span>
               <template v-if="editingUnitName">
-                <div class="flex-1 flex gap-1.5 items-center flex-wrap">
-                  <input v-model="unitNameDraft" type="text" placeholder="ระบุชื่อหน่วยงาน"
-                    class="flex-1 min-w-[160px] border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-                  <button @click="saveUnitName" :disabled="savingUnitName"
-                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">บันทึก</button>
-                  <button @click="editingUnitName=false" :disabled="savingUnitName"
-                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+                <div class="flex-1 flex flex-col gap-1.5">
+                  <div class="flex gap-1.5 items-center flex-wrap">
+                    <input v-model="unitNameDraft" type="text" placeholder="ระบุชื่อหน่วยงาน"
+                      class="flex-1 min-w-[160px] border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                    <button type="button" @click="unitTypeDraft='government'"
+                      class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer" :class="unitTypeDraft==='government' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 bg-white'">ราชการ</button>
+                    <button type="button" @click="unitTypeDraft='private'"
+                      class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer" :class="unitTypeDraft==='private' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 bg-white'">เอกชน</button>
+                  </div>
+                  <div class="flex gap-1.5">
+                    <button @click="saveUnitName" :disabled="savingUnitName"
+                      class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">บันทึก</button>
+                    <button @click="editingUnitName=false" :disabled="savingUnitName"
+                      class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+                  </div>
                 </div>
               </template>
               <template v-else>
                 <span class="text-sm text-slate-700 pt-1.5">{{ modal.data.unit_name }}</span>
-                <button v-if="canEditUnitName" @click="unitNameDraft = modal.data.unit_name || ''; editingUnitName = true"
+                <button v-if="canEditUnitName" @click="unitNameDraft = modal.data.unit_name || ''; unitTypeDraft = modal.data.account_type || 'government'; editingUnitName = true"
                   class="text-xs font-semibold text-teal-700 hover:text-teal-800 bg-transparent border-0 cursor-pointer underline underline-offset-2 pt-1.5">แก้ไข</button>
               </template>
             </div>
@@ -1101,7 +1109,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=33"></script>
+<script src="shared/app.js?v=44"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1157,6 +1165,7 @@ createApp({
       editingUnitName: false,
       savingUnitName: false,
       unitNameDraft: '',
+      unitTypeDraft: 'government',
       quotationDetailLoading: false,
       previousModal: null, // เก็บ modal ก่อนหน้าไว้ตอนเปิด quotation-detail ทับ เพื่อย้อนกลับได้ตอนปิด (ดู closeModal() ที่ override ไว้ด้านล่าง)
       expandedEmptyStages: {}, // key: stage.key -> true ถ้าผู้ใช้กดขยายสถานะที่ไม่มีงานเอง (ปกติสถานะว่างจะย่ออัตโนมัติ)
@@ -1352,16 +1361,21 @@ createApp({
     if (this.isManager) this.loadSales();
     this.loadData();
 
-    // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky (ยืนยันจากผู้ใช้ 2026-09-20)
-    // วัดซ้ำหลัง nextTick อีกครั้งด้วย setTimeout กัน race กับ Tailwind CDN (script ฉีด style ให้ element ที่ Vue เพิ่ง render
-    // ช้ากว่า Vue's $nextTick เล็กน้อย เจอจริงตอนทดสอบ — วัดตอน nextTick ได้ค่าความสูงตอนยังไม่ได้ style ที่ถูกต้อง)
-    // ต้องวัดใหม่ตอน resize จอด้วย เพราะ AppNav สูงไม่เท่ากันระหว่างจอมือถือ (มีแถบวันที่) กับจอกว้าง (ไม่มี)
+    // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky กันซ้อนทับ (ยืนยันจากผู้ใช้ 2026-09-20)
+    // ใช้ ResizeObserver แทน setTimeout เดา timing — เดิมวัดตอน mounted() แล้วสุ่มเสี่ยงได้ค่าตอน Tailwind CDN
+    // ยังฉีด style ให้ AppNav ไม่เสร็จ (สูงไม่ตรงจริง) header หน้านี้เลยเด้ง top ผิดตำแหน่งแวบหนึ่งก่อนค่อยเลื่อนถูกที่
+    // (ยืนยันบั๊กจากผู้ใช้ 2026-09-21) ResizeObserver จะยิง callback ทันทีที่ขนาดจริงของ AppNav นิ่ง ไม่ต้องเดา delay
+    // และ handle resize จอไปในตัว ไม่ต้องผูก window resize listener แยกอีกเส้น
+    // สังเกตที่ document.querySelector('header') ตรงๆ (ไม่ใช้ this.$refs.nav.$el) เพราะ AppNav เป็น multi-root/fragment component
+    // (ตั้งใจไม่ห่อ div ครอบ — ดูคอมเมนต์ที่ shared/app.js) $el ของ fragment component ชี้ไปที่ root node แรกซึ่งอาจไม่ใช่ <header>
+    // เสมอไป (ขึ้นกับว่า v-if ตัวไหนก่อนหน้าเป็น true/false ตอนนั้น) — querySelector('header') ชัวร์กว่าเพราะเจาะจาก tag ตรงๆ
+    // เรียก updateNavHeight() ทันทีก่อน 1 ครั้งด้วย (เผื่อ browser/สถานการณ์ที่ ResizeObserver ยิง callback แรกช้า) — ResizeObserver จะแก้ค่าให้ถูกต้องอีกทีถ้าค่านี้ยังผิดอยู่
     this.updateNavHeight();
-    setTimeout(this.updateNavHeight, 300);
-    window.addEventListener('resize', this.updateNavHeight);
+    this.navHeightObserver = new ResizeObserver(() => this.updateNavHeight());
+    this.navHeightObserver.observe(document.querySelector('header'));
   },
   unmounted() {
-    window.removeEventListener('resize', this.updateNavHeight);
+    this.navHeightObserver?.disconnect();
   },
   methods: {
     updateNavHeight() {
@@ -1583,14 +1597,25 @@ createApp({
     async saveUnitName() {
       const name = this.unitNameDraft.trim();
       if (!name) { await this.showAlert('กรุณาระบุชื่อหน่วยงาน', 'error'); return; }
+      if (!this.unitTypeDraft) { await this.showAlert('กรุณาระบุประเภทหน่วยงาน', 'error'); return; }
+      // เตือนก่อนถ้าเจอชื่อคล้ายกันอยู่แล้ว (ยกเว้นตรงเป๊ะ — กรณีนั้นจะถูกใช้ซ้ำอัตโนมัติอยู่แล้วโดย findOrCreateAccount ไม่ต้องเตือน)
+      // (ยืนยันจากผู้ใช้ 2026-09-22)
+      const dup = await apiCall('GET', 'api/accounts.php?action=check_duplicate&q=' + encodeURIComponent(name));
+      if (dup.success && dup.data.length && !dup.data.some(a => a.name === name)) {
+        const names = dup.data.map(a => a.name).join(', ');
+        const ok = await this.showConfirm('พบชื่อคล้ายกัน', `พบหน่วยงาน/บริษัทที่ชื่อคล้ายกันอยู่แล้ว: ${names} — ต้องการบันทึกชื่อนี้จริงหรือไม่?`, 'บันทึก');
+        if (!ok) return;
+      }
       this.savingUnitName = true;
       const res = await apiCall('POST', 'api/announcements.php?action=update_unit_name', {
         announcement_id: this.modal.data.announcement_id,
         unit_name: name,
+        account_type: this.unitTypeDraft,
       });
       this.savingUnitName = false;
       if (res.success) {
         this.modal.data.unit_name = name;
+        this.modal.data.account_type = this.unitTypeDraft;
         this.editingUnitName = false;
         await this.showAlert('บันทึกชื่อหน่วยงานสำเร็จ', 'success');
       } else {

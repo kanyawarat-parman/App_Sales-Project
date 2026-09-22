@@ -56,5 +56,16 @@ function logout(): void {
 
 function getMe(): void {
     $user = requireAuth();
+
+    // อัปเดต current_page/last_active_at ทุกครั้ง — ทุกหน้าเรียก action=me นี้ตอน mounted() อยู่แล้ว
+    // เลยใช้จุดนี้แถมข้อมูล "กำลังใช้งานหน้าไหนอยู่" แทนการเพิ่ม ping request ใหม่ (ยืนยันจากผู้ใช้ 2026-09-22)
+    // อ่านชื่อไฟล์จาก Referer header (browser ส่งมาเองตอนเรียก fetch แบบ same-origin) ไม่ต้องแก้ทุกหน้าให้ส่ง page มาเอง
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';
+    $page    = $referer ? basename((string)parse_url($referer, PHP_URL_PATH)) : null;
+
+    $db = (new Database())->getConnection();
+    $db->prepare('UPDATE users SET current_page = ?, last_active_at = NOW() WHERE id = ?')
+       ->execute([$page, $user['id']]);
+
     jsonResponse(true, $user);
 }

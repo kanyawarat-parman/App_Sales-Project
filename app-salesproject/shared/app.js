@@ -16,6 +16,34 @@ async function apiCall(method, url, body = null) {
   return res.json();
 }
 
+/* ── ชื่อเมนูภาษาไทยของแต่ละไฟล์หน้าเว็บ (ต้องตรงกับ label ที่ใช้จริงใน navGroups() ของ AppNav ด้านล่าง — ถ้าแก้ label ใน
+   navGroups() ต้องแก้ตรงนี้ด้วย) ใช้แปลงชื่อไฟล์ดิบ (เช่น current_page จาก DB) ให้เป็นชื่อเมนูที่ผู้ใช้อ่านเข้าใจ เช่นในหน้า
+   users.html คอลัมน์ "ใช้งานล่าสุด" (ยืนยันจากผู้ใช้ 2026-09-22) */
+const PAGE_LABELS = {
+  'dashboard.html': 'ภาพรวม',
+  'bid-pipeline.html': 'งานประมูล (e-Bidding)',
+  'my-assignments.html': 'งานที่ได้รับ',
+  'sales-pipeline.html': 'งานขายตรง (Sales Hunt)',
+  'company-calendar.html': 'ปฏิทินคัดกรองประกาศ',
+  'bid_decision.html': 'ประกาศวันนี้',
+  'assignments.html': 'จัดการงาน',
+  'calendars.html': 'ปฏิทินการทำงาน',
+  'sources.html': 'แหล่งที่มางานประมูล',
+  'rotation-settings.html': 'ตั้งค่าวิธีคิดเวรงานประมูล',
+  'duty-calendar.html': 'สร้างเวรรายปีงานประมูล',
+  'analytics.html': 'รายงานวิเคราะห์',
+  'kpi-settings.html': 'ตั้งเกณฑ์วัดผล KPI',
+  'users.html': 'ผู้ใช้งาน',
+  'import.html': 'นำเข้าข้อมูล',
+  'holidays.html': 'วันหยุด',
+  'announcements.html': 'ประกาศ',
+  'login.html': 'เข้าสู่ระบบ',
+};
+function pageLabel(filename) {
+  if (!filename) return '-';
+  return PAGE_LABELS[filename] || filename;
+}
+
 /* ── Public app config (โหลดครั้งเดียว ใช้ค่าที่ต่างกันไปตามแต่ละบริษัทที่ deploy) ──
    endpoint นี้ไม่ต้อง login ก่อน (ไม่มีความลับ) เลยเรียกได้ทุกหน้ารวมถึง login.html */
 window.APP_CONFIG = { app_name: '', doc_share_root: '', brand_line1: 'Taiyo Sales Project', brand_line2: 'ระบบบริหารงานขายโครงการ', brand_logo: 'shared/logo.png' };
@@ -59,6 +87,7 @@ function formatDateTimeThai(dateStr) {
 const SharedMethods = {
   formatDateThai,
   formatDateTimeThai,
+  pageLabel,
 
   /* ── Modal ── */
   closeModal() { this.modal = { type: null, data: null }; },
@@ -371,7 +400,7 @@ const SharedMethods = {
 /* ── AppNav Vue Component ── */
 const AppNav = {
   props: ['user', 'page'],
-  data() { return { sidebarOpen: false, notifOpen: false, openGroup: null, notifUnread: 0, notifList: [], notifLoading: false, appConfig: window.APP_CONFIG, now: new Date() }; },
+  data() { return { sidebarOpen: false, notifOpen: false, notifUnread: 0, notifList: [], notifLoading: false, appConfig: window.APP_CONFIG, now: new Date() }; },
   mounted() {
     window.APP_CONFIG_READY?.then(cfg => { this.appConfig = cfg; });
     this.loadNotifCount();
@@ -407,78 +436,65 @@ const AppNav = {
       const pad = n => String(n).padStart(2, '0');
       return `${pad(this.now.getHours())}:${pad(this.now.getMinutes())}:${pad(this.now.getSeconds())}`;
     },
-    /* โครงสร้างเมนู — main เดี่ยว (type:link) หรือ main ที่มี sub (type:group + children) ใช้กับแถบ PC แนวนอน
-       ส่วนแผง dropdown มือถือใช้ navItemsFlat (คลี่ group ออกเป็น list เดียวเหมือนเดิม ไม่ต้องกดซ้อน) */
+    /* โครงสร้างเมนู sidebar ซ้าย — เปลี่ยนจากเมนูบนแนวนอนมาเป็น sidebar (ยืนยันจากผู้ใช้ 2026-09-21)
+       จัดกลุ่มตาม "งานของผู้ใช้" (ขาย/งานประมูลราชการ/ระบบ) ไม่ใช่ตาม module โค้ด — แต่ละกลุ่มเป็นรายการเรียบ (flat)
+       ไม่มี dropdown ซ้อนอีกต่อไป (เดิม type:'group' มี children ต้องกดขยาย) เพราะ sidebar มีที่ว่างพอไม่ต้องซ่อน
+       ใช้ร่วมกันทั้ง sidebar บน PC และแผงมือถือ (ไม่ต้องมี navItemsFlat แยกอีกต่อไป) */
     navGroups() {
       const g = [];
-      g.push({ type:'link', href:'dashboard.html', page:'dashboard', label:'ภาพรวม', shortLabel:'ภาพรวม', icon:'home' });
+      g.push({ href:'dashboard.html', page:'dashboard', label:'ภาพรวม', icon:'home' });
 
-      if (this.isSalesAdmin) {
-        g.push({
-          type:'group', key:'screening', label:'คัดกรองประกาศ', shortLabel:'คัดกรองประกาศ', icon:'bid_decision',
-          children: [
-            { href:'company-calendar.html', page:'company-calendar', label:'ปฏิทินคัดกรองประกาศ', icon:'calendar' },
-            { href:'bid_decision.html', page:'bid_decision', label:'ประกาศวันนี้', icon:'bid_decision' },
-            { href:'assignments.html', page:'assignments', label:'จัดการงาน', icon:'assignments' },
-          ],
-        });
-      }
-      if (this.isSale) {
-        g.push({ type:'link', href:'my-assignments.html', page:'my-assignments', label:'ประกาศมอบหมายวันนี้', shortLabel:'งานที่ได้รับ', icon:'my_assignments' });
-      }
-      g.push({ type:'divider' });
+      g.push({ type:'section', label:'ขาย' });
       if (this.isManager || this.isSale) {
-        g.push({ type:'link', href:'bid-pipeline.html', page:'bid-pipeline', label:'งานประมูล (e-Bidding)', shortLabel:'งานประมูล', icon:'bid_pipeline' });
+        g.push({ href:'bid-pipeline.html', page:'bid-pipeline', label:'งานประมูล (e-Bidding)', icon:'bid_pipeline' });
+      }
+      if (this.isSale || this.isAdmin) {
+        // label "งานที่ได้รับ" (ไม่ใช่ "ประกาศมอบหมายวันนี้" แบบก่อนหน้านี้) — ให้ตรงกับที่ใช้อยู่แล้วในแถบเมนูลัดล่างจอมือถือของ dashboard.html
+        // (AppTabBar's tabItems) และเมนูบนแบบเดิมก่อนเปลี่ยนเป็น sidebar (เคยมี shortLabel:'งานที่ได้รับ' แยกจาก label เต็ม)
+        // ยืนยันจากผู้ใช้ 2026-09-22 ว่าเปลี่ยนชื่อไปแล้วทำให้จำไม่ได้ว่าเป็นเมนูเดิม
+        // เพิ่ม isAdmin — ยืนยันจากผู้ใช้ 2026-09-22 ว่า "admin ต้องเห็นทุกเมนู" (admin เดิมไม่เห็นเมนูนี้)
+        g.push({ href:'my-assignments.html', page:'my-assignments', label:'งานที่ได้รับ', icon:'my_assignments' });
       }
       if (this.isAdmin || this.isManager || this.isSale) {
-        g.push({ type:'link', href:'sales-pipeline.html', page:'sales-pipeline', label:'งานขายตรง (Sales Hunt)', shortLabel:'งานขายตรง', icon:'sales_pipeline' });
+        g.push({ href:'sales-pipeline.html', page:'sales-pipeline', label:'งานขายตรง (Sales Hunt)', icon:'sales_pipeline' });
       }
+      // ทะเบียนหน่วยงาน/บริษัทลูกค้า (CRM account) — ทุก role เข้าดู/แก้ไขได้เหมือนกัน เป็นข้อมูลอ้างอิงกลาง ไม่ใช่ข้อมูลอ่อนไหว (ยืนยันจากผู้ใช้ 2026-09-22)
+      g.push({ href:'accounts.html', page:'accounts', label:'หน่วยงาน/ลูกค้า', icon:'accounts' });
       // นำเข้าใบเสนอราคาเก่า (import-quotations.html) — ยังไม่เปิดใช้งานจริง (ยืนยันจากผู้ใช้ 2026-09-09) ตั้งใจไม่ใส่เมนู
       // ไฟล์หน้าเว็บยังอยู่ เข้าผ่าน URL ตรงได้ตามปกติ แค่ไม่โผล่ในเมนูจนกว่าจะพร้อมเปิดใช้งานจริง
-      if (this.isManager || this.isSale) {
-        g.push({ type:'link', href:'analytics.html', page:'analytics', label:'รายงานวิเคราะห์', shortLabel:'รายงาน', icon:'analytics' });
-      }
-      if (this.isAdmin || this.isSalesAdmin) {
-        g.push({ type:'divider' });
-        g.push({
-          type:'group', key:'master-data', label:'ข้อมูลพื้นฐานงานประมูล', shortLabel:'ข้อมูลพื้นฐานงานประมูล', icon:'master_data',
-          children: [
-            { href:'calendars.html', page:'calendars', label:'ปฏิทินการทำงาน', icon:'calendar' },
-            { href:'sources.html', page:'sources', label:'แหล่งที่มางานประมูล', icon:'bid_decision' },
-            { href:'rotation-settings.html', page:'rotation-settings', label:'ตั้งค่าวิธีคิดเวรงานประมูล', icon:'settings' },
-            { href:'duty-calendar.html', page:'duty-calendar', label:'สร้างเวรรายปีงานประมูล', icon:'calendar' },
-          ],
-        });
-      }
-      if (this.isAdmin) {
-        g.push({ type:'divider' });
-        g.push({
-          type:'group', key:'system', label:'ตั้งค่า', shortLabel:'ตั้งค่า', icon:'settings',
-          children: [
-            { href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' },
-            { href:'users.html', page:'users', label:'ผู้ใช้งาน', icon:'users' },
-            { href:'import.html', page:'import', label:'นำเข้าข้อมูล', icon:'import' },
-          ],
-        });
-      }
-      // แต่ละ role เห็นเมนูไม่เท่ากัน บาง block ด้านบนถูกข้ามทั้งกลุ่ม (เช่น salesadmin ไม่มี isManager/isSale เลย
-      // งานประมูล/งานขายตรง/รายงานเลยไม่ขึ้นสักอัน) ทำให้ divider ที่ push แบบไม่มีเงื่อนไขไว้ก่อนหน้า ไปติดกับ divider
-      // ของ block ถัดไปเป็น 2 อันซ้อนกัน (เห็นเป็น "||" บนแถบเมนู) — กรองอันที่ซ้ำ/โดดหัวท้ายทิ้งก่อนคืนค่า
-      return g.filter((item, idx) => {
-        if (item.type !== 'divider') return true;
-        if (idx === 0 || idx === g.length - 1) return false;
-        return g[idx - 1].type !== 'divider';
-      });
-    },
 
-    navItemsFlat() {
-      const flat = [];
-      for (const entry of this.navGroups) {
-        if (entry.type === 'divider') flat.push({ divider: true });
-        else if (entry.type === 'group') entry.children.forEach(c => flat.push(c));
-        else flat.push(entry);
+      // หมวด "งานประมูลราชการ" — ของเฉพาะ Taiyo (e-GP) แยกออกจากหมวด "ขาย" ที่เป็น concept กลาง (ยืนยันจากผู้ใช้ 2026-09-21)
+      if (this.isSalesAdmin || this.isAdmin) {
+        g.push({ type:'section', label:'งานประมูลราชการ' });
+        if (this.isSalesAdmin) {
+          g.push({ href:'company-calendar.html', page:'company-calendar', label:'ปฏิทินคัดกรองประกาศ', icon:'calendar' });
+          g.push({ href:'bid_decision.html', page:'bid_decision', label:'ประกาศวันนี้', icon:'bid_decision' });
+          g.push({ href:'assignments.html', page:'assignments', label:'จัดการงาน', icon:'assignments' });
+        }
+        g.push({ href:'calendars.html', page:'calendars', label:'ปฏิทินการทำงาน', icon:'calendar' });
+        g.push({ href:'sources.html', page:'sources', label:'แหล่งที่มางานประมูล', icon:'bid_decision' });
+        g.push({ href:'rotation-settings.html', page:'rotation-settings', label:'ตั้งค่าวิธีคิดเวรงานประมูล', icon:'settings' });
+        g.push({ href:'duty-calendar.html', page:'duty-calendar', label:'สร้างเวรรายปีงานประมูล', icon:'calendar' });
       }
-      return flat;
+
+      if (this.isManager || this.isSale || this.isAdmin) {
+        g.push({ type:'section', label:'ระบบ' });
+        if (this.isManager || this.isSale) {
+          g.push({ href:'analytics.html', page:'analytics', label:'รายงานวิเคราะห์', icon:'analytics' });
+        }
+        if (this.isAdmin) {
+          g.push({ href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' });
+          g.push({ href:'users.html', page:'users', label:'ผู้ใช้งาน', icon:'users' });
+          g.push({ href:'import.html', page:'import', label:'นำเข้าข้อมูล', icon:'import' });
+        }
+      }
+
+      // ตัด section header ที่ไม่มีรายการตามหลังเลย (เช่น role salesadmin ไม่มีสิทธิ์เข้าเมนูในหมวด "ขาย" เลยสักอัน)
+      return g.filter((item, idx) => {
+        if (item.type !== 'section') return true;
+        const next = g[idx + 1];
+        return next && next.type !== 'section';
+      });
     },
   },
   methods: {
@@ -527,7 +543,6 @@ const AppNav = {
       if (!link) return;
       if (link.getAttribute('href') === this.page + '.html') e.preventDefault();
       this.sidebarOpen = false;
-      this.openGroup = null;
     },
     async doLogout() {
       await apiCall('POST', 'api/auth.php?action=logout');
@@ -544,6 +559,7 @@ const AppNav = {
         my_assignments: '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
         bid_pipeline:   '<path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/>',
         sales_pipeline: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+        accounts:       '<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>',
         analytics:      '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
         kpi:            '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
         users:          '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
@@ -554,104 +570,76 @@ const AppNav = {
     },
   },
   template: `
-  <!-- ยืนยันจากผู้ใช้ 2026-09-20: เดิม 2 overlay + header ถูกครอบด้วย <div> เดียว ทำให้ position:sticky ของ header ไม่ค้างจริงตอนเลื่อนจอ
-       เพราะ div ครอบสูงเท่า header พอดี (auto-height ตามเนื้อหา) header เลยไม่มี "ที่ว่างให้ค้าง" ภายใน parent ตัวเอง เลื่อนแป๊บเดียวก็หลุดตามไปด้วย
-       แก้โดยเอา <div> ครอบออก ให้ทั้ง 3 อย่างเป็น root node แยกกัน (Vue 3 รองรับ multi-root/fragment component) — parent ที่แท้จริงจะกลายเป็น div ของแต่ละหน้าที่เรียกใช้ <app-nav>
-       ซึ่งสูงเท่าทั้งหน้า header เลยมีที่ว่างให้ sticky ค้างได้ตลอดการเลื่อน -->
-  <!-- Mobile menu click-away overlay -->
+  <!-- ยืนยันจากผู้ใช้ 2026-09-20: root node ต้องแยกกัน (Vue 3 multi-root/fragment component) ไม่ครอบด้วย <div> เดียว
+       ไม่งั้น position:sticky ของ header จะไม่ค้างจริงตอนเลื่อนจอ (div ครอบสูงเท่า header พอดี ไม่มีที่ว่างให้ sticky ค้าง)
+       ยืนยันจากผู้ใช้ 2026-09-21: เปลี่ยนจากเมนูบนแนวนอนเป็น sidebar ซ้าย — เพราะแผนขยาย module ในอนาคต (3-6 เดือน)
+       ทำให้เมนูยาวขึ้นเรื่อยๆ เมนูบนจะล้นซ้ำอีก เมนูซ้ายรองรับจำนวนรายการที่มากได้ดีกว่าและเปลี่ยนตอนนี้ (หน้ายังน้อย) ง่ายกว่ารอเปลี่ยนทีหลัง -->
+
+  <!-- Mobile drawer click-away overlay -->
   <div v-if="sidebarOpen" class="fixed inset-0 bg-black/40 z-[39] md:hidden" @click="sidebarOpen=false"></div>
 
-  <!-- Notification / group dropdown click-away overlay -->
-  <div v-if="notifOpen || openGroup" class="fixed inset-0 z-[39]" @click="notifOpen=false; openGroup=null"></div>
+  <!-- Notification dropdown click-away overlay -->
+  <div v-if="notifOpen" class="fixed inset-0 z-[39]" @click="notifOpen=false"></div>
 
-  <!-- Top Bar -->
-  <!-- z-50 (ไม่ใช่ z-40): หลายหน้า (bid-pipeline.html, sales-pipeline.html, ...) มี <header class="sticky z-40"> ของตัวเอง (แถบชื่อหน้า/ตัวกรอง)
-       ถ้าใช้ z-40 เท่ากัน DOM ที่มาทีหลัง (header ของหน้าเพจ) จะทับบังเมนู dropdown มือถือ (sidebarOpen) 1-2 รายการบนสุด (ยืนยันบั๊กจากผู้ใช้ 2026-09-21)
-       ต้อง "มากกว่า" ทุก z-40 ที่หน้าเพจใช้เอง จึงตั้งเท่ากับ AppTabBar (z-50) ซึ่งเป็น chrome ระดับเดียวกัน -->
-  <header class="sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm">
-    <div class="px-4 py-2.5 flex items-center gap-3 flex-wrap">
+  <!-- Sidebar ซ้าย (จอ md+ เท่านั้น) — กว้างคงที่ 240px (w-60) ไม่มีปุ่มยุบเหลือไอคอน (ยืนยันจากผู้ใช้ 2026-09-21
+       กลุ่มผู้ใช้อายุ 50-60 ปี ไอคอนเดี่ยวไม่มี label ตีความยาก) จัดกลุ่มด้วยหัวข้อข้อความธรรมดา ไม่ใช้ collapsible section
+       (ยังไม่จำเป็นเพราะจำนวนโมดูลที่จะเพิ่มจริงในเร็วๆ นี้ยังไม่เยอะ) -->
+  <aside class="hidden md:flex md:flex-col fixed left-0 top-0 h-screen w-60 bg-white border-r border-slate-100 z-40 shrink-0">
+    <a href="dashboard.html" class="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-100 no-underline shrink-0">
+      <div class="min-w-0">
+        <div class="text-sm font-bold text-slate-800 leading-tight truncate">{{ appConfig.brand_line1 }}</div>
+        <div class="text-xs text-slate-400 truncate">{{ appConfig.brand_line2 }}</div>
+      </div>
+    </a>
+    <nav class="flex-1 overflow-y-auto py-2 px-2.5" @click.capture="onNavClick">
+      <template v-for="(entry, idx) in navGroups" :key="entry.page || ('sec'+idx)">
+        <div v-if="entry.type==='section'" class="text-xs font-bold text-slate-400 uppercase tracking-wide px-2.5 pt-3.5 pb-1.5">{{ entry.label }}</div>
+        <a v-else :href="entry.href"
+           class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm no-underline transition-colors duration-150"
+           :class="page===entry.page ? 'bg-teal-50 text-teal-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'">
+          <svg class="w-[17px] h-[17px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="iconSvg(entry.icon)"></svg>
+          {{ entry.label }}
+        </a>
+      </template>
+    </nav>
+    <div class="border-t border-slate-100 p-3 flex items-center gap-2.5 shrink-0">
+      <img v-if="user?.photo_url" :src="user.photo_url" class="w-9 h-9 rounded-full object-cover shrink-0"/>
+      <div v-else class="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+        :style="{background: user?.avatar_color || '#64748b'}">{{ avatarInitials(user?.full_name) }}</div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-semibold text-slate-700 truncate">{{ user?.full_name }}</div>
+        <span class="text-[11px] px-2 py-0.5 rounded-full font-semibold" :class="roleBadgeCls">{{ roleLabel }}</span>
+      </div>
+      <button @click="doLogout" title="ออกจากระบบ"
+              class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors border-0 bg-transparent cursor-pointer flex items-center shrink-0">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </div>
+  </aside>
 
-      <!-- Logo -->
-      <a href="dashboard.html" class="flex items-center gap-2.5 shrink-0 no-underline">
+  <!-- แถบบน: มือถือ = โลโก้+แจ้งเตือน+hamburger, PC = วันเวลา+แจ้งเตือน+ผู้ใช้+logout (อยู่ฝั่งขวาของ sidebar ผ่าน md:ml-60)
+       z-50 (มากกว่า z-40 ที่หน้าเพจใช้เอง) กันไม่ให้ header ของหน้าเพจทับบังเมนู mobile drawer (ยืนยันบั๊กจากผู้ใช้ 2026-09-21) -->
+  <header class="sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm md:ml-60">
+    <div class="px-4 py-2.5 flex items-center gap-3">
+      <!-- Logo (มือถือเท่านั้น — PC มีโลโก้อยู่ใน sidebar แล้ว) -->
+      <a href="dashboard.html" class="flex items-center gap-2.5 shrink-0 no-underline md:hidden">
         <img :src="appConfig.brand_logo" alt="" class="h-8 w-auto object-contain shrink-0">
-        <div class="hidden md:block">
+        <div>
           <div class="text-sm font-bold text-slate-800 leading-tight">{{ appConfig.brand_line1 }}</div>
           <div class="text-xs text-slate-400">{{ appConfig.brand_line2 }}</div>
         </div>
       </a>
 
-      <!-- Desktop nav (แนวนอน, label สั้น, main ที่มี sub กดเปิด dropdown) -->
-      <nav class="hidden md:flex items-center gap-1 flex-wrap" @click.capture="onNavClick">
-        <template v-for="(entry, idx) in navGroups" :key="entry.page || entry.key || ('div'+idx)">
-          <div v-if="entry.type==='divider'" class="w-px h-5 bg-slate-200 mx-1"></div>
-
-          <a v-else-if="entry.type==='link'" :href="entry.href"
-             class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-base no-underline whitespace-nowrap transition-colors duration-150"
-             :class="page===entry.page ? 'text-teal-700 font-semibold' : 'text-slate-500 hover:text-teal-700'">
-            <svg class="w-[17px] h-[17px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="iconSvg(entry.icon)"></svg>
-            {{ entry.shortLabel }}
-          </a>
-
-          <div v-else class="relative">
-            <button type="button" @click.stop="openGroup = openGroup===entry.key ? null : entry.key"
-                    class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-base whitespace-nowrap transition-colors duration-150 border-0 cursor-pointer bg-transparent"
-                    :class="(openGroup===entry.key || entry.children.some(c => c.page===page)) ? 'text-teal-700 font-semibold' : 'text-slate-500 hover:text-teal-700'">
-              <svg class="w-[17px] h-[17px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="iconSvg(entry.icon)"></svg>
-              {{ entry.shortLabel }}
-              <svg class="w-3 h-3 shrink-0 transition-transform duration-150" :class="openGroup===entry.key ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <div v-if="openGroup===entry.key"
-                 class="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-10"
-                 style="min-width:210px">
-              <a v-for="child in entry.children" :key="child.page" :href="child.href"
-                 class="flex items-center gap-2.5 px-3.5 py-2.5 text-base no-underline whitespace-nowrap transition-colors duration-150"
-                 :class="page===child.page ? 'text-teal-700 font-semibold' : 'text-slate-600 hover:text-teal-700'">
-                <svg class="w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="iconSvg(child.icon)"></svg>
-                {{ child.label }}
-              </a>
-            </div>
-          </div>
-        </template>
-      </nav>
-
-      <!-- Desktop right side: ผู้ใช้ + แจ้งเตือน + logout -->
-      <div class="hidden md:flex items-center gap-2 ml-auto shrink-0">
-        <!-- วันเวลาปัจจุบัน — เฉพาะจอกว้าง (lg+) กันไปแย่งพื้นที่แถบเมนูบนจอกลาง (ยืนยันจากผู้ใช้ 2026-09-02
-             ปรับจากเดิมที่เคยแยกเป็นแถบเต็มความกว้างด้านล่าง header เพราะกินพื้นที่แนวตั้งเกินไป) -->
-        <div class="hidden lg:block text-right pr-3 border-r border-slate-200 shrink-0">
-          <div class="text-[11px] text-slate-400 font-medium whitespace-nowrap">{{ nowDateLabel }}</div>
-          <div class="text-[11px] text-slate-400 font-medium whitespace-nowrap">เวลา {{ nowTimeLabel }} น.</div>
-        </div>
-        <div class="text-right">
-          <div class="text-sm font-semibold text-slate-700 truncate max-w-[160px]">{{ user?.full_name }}</div>
-          <span class="text-[11px] px-2 py-0.5 rounded-full font-semibold" :class="roleBadgeCls">{{ roleLabel }}</span>
-        </div>
-        <img v-if="user?.photo_url" :src="user.photo_url" class="w-9 h-9 rounded-full object-cover shrink-0"/>
-        <div v-else class="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-          :style="{background: user?.avatar_color || '#64748b'}">{{ avatarInitials(user?.full_name) }}</div>
-        <button @click="toggleNotif" title="การแจ้งเตือน"
-                class="relative text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors border-0 bg-transparent cursor-pointer flex items-center">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 01-3.46 0"/>
-          </svg>
-          <span v-if="notifUnread > 0"
-                class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full font-bold px-0.5 leading-none">
-            {{ notifUnread > 9 ? '9+' : notifUnread }}
-          </span>
-        </button>
-        <button @click="doLogout" title="ออกจากระบบ"
-                class="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors border-0 bg-transparent cursor-pointer flex items-center">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-        </button>
+      <!-- วันเวลา (PC เท่านั้น) -->
+      <div class="hidden md:block text-xs text-slate-400 font-medium whitespace-nowrap">
+        {{ nowDateLabel }} · เวลา {{ nowTimeLabel }} น.
       </div>
 
-      <!-- Mobile right side: แจ้งเตือน + hamburger -->
-      <div class="flex md:hidden items-center gap-1 ml-auto shrink-0">
+      <div class="flex items-center gap-1 ml-auto shrink-0">
         <button @click="toggleNotif" title="การแจ้งเตือน"
                 class="relative text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors border-0 bg-transparent cursor-pointer flex items-center">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -663,8 +651,12 @@ const AppNav = {
             {{ notifUnread > 9 ? '9+' : notifUnread }}
           </span>
         </button>
+
+        <!-- ผู้ใช้ + logout (PC) ย้ายไปอยู่จุดเดียวที่ sidebar footer แล้ว (ยืนยันจากผู้ใช้ 2026-09-22 ว่าซ้ำกับ header เดิม ไม่ต้องมี 2 ที่) -->
+
+        <!-- Hamburger (มือถือเท่านั้น) -->
         <button @click="sidebarOpen=!sidebarOpen" title="เมนู"
-                class="p-2 rounded-lg hover:bg-slate-100 text-slate-500 border-0 bg-transparent cursor-pointer flex items-center">
+                class="p-2 rounded-lg hover:bg-slate-100 text-slate-500 border-0 bg-transparent cursor-pointer flex items-center md:hidden">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
@@ -672,44 +664,9 @@ const AppNav = {
       </div>
     </div>
 
-    <!-- แถบวันเวลาปัจจุบัน (มือถือเท่านั้น) — จอกว้าง lg+ ย้ายไปแสดงในแถบเดียวกับข้อมูลผู้ใช้ด้านบนแทน
-         ไม่ให้กินพื้นที่แนวตั้งเพิ่มเป็นแถบแยก (ยืนยันจากผู้ใช้ 2026-09-02) -->
-    <div class="lg:hidden px-4 py-1 bg-slate-50 border-t border-slate-100 text-center">
+    <!-- แถบวันเวลาปัจจุบัน (มือถือเท่านั้น) -->
+    <div class="md:hidden px-4 py-1 bg-slate-50 border-t border-slate-100 text-center">
       <span class="text-[11px] text-slate-500 font-medium">{{ nowDateLabel }} · เวลา {{ nowTimeLabel }} น.</span>
-    </div>
-
-    <!-- แผงเมนูมือถือ (แนวตั้ง, label เต็ม, ปุ่มใหญ่แบบเดิม) -->
-    <div v-if="sidebarOpen"
-         class="absolute top-full left-0 right-0 md:hidden bg-white border-b border-slate-100 shadow-lg overflow-y-auto"
-         style="max-height: calc(100vh - 4rem)">
-      <nav class="p-2.5 space-y-0.5" @click.capture="onNavClick">
-        <template v-for="(item, idx) in navItemsFlat" :key="item.page || ('div'+idx)">
-          <div v-if="item.divider" class="border-t border-slate-100 my-1 mx-2"></div>
-          <a v-else :href="item.href"
-             class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-base no-underline transition-all duration-150"
-             :class="page===item.page ? 'text-teal-700 font-semibold' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'">
-            <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="iconSvg(item.icon)"></svg>
-            {{ item.label }}
-          </a>
-        </template>
-      </nav>
-      <div class="p-4 border-t border-slate-100 flex items-center gap-2.5">
-        <img v-if="user?.photo_url" :src="user.photo_url" class="w-9 h-9 rounded-full object-cover shrink-0"/>
-        <div v-else class="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-          :style="{background: user?.avatar_color || '#64748b'}">{{ avatarInitials(user?.full_name) }}</div>
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-semibold text-slate-700 truncate">{{ user?.full_name }}</div>
-          <span class="text-[11px] px-2 py-0.5 rounded-full font-semibold mt-0.5 inline-block" :class="roleBadgeCls">{{ roleLabel }}</span>
-        </div>
-        <button @click="doLogout" title="ออกจากระบบ"
-                class="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors border-0 bg-transparent cursor-pointer flex items-center">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-        </button>
-      </div>
     </div>
 
     <!-- Notification Panel -->
@@ -740,6 +697,46 @@ const AppNav = {
       </div>
     </div>
   </header>
+
+  <!-- แผงเมนูมือถือ — เลื่อนออกจากด้านซ้าย (ให้ตรงกับตำแหน่ง sidebar บน PC) แทนที่จะดร็อปลงมาจากด้านบนแบบเดิม (ยืนยันจากผู้ใช้ 2026-09-21) -->
+  <div v-if="sidebarOpen"
+       class="fixed inset-y-0 left-0 w-[82%] max-w-[300px] md:hidden bg-white shadow-lg overflow-y-auto z-50 flex flex-col">
+    <a href="dashboard.html" class="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-100 no-underline shrink-0 min-w-0">
+      <img :src="appConfig.brand_logo" alt="" class="h-8 w-auto object-contain shrink-0">
+      <div class="min-w-0">
+        <div class="text-sm font-bold text-slate-800 leading-tight truncate">{{ appConfig.brand_line1 }}</div>
+        <div class="text-xs text-slate-400 truncate">{{ appConfig.brand_line2 }}</div>
+      </div>
+    </a>
+    <nav class="flex-1 py-2 px-2.5" @click.capture="onNavClick">
+      <template v-for="(entry, idx) in navGroups" :key="entry.page || ('msec'+idx)">
+        <div v-if="entry.type==='section'" class="text-xs font-bold text-slate-400 uppercase tracking-wide px-3 pt-3.5 pb-1.5">{{ entry.label }}</div>
+        <a v-else :href="entry.href"
+           class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-base no-underline transition-all duration-150"
+           :class="page===entry.page ? 'text-teal-700 font-semibold bg-teal-50' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'">
+          <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="iconSvg(entry.icon)"></svg>
+          {{ entry.label }}
+        </a>
+      </template>
+    </nav>
+    <div class="p-4 border-t border-slate-100 flex items-center gap-2.5 shrink-0">
+      <img v-if="user?.photo_url" :src="user.photo_url" class="w-9 h-9 rounded-full object-cover shrink-0"/>
+      <div v-else class="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+        :style="{background: user?.avatar_color || '#64748b'}">{{ avatarInitials(user?.full_name) }}</div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-semibold text-slate-700 truncate">{{ user?.full_name }}</div>
+        <span class="text-[11px] px-2 py-0.5 rounded-full font-semibold mt-0.5 inline-block" :class="roleBadgeCls">{{ roleLabel }}</span>
+      </div>
+      <button @click="doLogout" title="ออกจากระบบ"
+              class="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors border-0 bg-transparent cursor-pointer flex items-center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
   `,
 };
 

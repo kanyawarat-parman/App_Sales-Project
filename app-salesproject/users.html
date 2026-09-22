@@ -18,8 +18,8 @@
   <template v-else>
     <app-nav :user="currentUser" page="users" ref="nav"></app-nav>
 
-    <div class="min-h-screen flex flex-col">
-      <header class="bg-white border-b border-slate-100 px-5 py-3 flex items-center gap-3 shadow-sm min-h-[64px]">
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px]">
         <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -54,6 +54,7 @@
                     <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">บทบาท</th>
                     <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">LINE ID</th>
                     <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">งาน Active</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ใช้งานล่าสุด</th>
                     <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">สถานะ</th>
                     <th class="px-4 py-3 border-b-2 border-slate-200"></th>
                   </tr>
@@ -78,6 +79,23 @@
                     </td>
                     <td class="px-4 py-3 text-xs text-slate-500">{{ u.line_user_id || '-' }}</td>
                     <td class="px-4 py-3 font-bold text-center">{{ u.active_tasks ?? 0 }}</td>
+                    <td class="px-4 py-3 text-xs">
+                      <div v-if="onlineStatus(u)==='online'" class="flex items-start gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0 mt-1"></span>
+                        <div>
+                          <div class="text-emerald-600 font-semibold">{{ u.current_page ? pageLabel(u.current_page) : 'ออนไลน์' }}</div>
+                          <div v-if="u.current_page" class="text-slate-400">{{ u.current_page }}</div>
+                        </div>
+                      </div>
+                      <div v-else-if="onlineStatus(u)==='away'">
+                        <div class="flex items-center gap-1.5 text-amber-600">
+                          <span class="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                          เพิ่งออก · {{ onlineTimeAgo(u.last_active_at) }}
+                        </div>
+                        <div v-if="u.current_page" class="text-slate-400 ml-3.5">{{ pageLabel(u.current_page) }} ({{ u.current_page }})</div>
+                      </div>
+                      <span v-else class="text-slate-400">{{ u.last_active_at ? onlineTimeAgo(u.last_active_at) : 'ไม่เคยเข้าใช้' }}</span>
+                    </td>
                     <td class="px-4 py-3">
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
                         :class="u.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
@@ -241,7 +259,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=33"></script>
+<script src="shared/app.js?v=44"></script>
 <script>
 const { createApp } = Vue;
 
@@ -281,6 +299,24 @@ createApp({
     async loadUsers() {
       const res = await apiCall('GET', 'api/users.php?action=list');
       if (res.success) this.allUsers = res.data;
+    },
+
+    // 'online' = เรียก API ล่าสุดภายใน 5 นาที, 'away' = ภายใน 30 นาที, นอกนั้นถือว่าออฟไลน์
+    // (last_active_at อัปเดตทุกครั้งที่หน้าไหนก็ตามเรียก api/auth.php?action=me ตอน mounted() — ดู api/auth.php's getMe())
+    onlineStatus(u) {
+      if (!u.last_active_at) return 'offline';
+      const diffMin = (Date.now() - new Date(u.last_active_at.replace(' ', 'T'))) / 60000;
+      if (diffMin <= 5) return 'online';
+      if (diffMin <= 30) return 'away';
+      return 'offline';
+    },
+    onlineTimeAgo(ts) {
+      if (!ts) return '-';
+      const diff = Math.floor((Date.now() - new Date(ts.replace(' ', 'T'))) / 1000);
+      if (diff < 60) return 'เพิ่งใช้งาน';
+      if (diff < 3600) return Math.floor(diff / 60) + ' นาทีที่แล้ว';
+      if (diff < 86400) return Math.floor(diff / 3600) + ' ชั่วโมงที่แล้ว';
+      return Math.floor(diff / 86400) + ' วันที่แล้ว';
     },
 
     openUserModal(user) {

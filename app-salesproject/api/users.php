@@ -34,6 +34,7 @@ function listUsers(PDO $db): void {
         SELECT u.id, u.username, u.full_name, u.role, u.line_user_id, u.phone,
                u.email, u.notify_channel, u.notify_enabled, u.sale_id,
                u.avatar_color, u.photo_url, u.is_active, u.last_login, u.created_at,
+               u.current_page, u.last_active_at,
                (SELECT COUNT(*) FROM project_assignments pa WHERE pa.assigned_to = u.id AND pa.status NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก')) AS active_tasks
         FROM users u ORDER BY u.role, u.full_name
     ");
