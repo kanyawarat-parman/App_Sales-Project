@@ -66,82 +66,108 @@ function refreshSlaStatuses(PDO $db): void {
         END
         WHERE pa.status NOT IN ('ชนะการประมูล','ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก')
     ");
+
+    // Phase 4-prep (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22):
+    // sync sla_status ที่เพิ่งคำนวณใหม่ด้านบนไป pipeline_items mirror ด้วย — UPDATE ด้านบนไม่ผ่าน dual-write ของ
+    // updateAssignment() (Phase 2b) เพราะคำนวณจากเวลาปัจจุบันอัตโนมัติ ไม่ใช่จาก field ที่ user ส่งมาแก้ไข
+    $db->exec("
+        UPDATE pipeline_items pi
+        JOIN project_assignments pa
+            ON pa.announcement_id = pi.announcement_id AND pa.assigned_to = pi.assigned_to
+        SET pi.sla_status = pa.sla_status
+        WHERE pi.source_type = 'ebidding'
+          AND pa.status NOT IN ('ชนะการประมูล','ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก')
+    ");
 }
 
+// Phase 5e (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22): cutover ให้อ่านจาก
+// pipeline_items แทน project_assignments — alias ชื่อคอลัมน์กลับให้ตรงกับเดิมเหมือน getDetail() (ดู comment ที่นั่น)
 function listAssignments(PDO $db, array $user): void {
     refreshSlaStatuses($db);
 
-    $where  = [];
+    $where  = ["pi.source_type = 'ebidding'"];
     $params = [];
 
     if ($user['role'] === 'sale') {
-        $where[]            = 'pa.assigned_to = :uid';
+        $where[]            = 'pi.assigned_to = :uid';
         $params[':uid']     = $user['id'];
     } elseif (!empty($_GET['assigned_to'])) {
-        $where[]            = 'pa.assigned_to = :uid';
+        $where[]            = 'pi.assigned_to = :uid';
         $params[':uid']     = (int)$_GET['assigned_to'];
     }
 
     if (!empty($_GET['status'])) {
-        $where[]            = 'pa.status = :st';
+        $where[]            = 'pi.stage = :st';
         $params[':st']      = $_GET['status'];
     }
 
-    $whereStr = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    $whereStr = 'WHERE ' . implode(' AND ', $where);
 
     $sql = "
-        SELECT pa.id, pa.project_code, pa.status, pa.priority, pa.sla_status, pa.secretary_notes, pa.sale_notes,
-               pa.bid_amount, pa.sla_deadline, pa.assigned_at, pa.updated_at, pa.line_notified_at,
+        SELECT pi.id, pi.project_code, pi.stage AS status, pi.priority, pi.sla_status, pi.secretary_notes,
+               pi.notes AS sale_notes, pi.value AS bid_amount, pi.sla_deadline,
+               pi.created_at AS assigned_at, pi.updated_at, pi.line_notified_at,
                a.id AS ann_id, a.project_no, a.project_name, a.unit_name,
                a.announce_date, a.close_date, a.price_median, a.can_bid, a.url, a.keyword_match,
                u1.id AS sale_id, u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url,
                u2.full_name AS secretary_name
-        FROM project_assignments pa
-        JOIN announcements a ON a.id = pa.announcement_id
-        JOIN users u1 ON u1.id = pa.assigned_to
-        JOIN users u2 ON u2.id = pa.assigned_by
+        FROM pipeline_items pi
+        JOIN announcements a ON a.id = pi.announcement_id
+        JOIN users u1 ON u1.id = pi.assigned_to
+        JOIN users u2 ON u2.id = pi.assigned_by
         $whereStr
         ORDER BY
-            FIELD(pa.sla_status,'เกิน','ใกล้ถึง','ปกติ'),
-            FIELD(pa.priority,'เร่งด่วน','ปกติ','ต่ำ'),
-            pa.assigned_at DESC
+            FIELD(pi.sla_status,'เกิน','ใกล้ถึง','ปกติ'),
+            FIELD(pi.priority,'เร่งด่วน','ปกติ','ต่ำ'),
+            pi.created_at DESC
     ";
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     jsonResponse(true, $stmt->fetchAll());
 }
 
+// Phase 5c (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22): cutover ให้อ่านจาก
+// pipeline_items แทน project_assignments เต็มรูปแบบ (Phase 5a/5b เตรียม pipeline_item_history ให้มีประวัติครบแล้ว)
+// ชื่อคอลัมน์ที่ต่างกัน alias กลับเป็นชื่อเดิมของ project_assignments ให้ frontend ใช้ได้เหมือนเดิมทุกจุด ไม่ต้องแก้ template:
+// stage->status, notes->sale_notes, value->bid_amount, created_at->assigned_at
 function getDetail(PDO $db, array $user): void {
-    $id = (int)($_GET['id'] ?? 0);
-    if (!$id) jsonResponse(false, null, 'Invalid ID', 400);
+    $projectCode = $_GET['project_code'] ?? '';
+    if (!$projectCode) jsonResponse(false, null, 'Invalid ID', 400);
 
-    $extra = ($user['role'] === 'sale') ? 'AND pa.assigned_to = ?' : '';
-    $args  = ($user['role'] === 'sale') ? [$id, $user['id']] : [$id];
+    $extra = ($user['role'] === 'sale') ? 'AND pi.assigned_to = ?' : '';
+    $args  = ($user['role'] === 'sale') ? [$projectCode, $user['id']] : [$projectCode];
 
     $sql = "
-        SELECT pa.*,
+        SELECT pi.id, pi.project_code, pi.announcement_id, pi.assigned_to, pi.assigned_by,
+               pi.stage AS status, pi.priority, pi.secretary_notes, pi.notes AS sale_notes,
+               pi.win_loss_reason, pi.win_loss_note, pi.value AS bid_amount,
+               pi.sla_deadline, pi.sla_status, pi.line_notified_at, pi.email_notified_at,
+               pi.created_at AS assigned_at, pi.updated_at,
                a.project_no, a.project_name, a.unit_name, a.announce_date, a.close_date,
                a.price_median, a.items, a.spec, a.can_bid, a.reason, a.docs_required,
                a.need_sample, a.sample_detail, a.conditions, a.url, a.keyword_match, a.filter_status,
                a.source_type, acc.account_type,
                u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url, u1.phone AS sale_phone,
                u2.full_name AS secretary_name
-        FROM project_assignments pa
-        JOIN announcements a ON a.id = pa.announcement_id
+        FROM pipeline_items pi
+        JOIN announcements a ON a.id = pi.announcement_id
         LEFT JOIN accounts acc ON acc.id = a.account_id
-        JOIN users u1 ON u1.id = pa.assigned_to
-        JOIN users u2 ON u2.id = pa.assigned_by
-        WHERE pa.id = ? $extra
+        JOIN users u1 ON u1.id = pi.assigned_to
+        JOIN users u2 ON u2.id = pi.assigned_by
+        WHERE pi.project_code = ? AND pi.source_type = 'ebidding' $extra
     ";
     $stmt = $db->prepare($sql);
     $stmt->execute($args);
     $row = $stmt->fetch();
     if (!$row) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
+    $id = (int)$row['id'];
 
     $stmt2 = $db->prepare("
-        SELECT ah.*, u.full_name AS changed_by_name
-        FROM assignment_history ah JOIN users u ON u.id = ah.changed_by
-        WHERE ah.assignment_id = ? ORDER BY ah.changed_at DESC
+        SELECT pih.id, pih.pipeline_item_id AS assignment_id, pih.project_code, pih.changed_by,
+               pih.old_stage AS old_status, pih.new_stage AS new_status, pih.note, pih.changed_at,
+               u.full_name AS changed_by_name
+        FROM pipeline_item_history pih JOIN users u ON u.id = pih.changed_by
+        WHERE pih.pipeline_item_id = ? ORDER BY pih.changed_at DESC
     ");
     $stmt2->execute([$id]);
     $row['history'] = $stmt2->fetchAll();
@@ -220,13 +246,15 @@ function createAssignment(PDO $db, array $user): void {
     $existPi = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ?");
     $existPi->execute([$announcementId, $assignedTo]);
     if (!$existPi->fetch() && $ann) {
-        $piPriority = $priority === 'เร่งด่วน' ? 'High' : ($priority === 'ต่ำ' ? 'Low' : 'Medium');
+        // Phase 2a ของแผนรวม pipeline_items เข้ากับ project_assignments (ยืนยันจากผู้ใช้ 2026-09-22) — เขียนข้อมูลครบทุก field
+        // ให้ mirror นี้ตรงกับ project_assignments เป๊ะ ไม่แปลง stage/priority เป็นภาษาอังกฤษแบบเดิมอีกต่อไป (ENUM ขยายรองรับแล้วใน Phase 1)
+        // win_probability=0.10 ตาม convention ของงานประมูล (รอดำเนินการ/ศึกษา TOR/เตรียมยื่นข้อเสนอ = 10%, ดู bid-pipeline.html's weighted pipeline)
         // งานฝั่ง ebidding ไม่ออก project_code ใหม่ซ้ำ — ใช้รหัสเดียวกับ project_assignments ที่เพิ่งออกด้านบน (รหัสเดียวเดินทางข้ามตารางได้)
         $db->prepare("
             INSERT INTO pipeline_items
-                (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
-                 stage, priority, value, win_probability)
-            VALUES (?, 'ebidding', ?, ?, ?, ?, ?, 'Interest', ?, ?, 0.20)
+                (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to, assigned_by,
+                 stage, priority, value, win_probability, sla_deadline, sla_status, secretary_notes)
+            VALUES (?, 'ebidding', ?, ?, ?, ?, ?, ?, 'รอดำเนินการ', ?, ?, 0.10, ?, 'ปกติ', ?)
         ")->execute([
             $projectCode,
             $announcementId,
@@ -234,9 +262,19 @@ function createAssignment(PDO $db, array $user): void {
             $ann['unit_name'] ?? '',
             $ann['account_id'] ?? null,
             $assignedTo,
-            $piPriority,
+            $user['id'],
+            $priority,
             $ann['price_median'] ?? null,
+            $slaDeadline,
+            $notes,
         ]);
+        $pipelineItemId = (int)$db->lastInsertId();
+
+        // Phase 5b (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22): sync ประวัติไปที่
+        // pipeline_item_history คู่กับ assignment_history เสมอ ไม่งั้นตอน cutover ให้หน้าจอไปอ่าน pipeline_items แทน
+        // timeline ประวัติงานจะหายไป (pipeline_item_history เดิมไม่เคยมีประวัติงานประมูลเลย)
+        $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, 'รอดำเนินการ', 'มอบหมายงานใหม่')")
+           ->execute([$pipelineItemId, $projectCode, $user['id']]);
     }
 
     // ── บันทึกเสร็จแล้ว ตอบกลับผู้ใช้ทันที ก่อนไปส่ง LINE/Email ──
@@ -281,16 +319,18 @@ function createAssignment(PDO $db, array $user): void {
     }
 }
 
+// Phase 4c: เปลี่ยนให้รับ project_code แทน id
 function updateAssignment(PDO $db, array $user): void {
     $body = getJsonBody();
-    $id   = (int)($body['id'] ?? 0);
-    if (!$id) jsonResponse(false, null, 'Invalid ID', 400);
+    $projectCode = $body['project_code'] ?? '';
+    if (!$projectCode) jsonResponse(false, null, 'Invalid ID', 400);
 
     // ดึงข้อมูลปัจจุบัน
-    $stmt = $db->prepare('SELECT * FROM project_assignments WHERE id = ?');
-    $stmt->execute([$id]);
+    $stmt = $db->prepare('SELECT * FROM project_assignments WHERE project_code = ?');
+    $stmt->execute([$projectCode]);
     $current = $stmt->fetch();
     if (!$current) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
+    $id = (int)$current['id'];
 
     // Sale อัพเดตได้เฉพาะงานของตนเอง
     if ($user['role'] === 'sale' && $current['assigned_to'] != $user['id']) {
@@ -299,25 +339,70 @@ function updateAssignment(PDO $db, array $user): void {
 
     $fields = [];
     $params = [];
+    // Phase 2b (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22): เก็บ field/param คู่ขนาน
+    // ไว้ sync ไปที่ pipeline_items mirror ด้วยทุกครั้งที่แก้ไข ไม่ใช่แค่ตอนสถานะเปลี่ยนเป็น "ชนะการประมูล" แบบเดิม
+    // ชื่อคอลัมน์ไม่ตรงกันทุกตัว: status->stage, sale_notes->notes ที่เหลือชื่อเดียวกัน
+    $piFields = [];
+    $piParams = [];
     $allowedStatuses = ['รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล','ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก'];
 
     if ($user['role'] === 'sale') {
         if (isset($body['status']) && in_array($body['status'], $allowedStatuses)) {
             $fields[] = 'status = ?'; $params[] = $body['status'];
+            $piFields[] = 'stage = ?'; $piParams[] = $body['status'];
         }
-        if (isset($body['sale_notes']))      { $fields[] = 'sale_notes = ?';      $params[] = $body['sale_notes']; }
+        if (isset($body['sale_notes'])) {
+            $fields[] = 'sale_notes = ?'; $params[] = $body['sale_notes'];
+            $piFields[] = 'notes = ?'; $piParams[] = $body['sale_notes'];
+        }
         // array_key_exists (ไม่ใช่ isset) เพราะ bid_amount ต้องเคลียร์กลับเป็น NULL ได้ — isset คืน false เมื่อค่าเป็น null ทำให้เคลียร์ไม่ได้
-        if (array_key_exists('bid_amount', $body)) { $fields[] = 'bid_amount = ?'; $params[] = ($body['bid_amount'] === null || $body['bid_amount'] === '') ? null : $body['bid_amount']; }
-        if (array_key_exists('win_loss_reason', $body)) { $fields[] = 'win_loss_reason = ?'; $params[] = $body['win_loss_reason'] ?: null; }
-        if (array_key_exists('win_loss_note', $body))   { $fields[] = 'win_loss_note = ?';   $params[] = $body['win_loss_note'] ?: null; }
+        if (array_key_exists('bid_amount', $body)) {
+            $v = ($body['bid_amount'] === null || $body['bid_amount'] === '') ? null : $body['bid_amount'];
+            $fields[] = 'bid_amount = ?'; $params[] = $v;
+            $piFields[] = 'value = ?'; $piParams[] = $v;
+        }
+        if (array_key_exists('win_loss_reason', $body)) {
+            $v = $body['win_loss_reason'] ?: null;
+            $fields[] = 'win_loss_reason = ?'; $params[] = $v;
+            $piFields[] = 'win_loss_reason = ?'; $piParams[] = $v;
+        }
+        if (array_key_exists('win_loss_note', $body)) {
+            $v = $body['win_loss_note'] ?: null;
+            $fields[] = 'win_loss_note = ?'; $params[] = $v;
+            $piFields[] = 'win_loss_note = ?'; $piParams[] = $v;
+        }
     } else {
-        if (isset($body['status']))           { $fields[] = 'status = ?';           $params[] = $body['status']; }
-        if (isset($body['priority']))          { $fields[] = 'priority = ?';          $params[] = $body['priority']; }
-        if (isset($body['secretary_notes']))  { $fields[] = 'secretary_notes = ?'; $params[] = $body['secretary_notes']; }
-        if (isset($body['sale_notes']))       { $fields[] = 'sale_notes = ?';       $params[] = $body['sale_notes']; }
-        if (array_key_exists('bid_amount', $body)) { $fields[] = 'bid_amount = ?'; $params[] = ($body['bid_amount'] === null || $body['bid_amount'] === '') ? null : $body['bid_amount']; }
-        if (array_key_exists('win_loss_reason', $body)) { $fields[] = 'win_loss_reason = ?'; $params[] = $body['win_loss_reason'] ?: null; }
-        if (array_key_exists('win_loss_note', $body))   { $fields[] = 'win_loss_note = ?';   $params[] = $body['win_loss_note'] ?: null; }
+        if (isset($body['status'])) {
+            $fields[] = 'status = ?'; $params[] = $body['status'];
+            $piFields[] = 'stage = ?'; $piParams[] = $body['status'];
+        }
+        if (isset($body['priority'])) {
+            $fields[] = 'priority = ?'; $params[] = $body['priority'];
+            $piFields[] = 'priority = ?'; $piParams[] = $body['priority'];
+        }
+        if (isset($body['secretary_notes'])) {
+            $fields[] = 'secretary_notes = ?'; $params[] = $body['secretary_notes'];
+            $piFields[] = 'secretary_notes = ?'; $piParams[] = $body['secretary_notes'];
+        }
+        if (isset($body['sale_notes'])) {
+            $fields[] = 'sale_notes = ?'; $params[] = $body['sale_notes'];
+            $piFields[] = 'notes = ?'; $piParams[] = $body['sale_notes'];
+        }
+        if (array_key_exists('bid_amount', $body)) {
+            $v = ($body['bid_amount'] === null || $body['bid_amount'] === '') ? null : $body['bid_amount'];
+            $fields[] = 'bid_amount = ?'; $params[] = $v;
+            $piFields[] = 'value = ?'; $piParams[] = $v;
+        }
+        if (array_key_exists('win_loss_reason', $body)) {
+            $v = $body['win_loss_reason'] ?: null;
+            $fields[] = 'win_loss_reason = ?'; $params[] = $v;
+            $piFields[] = 'win_loss_reason = ?'; $piParams[] = $v;
+        }
+        if (array_key_exists('win_loss_note', $body)) {
+            $v = $body['win_loss_note'] ?: null;
+            $fields[] = 'win_loss_note = ?'; $params[] = $v;
+            $piFields[] = 'win_loss_note = ?'; $piParams[] = $v;
+        }
     }
 
     if (empty($fields)) jsonResponse(false, null, 'ไม่มีข้อมูลให้อัพเดต', 400);
@@ -326,10 +411,28 @@ function updateAssignment(PDO $db, array $user): void {
     $db->prepare('UPDATE project_assignments SET ' . implode(', ', $fields) . ' WHERE id = ?')
        ->execute($params);
 
+    // Phase 2b: sync ไปที่ pipeline_items mirror ด้วย — อัพเดตเฉพาะแถวที่มี mirror อยู่แล้วเท่านั้น (ไม่บังคับสร้างใหม่ถ้ายังไม่มี
+    // งานเก่าที่ยังไม่มี mirror จะไปจัดการรวมทีเดียวใน Phase 3 แยกต่างหาก)
+    if (!empty($piFields)) {
+        $piParams[] = $current['announcement_id'];
+        $piParams[] = $current['assigned_to'];
+        $db->prepare("UPDATE pipeline_items SET " . implode(', ', $piFields) . " WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'")
+           ->execute($piParams);
+    }
+
     // บันทึก history ถ้าสถานะเปลี่ยน
     if (isset($body['status']) && $body['status'] !== $current['status']) {
         $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note) VALUES (?, ?, ?, ?, ?, ?)")
            ->execute([$id, $current['project_code'], $user['id'], $current['status'], $body['status'], $body['note'] ?? null]);
+
+        // Phase 5b: sync ประวัติไปที่ pipeline_item_history ด้วย ถ้ามี mirror อยู่แล้ว (ถูก UPDATE ให้ stage ตรงกันไปแล้วที่ด้านบน)
+        $piIdStmt = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'");
+        $piIdStmt->execute([$current['announcement_id'], $current['assigned_to']]);
+        $piId = $piIdStmt->fetchColumn();
+        if ($piId) {
+            $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)")
+               ->execute([$piId, $current['project_code'], $user['id'], $current['status'], $body['status'], $body['note'] ?? null]);
+        }
 
         // เมื่อชนะประมูล → auto สร้าง pipeline_item (เผื่อยังไม่เคยมี — ปกติจะมีจากตอนมอบหมายแล้ว) เพื่อบันทึกไว้ครบ
         if ($body['status'] === 'ชนะการประมูล') {
@@ -364,6 +467,10 @@ function updateAssignment(PDO $db, array $user): void {
                     $projectCode, $current['announcement_id'], $title, $client, $accountId,
                     $current['assigned_to'], $value
                 ]);
+                // Phase 5b: mirror เพิ่งถูกสร้างใหม่ตรงนี้ (ไม่เคยมีมาก่อน) — บันทึกประวัติแรกให้ด้วย
+                $newPiId = (int)$db->lastInsertId();
+                $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, 'Deal Signed', 'สร้างจากการชนะประมูล (ยังไม่เคยมี mirror มาก่อน)')")
+                   ->execute([$newPiId, $projectCode, $user['id']]);
             }
         }
     }
@@ -371,20 +478,24 @@ function updateAssignment(PDO $db, array $user): void {
     jsonResponse(true, null, 'อัพเดตสำเร็จ');
 }
 
+// Phase 4c: เปลี่ยนให้รับ project_code แทน id
+// แก้บั๊ก sync (พบระหว่างตรวจสอบ 2026-09-22): เดิมฟังก์ชันนี้ UPDATE project_assignments ตรงๆ ไม่เคย sync ไปที่ pipeline_items mirror
+// เลย ต่างจาก updateAssignment() ที่ sync ทุกครั้ง — เพิ่ม dual-write เข้ามาด้วยรอบนี้
 function acceptAssignment(PDO $db, array $user): void {
-    $body   = getJsonBody();
-    $id     = (int)($body['id']      ?? 0);
-    $canBid = $body['can_bid']       ?? '';
-    $reason = trim($body['reason']   ?? '');
+    $body        = getJsonBody();
+    $projectCode = $body['project_code'] ?? '';
+    $canBid      = $body['can_bid']       ?? '';
+    $reason      = trim($body['reason']   ?? '');
 
-    if (!$id || !$canBid) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
+    if (!$projectCode || !$canBid) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
     if ($canBid === 'ไม่ได้' && !$reason) jsonResponse(false, null, 'กรุณาระบุเหตุผล', 400);
 
-    $stmt = $db->prepare('SELECT * FROM project_assignments WHERE id = ? AND assigned_to = ?');
-    $stmt->execute([$id, $user['id']]);
+    $stmt = $db->prepare('SELECT * FROM project_assignments WHERE project_code = ? AND assigned_to = ?');
+    $stmt->execute([$projectCode, $user['id']]);
     $current = $stmt->fetch();
     if (!$current) jsonResponse(false, null, 'ไม่พบข้อมูลหรือไม่มีสิทธิ์', 404);
     if ($current['status'] !== 'รอดำเนินการ') jsonResponse(false, null, 'งานนี้รับไปแล้ว', 409);
+    $id = (int)$current['id'];
 
     $newStatus  = $canBid === 'ได้' ? 'รับงาน/ศึกษา TOR' : 'ยกเลิก';
     $newNotes   = $canBid === 'ไม่ได้' ? $reason : ($current['sale_notes'] ?? '');
@@ -393,8 +504,21 @@ function acceptAssignment(PDO $db, array $user): void {
     $db->prepare("UPDATE project_assignments SET status = ?, sale_notes = ? WHERE id = ?")
        ->execute([$newStatus, $newNotes, $id]);
 
+    // sync ไปที่ pipeline_items mirror ด้วย (แก้บั๊กพร้อมกันรอบนี้ — ดู comment ด้านบนฟังก์ชัน)
+    $db->prepare("UPDATE pipeline_items SET stage = ?, notes = ? WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'")
+       ->execute([$newStatus, $newNotes, $current['announcement_id'], $current['assigned_to']]);
+
     $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note) VALUES (?, ?, ?, 'รอดำเนินการ', ?, ?)")
        ->execute([$id, $current['project_code'], $user['id'], $newStatus, $histNote]);
+
+    // Phase 5b: sync ประวัติไปที่ pipeline_item_history ด้วย
+    $piIdStmt = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'");
+    $piIdStmt->execute([$current['announcement_id'], $current['assigned_to']]);
+    $piId = $piIdStmt->fetchColumn();
+    if ($piId) {
+        $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, 'รอดำเนินการ', ?, ?)")
+           ->execute([$piId, $current['project_code'], $user['id'], $newStatus, $histNote]);
+    }
 
     jsonResponse(true, ['status' => $newStatus], 'บันทึกผลสำเร็จ');
 }
@@ -411,28 +535,30 @@ function getGanttData(PDO $db, array $user): void {
     $monthStart = sprintf('%04d-%02d-01', $year, $month);
     $monthEnd   = date('Y-m-d', strtotime($monthStart . ' +1 month'));
 
-    $where  = ['pa.assigned_at >= :month_start', 'pa.assigned_at < :month_end'];
+    // Phase 5d (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22): cutover ให้อ่านจาก
+    // pipeline_items แทน project_assignments — pi.created_at ใช้แทน pa.assigned_at (pipeline_items ไม่มีคอลัมน์นี้)
+    $where  = ["pi.source_type = 'ebidding'", 'pi.created_at >= :month_start', 'pi.created_at < :month_end'];
     $params = [':month_start' => $monthStart, ':month_end' => $monthEnd];
 
     if ($user['role'] === 'sale') {
-        $where[] = 'pa.assigned_to = :uid';
+        $where[] = 'pi.assigned_to = :uid';
         $params[':uid'] = $user['id'];
     } elseif (!empty($_GET['assigned_to'])) {
-        $where[] = 'pa.assigned_to = :uid';
+        $where[] = 'pi.assigned_to = :uid';
         $params[':uid'] = (int)$_GET['assigned_to'];
     }
 
     $whereStr = 'WHERE ' . implode(' AND ', $where);
 
     $sql = "
-        SELECT pa.id, pa.status, DATE(pa.assigned_at) AS assigned_date,
+        SELECT pi.id, pi.project_code, pi.stage AS status, DATE(pi.created_at) AS assigned_date,
                a.project_name,
                u1.id AS sale_id, u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url
-        FROM project_assignments pa
-        JOIN announcements a ON a.id = pa.announcement_id
-        JOIN users u1 ON u1.id = pa.assigned_to
+        FROM pipeline_items pi
+        JOIN announcements a ON a.id = pi.announcement_id
+        JOIN users u1 ON u1.id = pi.assigned_to
         $whereStr
-        ORDER BY u1.full_name, pa.assigned_at
+        ORDER BY u1.full_name, pi.created_at
     ";
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
@@ -458,6 +584,7 @@ function getGanttData(PDO $db, array $user): void {
         if ($isAccepted) $bySale[$sid]['days'][$day]['accepted']++;
         $bySale[$sid]['days'][$day]['items'][] = [
             'id'           => (int)$r['id'],
+            'project_code' => $r['project_code'],
             'project_name' => $r['project_name'],
             'status'       => $r['status'],
             'accepted'     => $isAccepted,
@@ -480,14 +607,15 @@ function getAssignmentCalendar(PDO $db, array $user): void {
     $monthStart = sprintf('%04d-%02d-01', $year, $month);
     $monthEnd   = date('Y-m-d', strtotime($monthStart . ' +1 month'));
 
+    // Phase 5d: cutover ให้อ่านจาก pipeline_items แทน project_assignments (pi.created_at แทน pa.assigned_at)
     $stmt = $db->prepare("
-        SELECT pa.id, pa.status, DATE(pa.assigned_at) AS assigned_date,
+        SELECT pi.id, pi.project_code, pi.stage AS status, DATE(pi.created_at) AS assigned_date,
                a.project_name, u1.full_name AS sale_name
-        FROM project_assignments pa
-        JOIN announcements a ON a.id = pa.announcement_id
-        JOIN users u1 ON u1.id = pa.assigned_to
-        WHERE pa.assigned_at >= ? AND pa.assigned_at < ?
-        ORDER BY pa.assigned_at
+        FROM pipeline_items pi
+        JOIN announcements a ON a.id = pi.announcement_id
+        JOIN users u1 ON u1.id = pi.assigned_to
+        WHERE pi.source_type = 'ebidding' AND pi.created_at >= ? AND pi.created_at < ?
+        ORDER BY pi.created_at
     ");
     $stmt->execute([$monthStart, $monthEnd]);
 
@@ -500,6 +628,7 @@ function getAssignmentCalendar(PDO $db, array $user): void {
         if ($isAccepted) $byDate[$date]['accepted']++;
         $byDate[$date]['items'][] = [
             'id'           => (int)$r['id'],
+            'project_code' => $r['project_code'],
             'project_name' => $r['project_name'],
             'sale_name'    => $r['sale_name'],
             'status'       => $r['status'],
@@ -524,12 +653,14 @@ function getAssignmentCalendarByAnnounceDate(PDO $db): void {
     $monthStart = sprintf('%04d-%02d-01', $year, $month);
     $monthEnd   = date('Y-m-d', strtotime($monthStart . ' +1 month'));
 
+    // Phase 4b: อ่านจาก pipeline_items mirror แทน project_assignments — ตรวจสอบแล้วว่า item.id ในผลลัพธ์นี้
+    // ไม่ถูกหน้า company-calendar.html เอาไปใช้เรียก endpoint อื่นต่อเลย (ไม่มี nudge/reassign/detail ต่อจากปฏิทินนี้)
     $stmt = $db->prepare("
-        SELECT pa.id, pa.status, a.announce_date, a.project_name, u1.full_name AS sale_name
-        FROM project_assignments pa
-        JOIN announcements a ON a.id = pa.announcement_id
-        JOIN users u1 ON u1.id = pa.assigned_to
-        WHERE a.announce_date >= ? AND a.announce_date < ?
+        SELECT pi.id, pi.stage AS status, a.announce_date, a.project_name, u1.full_name AS sale_name
+        FROM pipeline_items pi
+        JOIN announcements a ON a.id = pi.announcement_id
+        JOIN users u1 ON u1.id = pi.assigned_to
+        WHERE pi.source_type = 'ebidding' AND a.announce_date >= ? AND a.announce_date < ?
     ");
     $stmt->execute([$monthStart, $monthEnd]);
 
@@ -595,17 +726,19 @@ function getMyCalendar(PDO $db, array $user): void {
 }
 
 /** มอบหมายงานที่มีอยู่แล้วใหม่ให้ sale คนอื่น (ย้ายเจ้าของงาน) — ใช้จาก Gantt/รายการเมื่อ sale เดิมงานล้นมือ
-    แจ้งเตือนแบบ in-app เท่านั้น (ไม่ยิง LINE/email ซ้ำ) กัน notify ซ้ำซ้อน/ไปกวนคนที่ไม่เกี่ยวข้องโดยไม่ตั้งใจ */
+    แจ้งเตือนแบบ in-app เท่านั้น (ไม่ยิง LINE/email ซ้ำ) กัน notify ซ้ำซ้อน/ไปกวนคนที่ไม่เกี่ยวข้องโดยไม่ตั้งใจ
+    Phase 4c: เปลี่ยนให้รับ project_code แทน id */
 function reassignAssignment(PDO $db, array $user): void {
     $body          = getJsonBody();
-    $id            = (int)($body['id'] ?? 0);
+    $projectCode   = $body['project_code'] ?? '';
     $newAssignedTo = (int)($body['assigned_to'] ?? 0);
-    if (!$id || !$newAssignedTo) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
+    if (!$projectCode || !$newAssignedTo) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
 
-    $stmt = $db->prepare('SELECT * FROM project_assignments WHERE id = ?');
-    $stmt->execute([$id]);
+    $stmt = $db->prepare('SELECT * FROM project_assignments WHERE project_code = ?');
+    $stmt->execute([$projectCode]);
     $current = $stmt->fetch();
     if (!$current) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
+    $id = (int)$current['id'];
 
     if ((int)$current['assigned_to'] === $newAssignedTo) jsonResponse(false, null, 'เลือก sale คนเดิม', 400);
 
@@ -628,6 +761,15 @@ function reassignAssignment(PDO $db, array $user): void {
     $db->prepare('UPDATE pipeline_items SET assigned_to = ? WHERE announcement_id = ? AND assigned_to = ?')
        ->execute([$newAssignedTo, $current['announcement_id'], $current['assigned_to']]);
 
+    // Phase 5b: sync ประวัติไปที่ pipeline_item_history ด้วย (หา id ใหม่หลัง assigned_to ถูกอัพเดตแล้วด้านบน)
+    $piIdStmt = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'");
+    $piIdStmt->execute([$current['announcement_id'], $newAssignedTo]);
+    $piId = $piIdStmt->fetchColumn();
+    if ($piId) {
+        $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)")
+           ->execute([$piId, $current['project_code'], $user['id'], $current['status'], $current['status'], "มอบหมายใหม่จาก {$oldName} ไป {$newSale['full_name']}"]);
+    }
+
     $ann = $db->prepare('SELECT project_name FROM announcements WHERE id = ?');
     $ann->execute([$current['announcement_id']]);
     $projName = $ann->fetchColumn() ?: 'งานประมูล';
@@ -639,21 +781,22 @@ function reassignAssignment(PDO $db, array $user): void {
 }
 
 /** ส่งข้อความเร่งงานแบบ in-app notification จาก salesadmin ถึง sale ที่รับผิดชอบงานนี้ — ไม่ยิง LINE/email
-    (ต่างจาก createAssignment ที่ยิงแจ้งเตือนภายนอกด้วย เพราะข้อความเร่งงานเป็นการสื่อสารภายในระบบเท่านั้น) */
+    (ต่างจาก createAssignment ที่ยิงแจ้งเตือนภายนอกด้วย เพราะข้อความเร่งงานเป็นการสื่อสารภายในระบบเท่านั้น)
+    Phase 4c: เปลี่ยนให้รับ project_code แทน id */
 function nudgeAssignment(PDO $db, array $user): void {
     $body = getJsonBody();
-    $id   = (int)($body['id'] ?? 0);
+    $projectCode = $body['project_code'] ?? '';
     $text = trim($body['message'] ?? '');
-    if (!$id)   jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
+    if (!$projectCode) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
     if (!$text) jsonResponse(false, null, 'กรุณาระบุข้อความ', 400);
 
-    $stmt = $db->prepare('SELECT assigned_to FROM project_assignments WHERE id = ?');
-    $stmt->execute([$id]);
-    $assignedTo = $stmt->fetchColumn();
-    if (!$assignedTo) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
+    $stmt = $db->prepare('SELECT id, assigned_to FROM project_assignments WHERE project_code = ?');
+    $stmt->execute([$projectCode]);
+    $row = $stmt->fetch();
+    if (!$row) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
 
     $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id) VALUES (?, 'message', 'ข้อความจากธุรการ', ?, 'assignment', ?)")
-       ->execute([$assignedTo, $text, $id]);
+       ->execute([$row['assigned_to'], $text, $row['id']]);
 
     jsonResponse(true, null, 'ส่งข้อความสำเร็จ');
 }
@@ -681,21 +824,22 @@ function periodDateRange(string $period): ?array {
 
 /** ยอดชนะประมูล (จำนวน+มูลค่า) แยกปีนี้/ไตรมาสนี้/เดือนนี้ — อิง announce_date เหมือน filter หลักของหน้า
     คำนวณตาม "วันนี้" เสมอ ไม่ขึ้นกับ period ที่ผู้ใช้เลือกอยู่บน toolbar */
+// Phase 5f: cutover ให้อ่านจาก pipeline_items แทน project_assignments ($roleWhere ที่รับมาจาก getKanban() ใช้ pi. prefix แล้ว)
 function wonBreakdown(PDO $db, array $roleWhere, array $roleParams): array {
     $result = [];
     foreach (['year', 'quarter', 'month'] as $key) {
         [$start, $end] = periodDateRange($key);
         $where  = $roleWhere;
         $where[] = 'a.announce_date >= :wb_start AND a.announce_date < :wb_end';
-        $where[] = "pa.status IN ('ชนะการประมูล','ส่งมอบแล้ว')";
+        $where[] = "pi.stage IN ('ชนะการประมูล','ส่งมอบแล้ว')";
         $params = $roleParams;
         $params[':wb_start'] = $start;
         $params[':wb_end']   = $end;
 
         $sql = "
             SELECT COUNT(*) AS cnt, COALESCE(SUM(a.price_median), 0) AS val
-            FROM project_assignments pa
-            JOIN announcements a ON a.id = pa.announcement_id
+            FROM pipeline_items pi
+            JOIN announcements a ON a.id = pi.announcement_id
             WHERE " . implode(' AND ', $where) . "
         ";
         $stmt = $db->prepare($sql);
@@ -707,27 +851,31 @@ function wonBreakdown(PDO $db, array $roleWhere, array $roleParams): array {
 }
 
 /** ดึง project_assignments ตาม where/params ที่กำหนด แล้วจัดกลุ่มตาม status (stage) เป็น kanban buckets */
+// Phase 5f (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22): cutover ให้อ่านจาก
+// pipeline_items + pipeline_item_history แทน project_assignments + assignment_history เต็มรูปแบบ
+// (Phase 5a/5b เตรียม pipeline_item_history ให้มีประวัติงานประมูลครบแล้ว จึงใช้แทนกันได้)
 function fetchKanbanBuckets(PDO $db, array $where, array $params): array {
     $whereStr = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     $sql = "
-        SELECT pa.id, pa.project_code, pa.status, pa.priority, pa.sla_status,
-               pa.bid_amount, pa.win_loss_reason, pa.win_loss_note,
-               pa.sla_deadline, pa.assigned_at,
+        SELECT pi.id, pi.project_code, pi.stage AS status, pi.priority, pi.sla_status,
+               pi.value AS bid_amount, pi.win_loss_reason, pi.win_loss_note,
+               pi.sla_deadline, pi.created_at AS assigned_at,
                a.project_no, a.project_name, a.unit_name, a.close_date, a.price_median,
                u1.id AS sale_id, u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url,
-               COALESCE(h.last_changed_at, pa.assigned_at) AS stage_entered_at
-        FROM project_assignments pa
-        JOIN announcements a ON a.id = pa.announcement_id
-        JOIN users u1 ON u1.id = pa.assigned_to
+               COALESCE(h.last_changed_at, pi.created_at) AS stage_entered_at
+        FROM pipeline_items pi
+        JOIN announcements a ON a.id = pi.announcement_id
+        JOIN users u1 ON u1.id = pi.assigned_to
         LEFT JOIN (
-            SELECT assignment_id, MAX(changed_at) AS last_changed_at
-            FROM assignment_history
-            GROUP BY assignment_id
-        ) h ON h.assignment_id = pa.id
+            SELECT pipeline_item_id, MAX(changed_at) AS last_changed_at
+            FROM pipeline_item_history
+            GROUP BY pipeline_item_id
+        ) h ON h.pipeline_item_id = pi.id
         $whereStr
-        ORDER BY FIELD(pa.status,'รอดำเนินการ','รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล','ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก'),
+        ORDER BY FIELD(pi.stage,'รอดำเนินการ','รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล','ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก'),
                  stage_entered_at DESC
     ";
+    // หมายเหตุ: $where ต้องมี pi.source_type = 'ebidding' เสมอ — ผู้เรียก (getKanban()) เพิ่มเงื่อนไขนี้ให้แล้ว
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
 
@@ -743,15 +891,16 @@ function sumPriceMedian(array $rows): float {
     return array_reduce($rows, fn($sum, $r) => $sum + (float)($r['price_median'] ?? 0), 0.0);
 }
 
+// Phase 5f: cutover ให้อ่านจาก pipeline_items แทน project_assignments (ดู comment ที่ fetchKanbanBuckets())
 function getKanban(PDO $db, array $user): void {
-    $where  = [];
+    $where  = ["pi.source_type = 'ebidding'"];
     $params = [];
 
     if ($user['role'] === 'sale') {
-        $where[] = 'pa.assigned_to = :uid';
+        $where[] = 'pi.assigned_to = :uid';
         $params[':uid'] = $user['id'];
     } elseif (!empty($_GET['assigned_to'])) {
-        $where[] = 'pa.assigned_to = :uid';
+        $where[] = 'pi.assigned_to = :uid';
         $params[':uid'] = (int)$_GET['assigned_to'];
     }
 
@@ -775,11 +924,11 @@ function getKanban(PDO $db, array $user): void {
     // ตัวกรองเพิ่มเติม (ความสำคัญ/สถานะ SLA/หน่วยงาน) — กรองเฉพาะ Kanban board ที่แสดง ไม่กระทบการ์ดสถิติด้านบน
     // เหมือนตัวกรอง period (ใช้ $boardWhere ไม่ใช่ $roleWhere)
     if (!empty($_GET['priority'])) {
-        $boardWhere[] = 'pa.priority = :priority';
+        $boardWhere[] = 'pi.priority = :priority';
         $boardParams[':priority'] = $_GET['priority'];
     }
     if (!empty($_GET['sla_status'])) {
-        $boardWhere[] = 'pa.sla_status = :sla_status';
+        $boardWhere[] = 'pi.sla_status = :sla_status';
         $boardParams[':sla_status'] = $_GET['sla_status'];
     }
     if (!empty($_GET['unit_name'])) {
@@ -824,14 +973,15 @@ function getKanban(PDO $db, array $user): void {
     if (empty($_GET['assigned_to'])) {
         $saleSql = "
             SELECT u.id, u.full_name, u.avatar_color, u.photo_url,
-                   SUM(pa.status IN ('รอดำเนินการ','รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ')) AS active,
-                   SUM(pa.status = 'รอประกาศผล') AS submitted,
-                   SUM(pa.status IN ('ชนะการประมูล','ส่งมอบแล้ว')) AS won,
-                   SUM(pa.status = 'แพ้การประมูล') AS lost,
-                   SUM(CASE WHEN pa.status IN ('ชนะการประมูล','ส่งมอบแล้ว') THEN COALESCE(a.price_median,0) ELSE 0 END) AS won_value
-            FROM project_assignments pa
-            JOIN users u ON u.id = pa.assigned_to
-            JOIN announcements a ON a.id = pa.announcement_id
+                   SUM(pi.stage IN ('รอดำเนินการ','รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ')) AS active,
+                   SUM(pi.stage = 'รอประกาศผล') AS submitted,
+                   SUM(pi.stage IN ('ชนะการประมูล','ส่งมอบแล้ว')) AS won,
+                   SUM(pi.stage = 'แพ้การประมูล') AS lost,
+                   SUM(CASE WHEN pi.stage IN ('ชนะการประมูล','ส่งมอบแล้ว') THEN COALESCE(a.price_median,0) ELSE 0 END) AS won_value
+            FROM pipeline_items pi
+            JOIN users u ON u.id = pi.assigned_to
+            JOIN announcements a ON a.id = pi.announcement_id
+            WHERE pi.source_type = 'ebidding'
             GROUP BY u.id, u.full_name, u.avatar_color, u.photo_url
             ORDER BY won DESC, active DESC
         ";
@@ -851,11 +1001,11 @@ function getKanban(PDO $db, array $user): void {
     $roleWhereStr = $roleWhere ? 'WHERE ' . implode(' AND ', $roleWhere) : '';
     $histSql = "
         SELECT a.price_median,
-               (SELECT h.new_status FROM assignment_history h
-                WHERE h.assignment_id = pa.id AND h.changed_at <= :cutoff
+               (SELECT h.new_stage FROM pipeline_item_history h
+                WHERE h.pipeline_item_id = pi.id AND h.changed_at <= :cutoff
                 ORDER BY h.changed_at DESC LIMIT 1) AS status_7d_ago
-        FROM project_assignments pa
-        JOIN announcements a ON a.id = pa.announcement_id
+        FROM pipeline_items pi
+        JOIN announcements a ON a.id = pi.announcement_id
         $roleWhereStr
     ";
     $histParams = $roleParams;

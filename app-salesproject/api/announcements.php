@@ -70,10 +70,12 @@ function buildWhereFromFilters(array &$params): string {
         }
     }
     if (isset($_GET['has_assignment'])) {
+        // Phase 4a (แผน refactor project_assignments/pipeline_items — ยืนยันจากผู้ใช้ 2026-09-22): อ่านจาก pipeline_items
+        // mirror แทน project_assignments — pipeline_items ถูก dual-write ครบ 100% แล้วตั้งแต่ Phase 2/3
         if ($_GET['has_assignment'] === '1') {
-            $where[] = 'EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.announcement_id = a.id)';
+            $where[] = "EXISTS (SELECT 1 FROM pipeline_items pi WHERE pi.announcement_id = a.id AND pi.source_type = 'ebidding')";
         } else {
-            $where[] = 'NOT EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.announcement_id = a.id)';
+            $where[] = "NOT EXISTS (SELECT 1 FROM pipeline_items pi WHERE pi.announcement_id = a.id AND pi.source_type = 'ebidding')";
         }
     }
     if (!empty($_GET['source_type'])) {
@@ -98,7 +100,7 @@ function buildWhereFromFilters(array &$params): string {
     if (!empty($_GET['pending_action']) && $_GET['pending_action'] === '1') {
         $where[] = "(a.bid_decision IS NULL
             OR (a.bid_decision = 'เข้าประมูล'
-                AND NOT EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.announcement_id = a.id)))";
+                AND NOT EXISTS (SELECT 1 FROM pipeline_items pi WHERE pi.announcement_id = a.id AND pi.source_type = 'ebidding')))";
     }
     return $where ? 'WHERE ' . implode(' AND ', $where) : '';
 }
@@ -112,10 +114,10 @@ function listAnnouncements(PDO $db, array $user): void {
                a.price_median, a.filter_status, a.can_bid, a.keyword_match, a.source_type,
                a.bid_decision, a.decision_reason, a.decided_at,
                (SELECT full_name FROM users WHERE id = a.decided_by) AS decided_by_name,
-               (SELECT COUNT(*) FROM project_assignments pa WHERE pa.announcement_id = a.id) AS assignment_count,
+               (SELECT COUNT(*) FROM pipeline_items pi WHERE pi.announcement_id = a.id AND pi.source_type = 'ebidding') AS assignment_count,
                (SELECT GROUP_CONCAT(u.full_name ORDER BY u.full_name SEPARATOR ', ')
-                FROM project_assignments pa JOIN users u ON u.id = pa.assigned_to
-                WHERE pa.announcement_id = a.id) AS assigned_to_names
+                FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to
+                WHERE pi.announcement_id = a.id AND pi.source_type = 'ebidding') AS assigned_to_names
         FROM announcements a $where
         ORDER BY FIELD(a.can_bid,'ได้','ต้องตรวจสอบ','ไม่ได้'), a.price_median DESC
     ";
@@ -149,11 +151,11 @@ function datatables(PDO $db): void {
                a.price_median, a.filter_status, a.can_bid, a.keyword_match, a.source_type,
                a.bid_decision, a.decision_reason, a.decided_at,
                (SELECT full_name FROM users WHERE id = a.decided_by) AS decided_by_name,
-               (SELECT COUNT(*) FROM project_assignments pa WHERE pa.announcement_id = a.id) AS assignment_count,
+               (SELECT COUNT(*) FROM pipeline_items pi WHERE pi.announcement_id = a.id AND pi.source_type = 'ebidding') AS assignment_count,
                (SELECT GROUP_CONCAT(u.full_name ORDER BY u.full_name SEPARATOR ', ')
-                FROM project_assignments pa JOIN users u ON u.id = pa.assigned_to
-                WHERE pa.announcement_id = a.id) AS assigned_to_names,
-               (SELECT pa2.status FROM project_assignments pa2 WHERE pa2.announcement_id = a.id ORDER BY pa2.assigned_at DESC LIMIT 1) AS assignment_status
+                FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to
+                WHERE pi.announcement_id = a.id AND pi.source_type = 'ebidding') AS assigned_to_names,
+               (SELECT pi2.stage FROM pipeline_items pi2 WHERE pi2.announcement_id = a.id AND pi2.source_type = 'ebidding' ORDER BY pi2.created_at DESC LIMIT 1) AS assignment_status
         FROM announcements a $where
         ORDER BY FIELD(a.can_bid,'ได้','ต้องตรวจสอบ','ไม่ได้'), a.price_median DESC
         LIMIT :lmt OFFSET :off
@@ -182,14 +184,16 @@ function getDetail(PDO $db, array $user): void {
     $row = $stmt->fetch();
     if (!$row) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
 
+    // Phase 4a: อ่านจาก pipeline_items mirror แทน project_assignments — id ที่คืนมาใช้แค่เป็น Vue :key ในหน้าเว็บ
+    // (ไม่มีหน้าไหนเอา id นี้ไปเรียก endpoint อื่นต่อ ตรวจสอบแล้ว) จึงใช้ pipeline_items.id แทนได้โดยไม่กระทบ
     $stmt2 = $db->prepare("
-        SELECT pa.id, pa.status, pa.priority, pa.sla_status, pa.assigned_at,
+        SELECT pi.id, pi.stage AS status, pi.priority, pi.sla_status, pi.created_at AS assigned_at,
                u1.full_name AS assigned_to_name, u1.avatar_color, u1.photo_url,
                u2.full_name AS assigned_by_name
-        FROM project_assignments pa
-        JOIN users u1 ON u1.id = pa.assigned_to
-        JOIN users u2 ON u2.id = pa.assigned_by
-        WHERE pa.announcement_id = ? ORDER BY pa.assigned_at DESC
+        FROM pipeline_items pi
+        JOIN users u1 ON u1.id = pi.assigned_to
+        JOIN users u2 ON u2.id = pi.assigned_by
+        WHERE pi.announcement_id = ? AND pi.source_type = 'ebidding' ORDER BY pi.created_at DESC
     ");
     $stmt2->execute([$id]);
     $row['assignments'] = $stmt2->fetchAll();
@@ -222,10 +226,11 @@ function updateUnitName(PDO $db, array $user): void {
     if (!in_array($accountType, ['government', 'private'], true)) jsonResponse(false, null, 'กรุณาระบุประเภทหน่วยงาน', 400);
     if ($user['role'] !== 'sale') jsonResponse(false, null, 'เฉพาะ sale เจ้าของงานเท่านั้นที่แก้ไขได้', 403);
 
+    // Phase 4a: อ่านจาก pipeline_items mirror แทน project_assignments (แค่เช็คสิทธิ์เจ้าของงาน)
     $stmt = $db->prepare("
-        SELECT a.source_type, pa.assigned_to
+        SELECT a.source_type, pi.assigned_to
         FROM announcements a
-        JOIN project_assignments pa ON pa.announcement_id = a.id
+        JOIN pipeline_items pi ON pi.announcement_id = a.id AND pi.source_type = 'ebidding'
         WHERE a.id = ?
     ");
     $stmt->execute([$announcementId]);
@@ -343,10 +348,10 @@ function getSummary(PDO $db): void {
             SUM(CASE WHEN bid_decision = 'เข้าประมูล' THEN 1 ELSE 0 END) AS can_bid,
             SUM(CASE WHEN bid_decision = 'ไม่เข้าประมูล' THEN 1 ELSE 0 END) AS cannot_bid,
             SUM(CASE WHEN bid_decision = 'เข้าประมูล'
-                AND EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.announcement_id = announcements.id)
+                AND EXISTS (SELECT 1 FROM pipeline_items pi WHERE pi.announcement_id = announcements.id AND pi.source_type = 'ebidding')
                 THEN 1 ELSE 0 END) AS assigned,
             SUM(CASE WHEN bid_decision = 'เข้าประมูล'
-                AND NOT EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.announcement_id = announcements.id)
+                AND NOT EXISTS (SELECT 1 FROM pipeline_items pi WHERE pi.announcement_id = announcements.id AND pi.source_type = 'ebidding')
                 THEN 1 ELSE 0 END) AS waiting_assign
         FROM announcements
         $where

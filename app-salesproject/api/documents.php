@@ -13,22 +13,25 @@ switch ($action) {
     default: jsonResponse(false, null, 'Unknown action', 400);
 }
 
-/** หา path โฟลเดอร์เอกสารของ assignment หรือ announcement นี้ พร้อมตรวจสิทธิ์เข้าถึง */
-function resolveDocFolder(PDO $db, array $user, string $type, int $id): ?string {
+/** หา path โฟลเดอร์เอกสารของ assignment หรือ announcement นี้ พร้อมตรวจสิทธิ์เข้าถึง
+    Phase 4c (แก้ต่อ — ยืนยันจากผู้ใช้ 2026-09-22): $projectNo คือ announcements.project_no (เลขที่โครงการจาก e-GP
+    เช่น 69089668758) ตัวเชื่อมจริงที่ใช้หาโฟลเดอร์บน network share อยู่แล้ว เป็น UNIQUE ในตัวเอง ไม่ต้องพึ่ง
+    project_assignments.id/project_code เป็นตัวกลางอีกที — เดิมใช้ project_code ซึ่งอ้อมและผูกกับตารางเราโดยไม่จำเป็น */
+function resolveDocFolder(PDO $db, array $user, string $type, string $projectNo): ?string {
     if ($type === 'announcement') {
         // ยังไม่มีการมอบหมายงาน (อยู่ขั้นตอนตัดสินใจ) — ดูได้เฉพาะคนที่คัดกรองประกาศ
         requireRole(['admin', 'salesadmin']);
-        $stmt = $db->prepare('SELECT project_no, announce_date FROM announcements WHERE id = ?');
-        $stmt->execute([$id]);
+        $stmt = $db->prepare('SELECT project_no, announce_date FROM announcements WHERE project_no = ?');
+        $stmt->execute([$projectNo]);
     } else {
         $extra = ($user['role'] === 'sale') ? 'AND pa.assigned_to = ?' : '';
-        $args  = ($user['role'] === 'sale') ? [$id, $user['id']] : [$id];
+        $args  = ($user['role'] === 'sale') ? [$projectNo, $user['id']] : [$projectNo];
 
         $stmt = $db->prepare("
             SELECT a.project_no, a.announce_date
             FROM project_assignments pa
             JOIN announcements a ON a.id = pa.announcement_id
-            WHERE pa.id = ? $extra
+            WHERE a.project_no = ? $extra
         ");
         $stmt->execute($args);
     }
@@ -48,11 +51,13 @@ function resolveDocFolder(PDO $db, array $user, string $type, int $id): ?string 
     return DOC_SHARE_ROOT . $sep . $beYear . $sep . $m . $sep . $folderDate . $sep . 'documents' . $sep . $projectNo;
 }
 
+// Phase 4c (แก้ต่อ — ยืนยันจากผู้ใช้ 2026-09-22): ทั้ง 2 type ใช้ project_no (เลขที่โครงการจาก e-GP) พารามิเตอร์เดียวกัน
+// เพราะเป็นตัวเชื่อมจริงที่ resolveDocFolder() ใช้หาโฟลเดอร์บน network share อยู่แล้ว
 function listDocuments(PDO $db, array $user, string $type): void {
-    $id = (int)($_GET['id'] ?? 0);
-    if (!$id) jsonResponse(false, null, 'Invalid ID', 400);
+    $projectNo = $_GET['project_no'] ?? '';
+    if ($projectNo === '') jsonResponse(false, null, 'Invalid ID', 400);
 
-    $dir = resolveDocFolder($db, $user, $type, $id);
+    $dir = resolveDocFolder($db, $user, $type, $projectNo);
     if ($dir === null) jsonResponse(false, null, 'ไม่พบข้อมูลงาน หรือไม่มีสิทธิ์เข้าถึง', 404);
 
     // รองรับ 2 โครงสร้างเพิ่มเติมที่เจอบนโฟลเดอร์ทดสอบ local เท่านั้น นอกจากโครงสร้างจริงของ production
@@ -107,13 +112,13 @@ function findFlatZipFiles(string $projectDir): array {
 }
 
 function downloadDocument(PDO $db, array $user, string $type): void {
-    $id   = (int)($_GET['id'] ?? 0);
-    $file = (string)($_GET['file'] ?? '');
-    if (!$id || $file === '' || $file !== basename($file)) {
+    $projectNo = $_GET['project_no'] ?? '';
+    $file      = (string)($_GET['file'] ?? '');
+    if ($projectNo === '' || $file === '' || $file !== basename($file)) {
         jsonResponse(false, null, 'คำขอไม่ถูกต้อง', 400);
     }
 
-    $dir = resolveDocFolder($db, $user, $type, $id);
+    $dir = resolveDocFolder($db, $user, $type, $projectNo);
     if ($dir === null) jsonResponse(false, null, 'ไม่พบข้อมูลงาน หรือไม่มีสิทธิ์เข้าถึง', 404);
 
     // ต้องเช็คตำแหน่งไฟล์ให้ตรงกับลำดับเดียวกับ listDocuments() ทุกจุด (extracted/ ก่อน แล้วโฟลเดอร์ตรงๆ

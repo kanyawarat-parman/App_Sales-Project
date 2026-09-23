@@ -379,16 +379,20 @@ const SharedMethods = {
   },
 
   // ใช้ใน: bid-pipeline.html, my-assignments.html (เรียกเฉยๆ ใช้ modalType default 'detail'),
-  // assignments.html (เรียกแบบ openDetail(id, 'assign-detail') เพราะหน้านี้ตั้งชื่อ modal.type ต่างออกไป)
+  // assignments.html (เรียกแบบ openDetail(projectCode, 'assign-detail') เพราะหน้านี้ตั้งชื่อ modal.type ต่างออกไป)
   // ดึงรายละเอียดงานประมูล + เอกสารแนบที่เกี่ยวข้อง แล้วเปิด modal
-  async openDetail(id, modalType = 'detail') {
-    const res = await apiCall('GET', `api/assignments.php?action=detail&id=${id}`);
+  // Phase 4c: เปลี่ยนให้รับ project_code แทน id (project_assignments.id) สำหรับ action=detail
+  // ส่วน documents.php ใช้ project_no (เลขที่โครงการจาก e-GP) แทน — คือตัวเชื่อมจริงที่ resolveDocFolder() ใช้หา
+  // โฟลเดอร์บน network share อยู่แล้ว (ยืนยันจากผู้ใช้ 2026-09-22) ได้ค่านี้จาก response ของ action=detail เอง
+  async openDetail(projectCode, modalType = 'detail') {
+    const res = await apiCall('GET', `api/assignments.php?action=detail&project_code=${encodeURIComponent(projectCode)}`);
     if (res.success) this.modal = { type: modalType, data: res.data };
 
     this.docs = null;
     this.docsLoading = true;
     try {
-      const dr = await apiCall('GET', `api/documents.php?action=list&id=${id}`);
+      const projectNo = res.data?.project_no;
+      const dr = await apiCall('GET', `api/documents.php?action=list&project_no=${encodeURIComponent(projectNo)}`);
       this.docs = dr.success ? dr.data : { available: false, files: [] };
     } catch {
       this.docs = { available: false, files: [] };

@@ -405,7 +405,7 @@
               <div v-if="docsLoading" class="text-base text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
               <template v-else-if="docs?.available && docs.files.length">
                 <a v-for="f in docs.files" :key="f.name"
-                   :href="`api/documents.php?action=download&type=announcement&id=${detailData.id}&file=${encodeURIComponent(f.name)}`"
+                   :href="`api/documents.php?action=download&type=announcement&project_no=${encodeURIComponent(detailData.project_no)}&file=${encodeURIComponent(f.name)}`"
                    target="_blank" rel="noopener"
                    class="flex items-center gap-2 py-2.5 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-base text-slate-700 no-underline transition-colors">
                   <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
@@ -520,19 +520,22 @@
 
     <!-- ══════════════ Assign Modal ══════════════ -->
     <div v-if="modal.type==='assign'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
-      <div class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden">
-        <div class="bg-teal-600 text-white px-6 py-5">
+      <div class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        <div class="bg-teal-600 text-white px-6 py-5 shrink-0">
           <h3 class="text-[1.1rem] font-bold m-0">มอบหมายงานให้ Sale</h3>
           <div class="text-[.82rem] opacity-75 mt-1 max-w-[380px] overflow-hidden text-ellipsis whitespace-nowrap">{{ modal.data?.project_name }}</div>
         </div>
-        <div class="p-6">
+        <div class="p-6 overflow-y-auto flex-1">
           <label class="block text-[.85rem] font-bold text-slate-600 mb-2">เลือก Sale ที่รับงาน:</label>
-          <div class="flex flex-col gap-2 mt-3 mb-4">
-            <div v-for="s in saleUsers" :key="s.id"
+          <!-- จำกัดความสูงเฉพาะรายชื่อ sale ให้เลื่อนแยกส่วนตัวเอง (ยืนยันจากผู้ใช้ 2026-09-23) กัน "ความสำคัญ"/"หมายเหตุ"/ปุ่มมอบหมาย
+               ต้องเลื่อนผ่านรายชื่อทั้งหมดก่อนถึง ถ้ามี sale จำนวนมาก — เห็นพอดีประมาณ 4 คนแล้วเลื่อนดูคนที่เหลือในกล่องนี้ -->
+          <div class="flex flex-col gap-2 mt-3 mb-4 max-h-[280px] overflow-y-auto pr-1">
+            <div v-for="s in sortedSaleUsers" :key="s.id"
                  class="flex items-center gap-3 px-3.5 py-2.5 border-2 rounded-xl cursor-pointer transition-all"
                  :class="assignForm.assigned_to===s.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-200'"
                  @click="assignForm.assigned_to=s.id">
-              <div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-[.85rem] shrink-0"
+              <img v-if="s.photo_url" :src="s.photo_url" class="w-9 h-9 rounded-full object-cover shrink-0" />
+              <div v-else class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-[.85rem] shrink-0"
                    :style="{background: s.avatar_color||'#64748b'}">
                 {{ s.full_name?.charAt(0) }}
               </div>
@@ -570,7 +573,7 @@
                       rows="2" placeholder="เช่น ต้องนำแค็ตตาล็อก, เตรียมใบเสนอราคาพิเศษ..."></textarea>
           </div>
         </div>
-        <div class="px-6 py-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-100">
+        <div class="px-6 py-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-100 shrink-0">
           <button class="px-4 py-2 rounded-xl text-sm font-medium bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
           <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   @click="saveAssign" :disabled="!assignForm.assigned_to || saving">
@@ -625,6 +628,13 @@ const SalesAdminApp = {
         { label: 'ส่ง Sale แล้ว',    count: this.summary.assigned       || 0 },
         { label: 'ไม่เข้าประมูล',    count: this.summary.cannot_bid     || 0 },
       ];
+    },
+    // เอาคนที่เข้าเวรวันนี้ขึ้นบนสุดของรายชื่อเสมอ — กันต้องเลื่อนหาถ้ามี sale จำนวนมาก
+    // (ยืนยันจากผู้ใช้ 2026-09-23) เพราะเป็นตัวเลือกที่ระบบ pre-select ให้อยู่แล้ว ควรเห็นทันทีไม่ต้องเลื่อนหา
+    sortedSaleUsers() {
+      if (!this.rotationDuty) return this.saleUsers;
+      const dutyId = this.rotationDuty.id;
+      return [...this.saleUsers].sort((a, b) => (a.id === dutyId ? -1 : b.id === dutyId ? 1 : 0));
     },
     // วันที่เลือกอยู่ ไม่ใช่วันทำงานของปฏิทินอ้างอิงแหล่ง e-GP (นอกวันทำงานประจำสัปดาห์ หรือตรงวันหยุด) — เตือน salesadmin กันงงว่าทำไมไม่มีประกาศ
     selectedDateIsOff() {
@@ -753,7 +763,7 @@ const SalesAdminApp = {
       this.docs = null;
       this.docsLoading = true;
       try {
-        const dr = await apiCall('GET', `api/documents.php?action=list&type=announcement&id=${row.id}`);
+        const dr = await apiCall('GET', `api/documents.php?action=list&type=announcement&project_no=${encodeURIComponent(row.project_no)}`);
         this.docs = dr.success ? dr.data : { available: false, files: [] };
       } catch {
         this.docs = { available: false, files: [] };
@@ -792,13 +802,20 @@ const SalesAdminApp = {
     async saveAssign() {
       if (!this.assignForm.assigned_to) { await this.showAlert('กรุณาเลือก Sale', 'error'); return; }
       this.saving = true;
-      const r = await apiCall('POST', 'api/assignments.php?action=create', {
-        announcement_id: this.modal.data.id,
-        assigned_to: this.assignForm.assigned_to,
-        priority: this.assignForm.priority,
-        secretary_notes: this.assignForm.secretary_notes,
-      });
-      this.saving = false;
+      let r;
+      try {
+        r = await apiCall('POST', 'api/assignments.php?action=create', {
+          announcement_id: this.modal.data.id,
+          assigned_to: this.assignForm.assigned_to,
+          priority: this.assignForm.priority,
+          secretary_notes: this.assignForm.secretary_notes,
+        });
+      } catch {
+        // server ตอบกลับไม่ใช่ JSON (เช่น PHP error) — ไม่ให้ปุ่มค้างที่ "กำลังบันทึก..."
+        r = { success: false, message: 'บันทึกไม่สำเร็จ ระบบขัดข้อง กรุณาแจ้งผู้ดูแลระบบ' };
+      } finally {
+        this.saving = false;
+      }
       if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
       this.closeModal();
       await Promise.all([this.loadSummary(), this.loadSaleUsers(), this.loadTab()]);

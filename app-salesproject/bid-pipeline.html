@@ -448,7 +448,7 @@
               <div v-for="card in stageCards(stage.key)" :key="card.id"
                 class="bg-white rounded-xl p-3 shadow-sm ring-1 cursor-pointer hover:shadow-md transition-shadow"
                 :class="isCloseOverdue(card) ? 'ring-2 ring-red-300' : 'ring-slate-100'"
-                @click="openDetail(card.id)">
+                @click="openDetail(card.project_code)">
                 <!-- รหัสงานกลาง (project_code) + เลขโครงการ e-GP (project_no) -->
                 <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
                   <span v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ card.project_code }}</span>
@@ -509,7 +509,7 @@
           <div v-for="card in filteredFlatCards" :key="card.id"
             class="bg-white rounded-xl p-3 shadow-sm ring-1 cursor-pointer hover:shadow-md transition-shadow"
             :class="isCloseOverdue(card) ? 'ring-2 ring-red-300' : 'ring-slate-100'"
-            @click="openDetail(card.id)">
+            @click="openDetail(card.project_code)">
             <!-- รหัสงานกลาง (project_code) + เลขโครงการ e-GP (project_no) + badge สถานะ (จำเป็นเฉพาะมุมมองนี้ เพราะรวมหลายสถานะไว้ในลิสต์เดียว) -->
             <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
               <span v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ card.project_code }}</span>
@@ -682,7 +682,7 @@
             <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
             <template v-else-if="docs?.available && docs.files.length">
               <a v-for="f in docs.files" :key="f.name"
-                 :href="`api/documents.php?action=download&id=${modal.data.id}&file=${encodeURIComponent(f.name)}`"
+                 :href="`api/documents.php?action=download&project_no=${encodeURIComponent(modal.data.project_no)}&file=${encodeURIComponent(f.name)}`"
                  target="_blank" rel="noopener"
                  class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
                 <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
@@ -1455,7 +1455,7 @@ createApp({
       const self = this;
       $('#bidPipelineTable').on('click', 'tbody tr', function () {
         const card = $('#bidPipelineTable').DataTable().row(this).data();
-        if (card) self.openDetail(card.id);
+        if (card) self.openDetail(card.project_code);
       });
     },
 
@@ -1670,7 +1670,7 @@ createApp({
     prevStage(status) { return PREV_MAP[status] || null; },
 
     async moveCard(card, newStatus) {
-      const res = await apiCall('POST', 'api/assignments.php?action=update', { id: card.id, status: newStatus });
+      const res = await apiCall('POST', 'api/assignments.php?action=update', { project_code: card.project_code, status: newStatus });
       if (res.success) {
         this.loadData();
         await this.showAlert('ย้ายสถานะสำเร็จ', 'success');
@@ -1699,14 +1699,14 @@ createApp({
     },
 
     openWinLoss(card, newStatus) {
-      this.winLossForm = { id: card.id, newStatus, reason: '', note: '', bid_amount: card.bid_amount || null };
+      this.winLossForm = { project_code: card.project_code, newStatus, reason: '', note: '', bid_amount: card.bid_amount || null };
       this.modal = { type: 'win-loss', data: card };
     },
 
     async submitWinLoss() {
       if (!this.winLossForm.reason) { await this.showAlert('กรุณาเลือกเหตุผล', 'error'); return; }
       const payload = {
-        id:              this.winLossForm.id,
+        project_code:    this.winLossForm.project_code,
         status:          this.winLossForm.newStatus,
         win_loss_reason: this.winLossForm.reason,
         win_loss_note:   this.winLossForm.note,

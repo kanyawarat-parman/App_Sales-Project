@@ -138,7 +138,7 @@
                     <span class="text-[11px] text-slate-400 font-mono">{{ a.project_no }}</span>
                   </div>
                   <h4 class="font-bold text-slate-800 text-sm mb-0.5 line-clamp-2 cursor-pointer hover:text-teal-700"
-                      @click="openDetail(a.id)">{{ a.project_name }}</h4>
+                      @click="openDetail(a.project_code)">{{ a.project_name }}</h4>
                   <p class="text-xs text-slate-400">{{ a.unit_name }}</p>
                 </div>
 
@@ -154,7 +154,7 @@
                     รับทราบ-ตัดสินใจ
                   </button>
                   <button class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 border-0 cursor-pointer"
-                    @click="openDetail(a.id)">รายละเอียด</button>
+                    @click="openDetail(a.project_code)">รายละเอียด</button>
                 </div>
               </div>
 
@@ -321,7 +321,7 @@
             <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
             <template v-else-if="docs?.available && docs.files.length">
               <a v-for="f in docs.files" :key="f.name"
-                 :href="`api/documents.php?action=download&id=${modal.data.id}&file=${encodeURIComponent(f.name)}`"
+                 :href="`api/documents.php?action=download&project_no=${encodeURIComponent(modal.data.project_no)}&file=${encodeURIComponent(f.name)}`"
                  target="_blank" rel="noopener"
                  class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
                 <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
@@ -399,7 +399,7 @@ createApp({
       loading: false,
       assignments: [],
       activeTab: 'pending',
-      acceptForm: { id: null, can_bid: '', reason: '' },
+      acceptForm: { project_code: null, can_bid: '', reason: '' },
       tabs: [
         { key: 'pending', label: 'รอรับงาน' },
         { key: 'active',  label: 'ดำเนินการ' },
@@ -486,7 +486,7 @@ createApp({
 
     // รับทราบ — เปิด modal ตัดสินใจจุดเดียว ไม่ preset ค่า ได้/ไม่ได้ ไว้ล่วงหน้า บังคับให้ sale เลือกเองก่อนบันทึกได้
     openDecisionModal(assignment) {
-      this.acceptForm = { id: assignment.id, can_bid: '', reason: '' };
+      this.acceptForm = { project_code: assignment.project_code, can_bid: '', reason: '' };
       this.modal = { type: 'accept', data: assignment };
     },
 

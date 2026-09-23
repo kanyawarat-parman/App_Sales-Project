@@ -169,12 +169,12 @@
               <div class="flex flex-wrap gap-2 sm:shrink-0">
                 <template v-if="!item.accepted">
                   <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-100 border-0 cursor-pointer"
-                    @click="openNudgeModal({ id: item.id, project_name: item.project_name, sale_name: ganttDetail.saleName })">ส่งข้อความเร่งงาน</button>
+                    @click="openNudgeModal({ project_code: item.project_code, project_name: item.project_name, sale_name: ganttDetail.saleName })">ส่งข้อความเร่งงาน</button>
                   <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-100 border-0 cursor-pointer"
-                    @click="openReassignModal({ id: item.id, project_name: item.project_name, sale_name: ganttDetail.saleName, assigned_to: ganttDetail.saleId })">มอบหมายใหม่</button>
+                    @click="openReassignModal({ project_code: item.project_code, project_name: item.project_name, sale_name: ganttDetail.saleName, assigned_to: ganttDetail.saleId })">มอบหมายใหม่</button>
                 </template>
                 <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer"
-                  @click="openDetail(item.id, 'assign-detail')">ดูรายละเอียด</button>
+                  @click="openDetail(item.project_code, 'assign-detail')">ดูรายละเอียด</button>
               </div>
             </div>
           </div>
@@ -233,7 +233,7 @@
           <div v-for="a in assignments" :key="a.id"
             class="bg-white rounded-xl p-4 shadow-sm ring-1 cursor-pointer hover:shadow-md transition-shadow"
             :class="a.sla_status==='เกิน' ? 'ring-red-300 bg-red-50' : a.sla_status==='ใกล้ถึง' ? 'ring-amber-200 bg-amber-50' : 'ring-slate-100'"
-            @click="openDetail(a.id, 'assign-detail')">
+            @click="openDetail(a.project_code, 'assign-detail')">
 
             <!-- badges row -->
             <div class="flex items-center justify-between mb-2">
@@ -312,7 +312,7 @@
               </div>
             </div>
             <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer shrink-0"
-              @click="openDetail(item.id, 'assign-detail')">ดูรายละเอียด</button>
+              @click="openDetail(item.project_code, 'assign-detail')">ดูรายละเอียด</button>
           </div>
         </div>
       </div>
@@ -390,7 +390,7 @@
             <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
             <template v-else-if="docs?.available && docs.files.length">
               <a v-for="f in docs.files" :key="f.name"
-                 :href="`api/documents.php?action=download&id=${modal.data.id}&file=${encodeURIComponent(f.name)}`"
+                 :href="`api/documents.php?action=download&project_no=${encodeURIComponent(modal.data.project_no)}&file=${encodeURIComponent(f.name)}`"
                  target="_blank" rel="noopener"
                  class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
                 <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
@@ -559,9 +559,9 @@ createApp({
       assignments: [],
       salesUsers: [],
       filter: { status: '', assigned_to: '' },
-      statusForm: { id: null, status: '', sale_notes: '', bid_amount: null, note: '' },
-      reassignForm: { id: null, assigned_to: '' },
-      nudgeForm: { id: null, message: '' },
+      statusForm: { project_code: null, status: '', sale_notes: '', bid_amount: null, note: '' },
+      reassignForm: { project_code: null, assigned_to: '' },
+      nudgeForm: { project_code: null, message: '' },
       view: 'calendar',
       ganttYear: new Date().getFullYear(),
       ganttMonth: new Date().getMonth() + 1,
@@ -674,7 +674,7 @@ createApp({
 
     openStatusModal(assignment) {
       this.statusForm = {
-        id:         assignment.id,
+        project_code: assignment.project_code,
         status:     assignment.status,
         sale_notes: assignment.sale_notes || '',
         bid_amount: assignment.bid_amount || null,
@@ -776,7 +776,7 @@ createApp({
     },
 
     openReassignModal(assignment) {
-      this.reassignForm = { id: assignment.id, assigned_to: '' };
+      this.reassignForm = { project_code: assignment.project_code, assigned_to: '' };
       this.modal = { type: 'reassign', data: assignment };
     },
     async submitReassign() {
@@ -792,7 +792,7 @@ createApp({
     },
 
     openNudgeModal(assignment) {
-      this.nudgeForm = { id: assignment.id, message: '' };
+      this.nudgeForm = { project_code: assignment.project_code, message: '' };
       this.modal = { type: 'message', data: assignment };
     },
     async submitNudge() {

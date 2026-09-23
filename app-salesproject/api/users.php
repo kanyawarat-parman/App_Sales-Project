@@ -35,7 +35,7 @@ function listUsers(PDO $db): void {
                u.email, u.notify_channel, u.notify_enabled, u.sale_id,
                u.avatar_color, u.photo_url, u.is_active, u.last_login, u.created_at,
                u.current_page, u.last_active_at,
-               (SELECT COUNT(*) FROM project_assignments pa WHERE pa.assigned_to = u.id AND pa.status NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก')) AS active_tasks
+               (SELECT COUNT(*) FROM pipeline_items pi WHERE pi.assigned_to = u.id AND pi.source_type = 'ebidding' AND pi.stage NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก')) AS active_tasks
         FROM users u ORDER BY u.role, u.full_name
     ");
     jsonResponse(true, $stmt->fetchAll());
@@ -48,11 +48,11 @@ function getSales(PDO $db): void {
     // ทำให้เงื่อนไข NOT IN เป็นจริงเสมอ นับงานที่จบไปแล้วทุกสถานะว่ายัง active อยู่ผิดๆ
     $stmt = $db->query("
         SELECT u.id, u.full_name, u.avatar_color, u.photo_url, u.phone, u.monthly_target, u.sale_id,
-               COALESCE(SUM(CASE WHEN pa.status NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก') THEN 1 ELSE 0 END), 0) AS active_tasks,
-               COALESCE(SUM(CASE WHEN pa.priority = 'เร่งด่วน' AND pa.status NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก') THEN 1 ELSE 0 END), 0) AS urgent_tasks,
-               COALESCE(SUM(CASE WHEN pa.sla_status = 'เกิน' AND pa.status NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก') THEN 1 ELSE 0 END), 0) AS overdue_tasks
+               COALESCE(SUM(CASE WHEN pi.stage NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก') THEN 1 ELSE 0 END), 0) AS active_tasks,
+               COALESCE(SUM(CASE WHEN pi.priority = 'เร่งด่วน' AND pi.stage NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก') THEN 1 ELSE 0 END), 0) AS urgent_tasks,
+               COALESCE(SUM(CASE WHEN pi.sla_status = 'เกิน' AND pi.stage NOT IN ('ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก') THEN 1 ELSE 0 END), 0) AS overdue_tasks
         FROM users u
-        LEFT JOIN project_assignments pa ON pa.assigned_to = u.id
+        LEFT JOIN pipeline_items pi ON pi.assigned_to = u.id AND pi.source_type = 'ebidding'
         WHERE u.role = 'sale' AND u.is_active = 1
         GROUP BY u.id
         ORDER BY active_tasks ASC, u.full_name
