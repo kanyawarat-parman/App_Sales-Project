@@ -66,7 +66,8 @@
           งานขายตรง (Sales Hunt)
         </h2>
         <div class="ml-auto flex items-center gap-1.5 flex-wrap">
-          <button v-if="['manager','sale'].includes(currentUser?.role)"
+          <!-- เพิ่ม admin — ยืนยันจากผู้ใช้ 2026-09-25 (กฎเดิม 2026-09-22: admin ต้องเห็น/ทำได้ทุกอย่าง) admin เลือกเจ้าของงาน (sale) ได้ในกล่อง ⑤ เหมือน manager -->
+          <button v-if="['admin','manager','sale'].includes(currentUser?.role)"
             class="shrink-0 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-sm font-bold bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer min-h-[34px]"
             @click="openSpForm(null)">+ สร้างงาน/ดีลใหม่</button>
           <!-- แหล่งที่มา + ช่วงเวลา: ตัวกรองระดับหน้า ยิง API ใหม่ กระทบข้อมูลทั้งหน้า (สถิติด้านบน + รายการด้านล่าง) จึงอยู่แถวหัวข้อ ไม่ใช่ในการ์ดรายการ
@@ -218,7 +219,22 @@
                     <span class="text-xs text-slate-400 font-medium">โอกาสรายได้ในอนาคต Weighted Pipeline</span>
                   </div>
                   <div class="text-[1.3rem] font-black leading-none text-indigo-700">฿{{ spStats ? formatNumber(spStats.weighted_pipeline) : '0' }}</div>
-                  <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ถ่วงน้ำหนักตามโอกาสที่ sale ประเมินเอง · ข้อมูลล่าสุด ณ ตอนนี้</div>
+                  <!-- แยกตามวันคาดปิด: ภายใน 90 วัน (รวมดีลที่ยังไม่ระบุวันคาดปิด) / เกิน 90 วัน เช่น งานวาง Spec -->
+                  <div class="grid grid-cols-2 gap-2 mt-2">
+                    <div class="rounded-lg bg-indigo-50 px-2.5 py-1.5">
+                      <div class="text-[.7rem] text-indigo-500 font-medium">ภายใน 3 เดือน</div>
+                      <div class="text-[.95rem] font-bold text-indigo-700">฿{{ formatNumber(spStats?.weighted_near || 0) }}</div>
+                    </div>
+                    <div class="rounded-lg bg-slate-50 px-2.5 py-1.5">
+                      <div class="text-[.7rem] text-slate-500 font-medium">ระยะยาว (เกิน 3 เดือน)</div>
+                      <div class="text-[.95rem] font-bold text-slate-600">฿{{ formatNumber(spStats?.weighted_long || 0) }}</div>
+                    </div>
+                  </div>
+                  <div class="text-[.7rem] text-slate-300 font-normal mt-1.5">ถ่วงน้ำหนักตามโอกาสที่ sale ประเมินเอง · แบ่งตามวันคาดปิด · ข้อมูลล่าสุด ณ ตอนนี้</div>
+                  <div v-if="spStats?.followup_overdue || spStats?.followup_today" class="flex flex-wrap gap-1.5 mt-2">
+                    <span v-if="spStats.followup_overdue" class="text-[.8rem] font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700">🔴 เลยนัดติดตาม {{ spStats.followup_overdue }} ดีล</span>
+                    <span v-if="spStats.followup_today" class="text-[.8rem] font-bold px-2 py-1 rounded-lg bg-orange-100 text-orange-700">🟠 นัดติดตามวันนี้ {{ spStats.followup_today }} ดีล</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -441,6 +457,7 @@
                       <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spSourceClass(card.source_type)">{{ card.source_label }}</span>
                       <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spPriorityClass(card.priority)">{{ card.priority }}</span>
                       <span v-if="card.segment" class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold bg-slate-100 text-slate-500">{{ card.segment }}</span>
+                      <span v-if="card.deal_type_id && card.deal_type_id !== 'normal'" class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold bg-fuchsia-100 text-fuchsia-700">{{ card.deal_type_name }}</span>
                     </div>
                     <div v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-1">{{ card.project_code }}</div>
                     <div class="font-bold text-[.95rem] leading-tight mb-1 text-slate-800">{{ card.title }}</div>
@@ -454,6 +471,11 @@
                       {{ card.sale_name }}
                     </div>
                     <div v-if="card.next_action" class="text-[.8rem] text-blue-700 bg-blue-50 rounded-lg px-2 py-1 mb-2">{{ card.next_action }}</div>
+                    <div v-if="spFollowupStatus(card)" class="text-[.8rem] font-semibold rounded-lg px-2 py-1 mb-2" :class="spFollowupClass(card)">{{ spFollowupText(card) }}</div>
+                    <!-- เหตุผลปิดดีล/ไม่สำเร็จ + แพ้ให้ใคร (เพิ่ม 2026-09-25 แบบเดียวกับการ์ดงานประมูล) -->
+                    <div v-if="card.win_loss_reason" class="text-[.75rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 mb-2 line-clamp-2">
+                      {{ card.win_loss_reason }}<span v-if="card.stage==='Lost' && card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
+                    </div>
                     <button v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)"
                       class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200 mb-1"
                       @click="confirmSpMove(card, spNextStage(card.stage))">
@@ -482,6 +504,7 @@
               <div class="flex items-center gap-1.5 mb-1 flex-wrap">
                 <span v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ card.project_code }}</span>
                 <span class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold" :class="spSourceClass(card.source_type)">{{ card.source_label }}</span>
+                <span v-if="card.deal_type_id && card.deal_type_id !== 'normal'" class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold bg-fuchsia-100 text-fuchsia-700">{{ card.deal_type_name }}</span>
                 <span class="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :style="spStageClass(card.stage)">{{ spStageLabel(card.stage, card.source_type) }}</span>
               </div>
               <div class="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1">{{ card.title }}</div>
@@ -499,6 +522,10 @@
               </div>
               <div v-if="card.expected_close" class="mt-1.5 text-right text-[.7rem] text-slate-400">คาดปิด {{ formatDateThai(card.expected_close) }}</div>
               <div v-if="card.next_action" class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-blue-50 text-blue-700 line-clamp-1">{{ card.next_action }}</div>
+              <div v-if="spFollowupStatus(card)" class="mt-1.5 text-[.75rem] font-semibold px-2 py-1 rounded-lg" :class="spFollowupClass(card)">{{ spFollowupText(card) }}</div>
+              <div v-if="card.win_loss_reason" class="mt-1.5 text-[.75rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-2">
+                {{ card.win_loss_reason }}<span v-if="card.stage==='Lost' && card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
+              </div>
               <div v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)" class="mt-2" @click.stop>
                 <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200"
                   @click="confirmSpMove(card, spNextStage(card.stage))">▶ {{ spNextLabel(card.stage) }}</button>
@@ -534,53 +561,47 @@
     <!-- SP: Add / Edit Deal Modal -->
     <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
       <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
-        <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
-          <h3 class="font-bold text-lg text-slate-800 m-0">{{ spForm.id ? 'แก้ไขรายละเอียดงาน' : 'สร้างงาน/ดีลใหม่' }}</h3>
-          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        <!-- หัว modal อยู่กับที่ (ไม่เลื่อนตามฟอร์ม) — แสดงรหัสงาน/สถานะ/ประเภทดีล/เลขที่ใบเสนอราคา ให้เห็นตลอดว่ากำลังแก้งานไหน
+             (ย้ายขึ้นมาจากเหนือกล่อง ① — ยืนยันจากผู้ใช้ 2026-09-23) ป้ายประเภทดีลอ่านจากค่าที่บันทึกไว้ (modal.data) ไม่ใช่ค่าที่กำลังเลือกในฟอร์ม -->
+        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ spForm.id ? 'แก้ไขรายละเอียดงาน' : 'สร้างงาน/ดีลใหม่' }}</h3>
+            <div v-if="spForm.id" class="flex flex-wrap items-center gap-1.5 mt-2">
+              <span v-if="spForm.project_code" class="text-xs font-mono font-bold text-purple-700 bg-purple-50 rounded-full px-2.5 py-1">{{ spForm.project_code }}</span>
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :style="spStageClass(spForm.stage)">{{ spStageLabel(spForm.stage, spForm.source_type) }}</span>
+              <span v-if="modal.data?.deal_type_id && modal.data.deal_type_id !== 'normal'" class="px-2.5 py-1 rounded-full text-xs font-bold bg-fuchsia-100 text-fuchsia-700">{{ modal.data.deal_type_name }}</span>
+            </div>
+            <!-- คู่แข่งที่บันทึกไว้ (ไม่ใช่ค่าที่กำลังแก้ในฟอร์ม) ให้เห็นทันทีที่เปิด ไม่ต้องเลื่อนไปหากล่อง ③ -->
+            <div v-if="spForm.id && modal.data?.stage==='Lost' && modal.data?.winner_name" class="text-sm text-rose-700 mt-1.5">
+              แพ้ให้: <span class="font-semibold">{{ modal.data.winner_name }}</span><span v-if="modal.data.winning_price"> · {{ formatPrice(modal.data.winning_price) }}</span>
+              <span v-if="spPriceGapText(modal.data.value, modal.data.winning_price)" class="text-xs"> ({{ spPriceGapText(modal.data.value, modal.data.winning_price) }})</span>
+            </div>
+            <div v-if="spForm.id && spSavedCompetitors.length" class="text-sm text-slate-500 mt-1.5">
+              คู่แข่ง: <span class="font-semibold text-slate-700">{{ spSavedCompetitors.map(c => c.competitor_name).join(', ') }}</span>
+            </div>
+            <!-- เลขที่ใบเสนอราคา — แสดงเฉพาะงานที่นำเข้าจากใบเสนอราคาเก่า (แกะจากข้อความใน notes) -->
+            <div v-if="spHistoryQuotationId" class="text-sm text-slate-500 mt-1.5">
+              ใบเสนอราคา:
+              <button type="button" @click="openSpQuotationDetail(spHistoryQuotationId)" :disabled="spQuotationLoading"
+                class="font-mono font-bold text-sm underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-sky-700 hover:text-sky-600 disabled:opacity-50">{{ spHistoryQuotationId }}</button>
+            </div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
         <div class="flex-1 overflow-y-auto p-5">
 
-          <!-- badge ขั้นตอนปัจจุบัน — ย้ายออกจากสีหัว modal เดิม (ยืนยันจากผู้ใช้ 2026-09-21 ให้หัว modal เป็นสีขาวกลาง เหมือน bid-pipeline.html) -->
-          <div v-if="spForm.id" class="mb-3">
-            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :style="spStageClass(spForm.stage)">{{ spStageLabel(spForm.stage, spForm.source_type) }}</span>
-          </div>
+          <!-- ฟอร์มแบ่งเป็นกล่องมีเลขลำดับ 1–5 ตามหลัก CRM: ลูกค้า → ดีล → ประเภท/มูลค่า → รายละเอียดสินค้า → แผนติดตาม (ยืนยันจากผู้ใช้ 2026-09-23)
+               เลือกลูกค้าก่อน เพื่อเติม "ประเภทลูกค้า" ให้อัตโนมัติ / ประเภทดีลอยู่ก่อนมูลค่า-โอกาส-วันคาดปิด เพราะเป็นตัวกำหนดตัวเลขเหล่านั้น
+               ป้ายชื่อทุกช่องขนาดเดียวกัน, ปุ่มเลือกทุกชุดหน้าตาเดียวกัน (สี teal ตอนเลือก), ช่องสั้นวางคู่กันบนจอกว้าง / คอลัมน์เดียวบนมือถือ -->
 
-          <!-- รหัสงาน -->
-          <div v-if="spForm.project_code" class="flex gap-2 py-2 border-b border-slate-50 mb-2">
-            <span class="text-sm text-slate-400 w-32 shrink-0">รหัสงาน</span>
-            <span class="text-sm font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block">{{ spForm.project_code }}</span>
-          </div>
-
-          <!-- เลขที่ใบเสนอราคา — แสดงเฉพาะงานที่นำเข้าจากใบเสนอราคาเก่า (แกะจากข้อความใน notes) -->
-          <div v-if="spHistoryQuotationId" class="flex gap-2 py-2 border-b border-slate-50 items-center mb-2">
-            <span class="text-sm text-slate-400 w-32 shrink-0">เลขที่ใบเสนอราคา</span>
-            <button type="button" @click="openSpQuotationDetail(spHistoryQuotationId)" :disabled="spQuotationLoading"
-              class="font-mono font-bold text-sm underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-sky-700 hover:text-sky-600 disabled:opacity-50">{{ spHistoryQuotationId }}</button>
-          </div>
-
-          <!-- แหล่งที่มา -->
-          <div class="mb-4">
-            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">แหล่งที่มาของงาน</div>
-            <div class="grid grid-cols-3 gap-2 mt-1">
-              <div v-for="s in spSourceTypes.filter(s=>s.val!=='ebidding')" :key="s.val"
-                class="border-[1.5px] rounded-lg p-2.5 text-center cursor-pointer text-sm font-medium transition-all"
-                :class="spForm.source_type===s.val ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600'"
-                @click="spForm.source_type=s.val">
-                {{ s.icon }} {{ s.label }}
-              </div>
+          <!-- 1 ลูกค้า -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <h3 class="text-base font-bold text-slate-800">ลูกค้า</h3>
             </div>
-          </div>
-
-          <!-- ข้อมูลหลัก -->
-          <div class="mb-4">
-            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ข้อมูลโครงการ / ลูกค้า</div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">ชื่อโครงการ / รายการสินค้า <span class="text-red-500">*</span></label>
-              <input v-model="spForm.title" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โต๊ะทำงาน 50 ชุด, เก้าอี้ประชุม">
-              <div class="text-xs text-slate-400 mt-0.5">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
-            </div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">ชื่อลูกค้า / บริษัท <span v-if="!spForm.id" class="text-red-500">*</span></label>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อลูกค้า / บริษัท <span v-if="!spForm.id" class="text-red-500">*</span></label>
 
               <!-- เลือกแล้ว (หรือจองชื่อ account ใหม่ไว้ ยังไม่สร้างจริงจนกว่าจะบันทึกดีลสำเร็จ): แสดงเป็น chip -->
               <div v-if="spForm.account_id || spForm.account_is_new" class="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 bg-slate-50">
@@ -627,121 +648,221 @@
             </div>
 
             <!-- ผู้ติดต่อ — บังคับกรอกตอนสร้างดีลใหม่เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-22) ตอนแก้ไขดีลเก่าไม่บังคับ แต่โชว์ให้เห็น/แก้ไขได้ทันทีที่มี
-                 account ผูกอยู่ (ทั้งที่เคยผูกไว้แล้ว หรือเพิ่งเลือก/สร้างใหม่ระหว่างแก้ไข) — ดึงผู้ติดต่อที่เคยบันทึกไว้มาเติมให้อัตโนมัติใน openSpForm() -->
-            <div v-if="!spForm.id || spForm.account_id || spForm.account_is_new" class="mb-3 grid grid-cols-2 gap-2">
-              <div class="col-span-2 text-xs font-semibold text-slate-500">ผู้ติดต่อ <span v-if="!spForm.id" class="text-red-500">*</span></div>
-              <input v-model="spForm.contact_name" :placeholder="!spForm.id ? 'ชื่อผู้ติดต่อ *' : 'ชื่อผู้ติดต่อ'" class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-              <input v-model="spForm.contact_phone" :placeholder="!spForm.id ? 'เบอร์โทร *' : 'เบอร์โทร'" class="border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-              <input v-model="spForm.contact_position" placeholder="ตำแหน่ง (ไม่บังคับ)" class="col-span-2 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                 account ผูกอยู่ — ดึงผู้ติดต่อที่เคยบันทึกไว้มาเติมให้อัตโนมัติใน openSpForm() / แต่ละช่องมีป้ายชื่อของตัวเอง ไม่ใช้ placeholder แทนป้าย -->
+            <div v-if="!spForm.id || spForm.account_id || spForm.account_is_new" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อผู้ติดต่อ <span v-if="!spForm.id" class="text-red-500">*</span></label>
+                <input v-model="spForm.contact_name" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น คุณสมชาย ใจดี">
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">เบอร์โทร <span v-if="!spForm.id" class="text-red-500">*</span></label>
+                <input v-model="spForm.contact_phone" type="tel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น 081-234-5678">
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-sm font-semibold text-slate-700 mb-1">ตำแหน่ง <span class="text-slate-400 font-normal">(ไม่บังคับ)</span></label>
+                <input v-model="spForm.contact_position" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น หัวหน้าฝ่ายจัดซื้อ">
+              </div>
             </div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">เจ้าของงานที่รับผิดชอบ</label>
-              <select v-if="isSecretary" v-model="spForm.assigned_to" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-                <option value="">-- เลือก Sale --</option>
-                <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
-              </select>
-              <div v-else class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50 text-slate-600">{{ currentUser?.full_name }}</div>
-            </div>
-          </div>
+          </section>
 
-          <!-- ขั้นตอนและความสำคัญ -->
-          <div class="mb-4">
-            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ขั้นตอนและความสำคัญ</div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">ขั้นตอนปัจจุบัน</label>
-              <div class="flex gap-2 flex-wrap mt-1">
-                <div v-for="st in spStages.filter(s=>!['Delivered','Lost'].includes(s.key))" :key="st.key"
-                  class="px-3.5 py-2 rounded-xl border-[1.5px] text-sm font-semibold cursor-pointer transition-all"
-                  :class="spForm.stage!==st.key ? 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-400' : ''"
-                  :style="spForm.stage===st.key ? {background: st.bgLight, color: st.textLight, borderColor: st.textLight} : {}"
-                  @click="spForm.stage=st.key">
-                  {{ st.icon }} {{ st.thLabel }}
+          <!-- 2 ข้อมูลดีล -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <h3 class="text-base font-bold text-slate-800">ข้อมูลดีล</h3>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อโครงการ / รายการสินค้า <span class="text-red-500">*</span></label>
+              <input v-model="spForm.title" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โต๊ะทำงาน 50 ชุด, เก้าอี้ประชุม">
+              <div class="text-xs text-slate-500 mt-1">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ขั้นตอนปัจจุบัน</label>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button v-for="st in spStages.filter(s=>!['Delivered','Lost'].includes(s.key))" :key="st.key" type="button"
+                  class="border-2 rounded-xl py-2.5 px-2 text-center text-[.95rem] font-semibold cursor-pointer transition-all" :class="spForm.stage===st.key ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+                  @click="spForm.stage=st.key">{{ st.thLabel }}</button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ระดับความสำคัญ <span class="text-red-500">*</span></label>
+              <div class="grid grid-cols-3 gap-2">
+                <button v-for="p in [{val:'High',label:'สูง'},{val:'Medium',label:'กลาง'},{val:'Low',label:'ต่ำ'}]" :key="p.val" type="button"
+                  class="border-2 rounded-xl py-2.5 px-2 text-center text-[.95rem] font-semibold cursor-pointer transition-all" :class="spForm.priority===p.val ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+                  @click="spForm.priority=p.val">{{ p.label }}</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 3 ประเภทดีล คู่แข่ง และมูลค่า -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span>
+              <h3 class="text-base font-bold text-slate-800">ประเภทดีล คู่แข่ง และมูลค่า</h3>
+            </div>
+            <!-- ประเภทดีล — โหลดจาก master table deal_types (เพิ่มประเภทใหม่ใน DB แล้วปุ่มขึ้นเองอัตโนมัติ ไม่ต้องแก้โค้ด)
+                 ดีลใหม่ไม่เลือกไว้ให้ก่อน (deal_type_id='') บังคับ sale เลือกเอง กันเผลอกดสร้างแล้วงานวาง Spec ถูกบันทึกเป็นซื้อทันที (ยืนยันจากผู้ใช้ 2026-09-23)
+                 คำอธิบายอยู่ในการ์ดแต่ละตัว ให้อ่านเทียบกันได้ก่อนเลือก — ดึงจาก deal_types.deal_type_description -->
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ประเภทดีล <span class="text-red-500">*</span></label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button v-for="dt in spDealTypeOptions" :key="dt.deal_type_id" type="button" @click="spForm.deal_type_id=dt.deal_type_id"
+                  class="text-left border-2 rounded-xl p-3 cursor-pointer transition-all flex flex-col justify-start"
+                  :class="spForm.deal_type_id===dt.deal_type_id ? 'border-teal-600 bg-teal-50' : 'border-slate-200 bg-white hover:border-slate-400'">
+                  <div class="flex items-center gap-2">
+                    <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                      :class="spForm.deal_type_id===dt.deal_type_id ? 'border-teal-600' : 'border-slate-300'">
+                      <span v-if="spForm.deal_type_id===dt.deal_type_id" class="w-2.5 h-2.5 rounded-full bg-teal-600"></span>
+                    </span>
+                    <span class="text-base font-bold" :class="spForm.deal_type_id===dt.deal_type_id ? 'text-teal-800' : 'text-slate-700'">{{ dt.deal_type_name }}</span>
+                  </div>
+                  <div v-if="dt.deal_type_description" class="text-sm text-slate-500 mt-1.5 pl-7 leading-snug">{{ dt.deal_type_description }}</div>
+                </button>
+              </div>
+            </div>
+            <!-- คู่แข่งในดีลนี้ — เลือกได้หลายราย ไม่บังคับ / อยู่ก่อนมูลค่า-โอกาสปิด เพราะจำนวนคู่แข่งเป็นตัวที่ sale ใช้ประเมินโอกาสปิดดีล
+                 รายชื่อจาก master table competitors (api/competitors.php) — เลือกได้อย่างเดียว admin เป็นคนเพิ่มรายชื่อที่หน้า competitors.html
+                 ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-24 — เดิมให้ sale เพิ่มเองได้ เปลี่ยนเพื่อกันชื่อซ้ำแบบสะกดต่าง) -->
+            <div>
+              <!-- บังคับเลือกตอนสร้างดีลใหม่ (ยืนยันจากผู้ใช้ 2026-09-24) — ไม่มี/ไม่รู้ ให้เลือกตัวเลือกพิเศษ (is_special) "ไม่มีคู่แข่ง"/"ยังไม่ทราบ"
+                   ซึ่งเลือกเดี่ยวๆ เท่านั้น / ตอนแก้ดีลเก่าไม่บังคับ เพราะดีลเก่ายังไม่มีข้อมูลคู่แข่ง -->
+              <label class="block text-sm font-semibold text-slate-700 mb-1">คู่แข่งในดีลนี้ <span v-if="!spForm.id" class="text-red-500">*</span> <span class="text-slate-400 font-normal">(เลือกได้หลายราย)</span></label>
+              <div class="relative">
+                <div class="w-full border border-slate-300 rounded-xl px-2 py-1.5 bg-white flex flex-wrap items-center gap-1.5 min-h-[46px] focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100">
+                  <span v-for="c in spSelectedCompetitors" :key="c.competitor_id"
+                    class="inline-flex items-center gap-1 rounded-full pl-3 pr-1 py-1 text-sm font-medium"
+                    :class="Number(c.is_special) ? 'bg-slate-200 text-slate-700' : 'bg-orange-100 text-orange-800'">
+                    {{ c.competitor_name }}
+                    <button type="button" @click="removeSpCompetitor(c.competitor_id)" :aria-label="'เอา ' + c.competitor_name + ' ออก'"
+                      class="w-5 h-5 rounded-full border-0 bg-transparent cursor-pointer leading-none"
+                      :class="Number(c.is_special) ? 'text-slate-600 hover:bg-slate-300' : 'text-orange-700 hover:bg-orange-200'">×</button>
+                  </span>
+                  <input v-model="spCompetitorQuery" @focus="spCompetitorDropdownOpen = true" @input="spCompetitorDropdownOpen = true"
+                    @blur="spCompetitorDropdownOpen = false" @keydown.enter.prevent="pickFirstSpCompetitor"
+                    class="flex-1 min-w-[140px] border-0 outline-none bg-transparent px-1.5 py-1 text-base sm:text-sm"
+                    :placeholder="spSelectedCompetitors.length ? 'เพิ่มคู่แข่งอีก...' : 'พิมพ์ชื่อคู่แข่ง เช่น Practika'">
+                </div>
+                <!-- @mousedown.prevent ให้กดเลือกได้ก่อนช่องพิมพ์เสีย focus (ไม่งั้น @blur ปิดรายการก่อนคลิกทำงาน) -->
+                <div v-if="spCompetitorDropdownOpen && (spCompetitorOptions.length || spCompetitorNotFound)"
+                  class="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-56 overflow-y-auto">
+                  <div v-for="c in spCompetitorOptions" :key="c.competitor_id" @mousedown.prevent="addSpCompetitor(c)"
+                    class="px-3.5 py-2.5 cursor-pointer hover:bg-slate-50 text-sm border-b border-slate-50"
+                    :class="Number(c.is_special) ? 'text-slate-500 italic' : ''">{{ c.competitor_name }}</div>
+                  <div v-if="spCompetitorNotFound" class="px-3.5 py-2.5 text-sm text-slate-500">
+                    ไม่พบคู่แข่ง "{{ spCompetitorQuery.trim() }}" — แจ้ง admin เพื่อเพิ่มในรายการ
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">ระดับความสำคัญ</label>
-              <div class="flex gap-2">
-                <div v-for="p in [{val:'High',icon:'',label:'สูง'},{val:'Medium',icon:'',label:'กลาง'},{val:'Low',icon:'',label:'ต่ำ'}]"
-                  :key="p.val" @click="spForm.priority=p.val"
-                  class="flex-1 border-[1.5px] rounded-lg p-2.5 text-center cursor-pointer transition-all"
-                  :class="spForm.priority===p.val ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'">
-                  <div class="text-xl">{{ p.icon }}</div>
-                  <div class="text-[.9rem] font-semibold mt-0.5">{{ p.label }}</div>
+            <!-- มูลค่า/โอกาส/วันคาดปิด — 2 คอลัมน์ (เดิม 3 คอลัมน์แคบจนคำอธิบายตกบรรทัดและช่องไม่ตรงแนว — ปรับตามผู้ใช้ 2026-09-23)
+                 มีหน่วย "บาท"/"%" ต่อท้ายในช่อง ให้รู้ว่ากรอกอะไรโดยไม่ต้องอ่านป้าย -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">มูลค่า <span class="text-red-500">*</span></label>
+                <div class="relative">
+                  <input v-model="spForm.value" type="number" min="0" class="w-full border border-slate-300 rounded-xl pl-3.5 pr-12 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="0">
+                  <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">บาท</span>
                 </div>
               </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">โอกาสปิดดีล <span class="text-red-500">*</span></label>
+                <div class="relative">
+                  <input v-model="spForm.win_probability" type="number" min="0" max="100" class="w-full border border-slate-300 rounded-xl pl-3.5 pr-10 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น 20">
+                  <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">วันคาดปิดดีล <span class="text-red-500">*</span></label>
+                <input v-model="spForm.expected_close" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+              </div>
+              <div class="text-xs text-slate-500 sm:self-end sm:pb-3">โอกาสปิดดีลและวันคาดปิด ใช้คำนวณยอดคาดการณ์ (Weighted Pipeline) — งานวาง Spec ควรใส่วันคาดปิดตามจริง</div>
             </div>
-          </div>
+          </section>
 
-          <!-- รายละเอียดดีล -->
-          <div class="mb-4">
-            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">รายละเอียดดีล</div>
-            <div class="grid grid-cols-2 gap-3">
-              <div class="mb-3">
-                <label class="block text-sm font-semibold text-slate-600 mb-1">มูลค่า (บาท) <span class="text-red-500">*</span></label>
-                <input v-model="spForm.value" type="number" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="0">
-              </div>
-              <div class="mb-3">
-                <label class="block text-sm font-semibold text-slate-600 mb-1">โอกาสปิดดีล (%) <span class="text-red-500">*</span></label>
-                <input v-model="spForm.win_probability" type="number" min="0" max="100" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="20">
-                <div class="text-xs text-slate-400 mt-0.5">ประเมินเอง — ใช้คำนวณ Weighted Pipeline</div>
-              </div>
-              <div class="mb-3">
-                <label class="block text-sm font-semibold text-slate-600 mb-1">วันคาดปิดดีล <span class="text-red-500">*</span></label>
-                <input v-model="spForm.expected_close" type="date" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-              </div>
-              <div class="mb-3">
-                <label class="block text-sm font-semibold text-slate-600 mb-1">ประเภทลูกค้า <span class="text-red-500">*</span></label>
-                <select v-model="spForm.segment" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          <!-- 4 รายละเอียดสินค้า -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">4</span>
+              <h3 class="text-base font-bold text-slate-800">รายละเอียดสินค้า</h3>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">ประเภทลูกค้า <span class="text-red-500">*</span></label>
+                <select v-model="spForm.segment" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
                   <option value="">-- เลือก --</option>
-                  <option value="Gov">ภาครัฐ (Gov)</option>
-                  <option value="Private">เอกชน (Private)</option>
+                  <option value="Gov">ภาครัฐ (Gov)</option><option value="Private">เอกชน (Private)</option>
+                </select>
+                <div class="text-xs text-slate-500 mt-1">เติมให้อัตโนมัติจากลูกค้าที่เลือก แก้ได้ถ้าไม่ตรง</div>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">กลุ่มลูกค้า (Specialization) <span class="text-red-500">*</span></label>
+                <select v-model="spForm.specialization" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือก --</option>
+                  <option>Office</option><option>Hospital &amp; Wellness</option><option>Education</option><option>Government</option><option>Other</option>
                 </select>
               </div>
-              <div class="mb-3">
-                <label class="block text-sm font-semibold text-slate-600 mb-1">หมวดสินค้า <span class="text-red-500">*</span></label>
-                <select v-model="spForm.product_category" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">หมวดสินค้า <span class="text-red-500">*</span></label>
+                <select v-model="spForm.product_category" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
                   <option value="">-- เลือก --</option>
                   <option>Steel</option><option>Chair</option><option>Wooden</option><option>Other</option>
                 </select>
               </div>
-              <div class="mb-3">
-                <label class="block text-sm font-semibold text-slate-600 mb-1">แบรนด์ <span class="text-red-500">*</span></label>
-                <select v-model="spForm.brand" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">แบรนด์ <span class="text-red-500">*</span></label>
+                <select v-model="spForm.brand" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
                   <option value="">-- เลือก --</option>
                   <option>Taiyo</option><option>Motech</option><option>Sunon</option><option>Hybrida</option><option>Other</option>
                 </select>
               </div>
-              <div class="mb-3">
-                <label class="block text-sm font-semibold text-slate-600 mb-1">Fee Structure <span class="text-red-500">*</span></label>
-                <select v-model="spForm.fee_structure" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">Fee Structure <span class="text-red-500">*</span></label>
+                <select v-model="spForm.fee_structure" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
                   <option value="">-- เลือก --</option>
                   <option>No fee</option><option>Referral %</option><option>Client to resell</option>
                 </select>
               </div>
             </div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">กลุ่มลูกค้า (Specialization) <span class="text-red-500">*</span></label>
-              <select v-model="spForm.specialization" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-                <option value="">-- เลือก --</option>
-                <option>Office</option><option>Hospital &amp; Wellness</option><option>Education</option><option>Government</option><option>Other</option>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">แหล่งที่มาของงาน <span class="text-red-500">*</span></label>
+              <div class="grid grid-cols-2 gap-2">
+                <button v-for="s in spSourceTypes.filter(s=>s.val!=='ebidding')" :key="s.val" type="button"
+                  class="border-2 rounded-xl py-2.5 px-2 text-center text-[.95rem] font-semibold cursor-pointer transition-all" :class="spForm.source_type===s.val ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+                  @click="spForm.source_type=s.val">{{ s.icon }} {{ s.label }}</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 5 แผนติดตาม -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">5</span>
+              <h3 class="text-base font-bold text-slate-800">แผนติดตาม</h3>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">สิ่งที่ต้องทำต่อ (Next Action)</label>
+              <input v-model="spForm.next_action" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โทรติดตาม, ส่งตัวอย่างสินค้า, นัดพรีเซนต์">
+              <div class="text-xs text-slate-500 mt-1">ระบุให้ชัดว่าต้องทำอะไร เพื่อให้ติดตามงานได้ง่าย</div>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">วันนัดติดตามครั้งถัดไป</label>
+              <input v-model="spForm.next_followup_date" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white sm:max-w-xs">
+              <div class="text-xs text-slate-500 mt-1">ถึงวันนัดการ์ดจะขึ้นสีส้ม เลยวันนัดจะขึ้นสีแดง — ติดตามเสร็จแล้วให้ใส่วันนัดครั้งถัดไป</div>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">หมายเหตุ</label>
+              <textarea v-model="spForm.notes" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y" rows="2" placeholder="รายละเอียดเพิ่มเติม ข้อตกลงพิเศษ ฯลฯ" style="min-height:70px"></textarea>
+            </div>
+            <!-- เจ้าของงาน — ธุรการ/ผู้จัดการ/admin เลือกคนได้ / sale แสดงชื่อตัวเองเป็นข้อความเล็ก (แก้ไม่ได้อยู่แล้ว ไม่ต้องเป็นช่องใหญ่) -->
+            <div v-if="isSecretary">
+              <label class="block text-sm font-semibold text-slate-700 mb-1">เจ้าของงานที่รับผิดชอบ</label>
+              <select v-model="spForm.assigned_to" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="">-- เลือก Sale --</option>
+                <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
               </select>
             </div>
-          </div>
-
-          <!-- แผนการดำเนินงาน -->
-          <div class="mb-4">
-            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">แผนการดำเนินงาน</div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">สิ่งที่ต้องทำต่อ (Next Action)</label>
-              <input v-model="spForm.next_action" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โทรติดตาม, ส่งตัวอย่างสินค้า, นัดพรีเซนต์">
-              <div class="text-xs text-slate-400 mt-0.5">ระบุให้ชัดว่าต้องทำอะไร เพื่อให้ติดตามงานได้ง่าย</div>
-            </div>
-            <div class="mb-3">
-              <label class="block text-sm font-semibold text-slate-600 mb-1">หมายเหตุ</label>
-              <textarea v-model="spForm.notes" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y" rows="2" placeholder="รายละเอียดเพิ่มเติม ข้อตกลงพิเศษ ฯลฯ" style="min-height:70px"></textarea>
-            </div>
-          </div>
+            <div v-else class="text-sm text-slate-500">เจ้าของงาน: <span class="font-semibold text-slate-700">{{ currentUser?.full_name }}</span></div>
+          </section>
 
           <!-- ประวัติ stage -->
           <div v-if="spFormHistory.length" class="mb-2">
@@ -755,6 +876,11 @@
                   <span v-if="h.old_stage">→</span>
                   <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :style="spStageClass(h.new_stage)">{{ spStageLabel(h.new_stage, spForm.source_type) }}</span>
                   <span v-if="h.note" class="text-slate-400">· {{ h.note }}</span>
+                </div>
+                <!-- ผลแพ้/ชนะที่เก็บไว้ในประวัติ ณ ตอนบันทึกผล — ดูย้อนหลังได้แม้งานถูกย้ายกลับแล้ว (ยืนยันจากผู้ใช้ 2026-09-25) -->
+                <div v-if="h.win_loss_reason_name" class="text-xs text-slate-600 mt-0.5">
+                  เหตุผล: {{ h.win_loss_reason_name }}<span v-if="h.win_loss_note"> — {{ h.win_loss_note }}</span>
+                  <span v-if="h.winner_name"> · แพ้ให้ {{ h.winner_name }}<span v-if="Number(h.winning_price)"> ({{ formatPrice(h.winning_price) }})</span></span>
                 </div>
                 <div class="text-[11px] text-slate-400 mt-0.5">{{ formatDateTimeThai(h.changed_at) }}</div>
               </div>
@@ -878,37 +1004,71 @@
     <!-- SP: Win/Loss Modal -->
     <div v-if="modal.type==='sp-win-loss'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
       <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
-        <div class="px-6 py-5 border-b flex items-center justify-between"
-          :style="spWinLossForm.stage==='Deal Signed' ? 'background:#f0fdf4;border-color:#bbf7d0' : 'background:#fff1f2;border-color:#fecdd3'">
-          <h3 class="font-bold text-[1.1rem] m-0" :style="spWinLossForm.stage==='Deal Signed' ? 'color:#15803d' : 'color:#b91c1c'">
-            {{ spWinLossForm.stage==='Deal Signed' ? 'บันทึกการปิดดีล' : 'บันทึกการไม่สำเร็จ' }}
-          </h3>
+        <!-- หัวขาว + ป้ายบอกผล แบบเดียวกับ bid-pipeline.html (ปรับตามผู้ใช้ 2026-09-25) -->
+        <div class="px-6 py-5 border-b border-slate-100 bg-white flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold"
+              :class="spWinLossForm.stage==='Deal Signed' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'">
+              {{ spWinLossForm.stage==='Deal Signed' ? '✓ ปิดดีลได้' : '✕ ไม่สำเร็จ' }}
+            </span>
+            <h3 class="font-bold text-[1.1rem] m-0 text-slate-800">บันทึกผลดีล</h3>
+          </div>
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
         </div>
         <div class="flex-1 overflow-y-auto p-5">
           <div class="text-base font-semibold text-slate-800 mb-4 px-3 py-3 bg-slate-50 rounded-lg">{{ spWinLossForm.title }}</div>
-          <div class="mb-4">
-            <label class="block text-sm font-semibold text-slate-600 mb-1">
-              {{ spWinLossForm.stage==='Deal Signed' ? 'เหตุผลที่ปิดดีลได้ *' : 'เหตุผลที่ไม่สำเร็จ *' }}
-            </label>
-            <div class="flex flex-wrap gap-2 mt-2">
-              <div v-for="r in (spWinLossForm.stage==='Deal Signed' ? spWonReasons : spLostReasons)" :key="r"
-                @click="spWinLossForm.reason=r"
-                class="border-[1.5px] rounded-lg px-4 py-2 cursor-pointer text-[.9rem] font-medium transition-all"
-                :style="spWinLossForm.reason===r
-                  ? (spWinLossForm.stage==='Deal Signed' ? 'background:#dcfce7;border-color:#16a34a;color:#15803d' : 'background:#fee2e2;border-color:#dc2626;color:#b91c1c')
-                  : 'background:#f8fafc;border-color:#e2e8f0;color:#475569'">
-                {{ r }}
-              </div>
+          <!-- โครงเดียวกับหน้าต่างแพ้/ชนะของงานประมูล (bid-pipeline.html): เหตุผลเป็น dropdown จาก master win_loss_reasons (applies_to = sales/both)
+               + รายละเอียดต่อจากเหตุผล (บังคับเมื่อ "อื่นๆ") / Lost ต้องระบุผู้ชนะทุกครั้ง + ราคาตามเหตุผล (ยืนยันจากผู้ใช้ 2026-09-25) — API เช็คซ้ำ -->
+          <div class="mb-4 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-500 mb-2">เหตุผล</div>
+            <div class="mb-4">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">{{ spWinLossForm.stage==='Deal Signed' ? 'เหตุผลที่ปิดดีลได้' : 'เหตุผลที่ไม่สำเร็จ' }} <span class="text-red-500">*</span></label>
+              <select v-model="spWinLossForm.reason" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="">-- เลือกเหตุผล --</option>
+                <option v-for="r in (spWinLossForm.stage==='Deal Signed' ? spWonReasons : spLostReasons)" :key="r.win_loss_reason_id" :value="String(r.win_loss_reason_id)">{{ r.win_loss_reason_name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-600 mb-1">รายละเอียดเพิ่มเติม <span v-if="spNoteRequired" class="text-red-500">*</span></label>
+              <textarea v-model="spWinLossForm.note" rows="3" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"
+                :placeholder="spWinLossForm.stage==='Deal Signed' ? 'เช่น จุดแข็งที่ทำให้ปิดดีลได้...' : 'เช่น สิ่งที่ควรปรับครั้งหน้า...'"></textarea>
             </div>
           </div>
-          <div class="mb-3" v-if="spWinLossForm.stage==='Deal Signed'">
+          <div class="mb-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200" v-if="spWinLossForm.stage==='Deal Signed'">
+            <div class="text-xs font-bold text-slate-500 mb-2">มูลค่า</div>
             <label class="block text-sm font-semibold text-slate-600 mb-1">มูลค่าที่ปิดได้ (บาท)</label>
-            <input v-model="spWinLossForm.value" type="number" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ระบุมูลค่าจริงที่ปิดดีลได้">
+            <input v-model="spWinLossForm.value" type="number" min="0" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="0">
           </div>
-          <div class="mb-3">
-            <label class="block text-sm font-semibold text-slate-600 mb-1">บันทึกเพิ่มเติม</label>
-            <textarea v-model="spWinLossForm.note" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y" rows="2" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)" style="min-height:70px"></textarea>
+          <!-- Lost: แพ้ให้ใคร — คู่แข่งที่ระบุไว้ในดีลนี้ขึ้นก่อน (มีโอกาสเป็นผู้ชนะมากที่สุด) ไม่มี "ไม่มีคู่แข่ง" เพราะไม่สำเร็จ = มีผู้ชนะ/ไม่ทราบ -->
+          <div v-if="spWinLossForm.stage==='Lost'" class="mb-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-500 mb-2">ผู้ชนะและราคา</div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">แพ้ให้ใคร (ผู้ชนะ) <span class="text-red-500">*</span></label>
+              <select v-model="spWinLossForm.winner_competitor_id" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="">-- เลือกผู้ชนะ --</option>
+                <optgroup v-if="spWinnerOptions.inDeal.length" label="คู่แข่งที่ระบุไว้ในดีลนี้">
+                  <option v-for="c in spWinnerOptions.inDeal" :key="'d'+c.competitor_id" :value="c.competitor_id">{{ c.competitor_name }}</option>
+                </optgroup>
+                <optgroup :label="spWinnerOptions.inDeal.length ? 'คู่แข่งอื่น' : 'รายชื่อคู่แข่ง'">
+                  <option v-for="c in spWinnerOptions.others" :key="'o'+c.competitor_id" :value="c.competitor_id">{{ c.competitor_name }}</option>
+                </optgroup>
+              </select>
+              <div class="text-xs text-slate-500 mt-1">ไม่รู้ผู้ชนะ / ไม่มีผู้ชนะ (เช่น ลูกค้ายกเลิก) / ไม่มีในรายการ ให้เลือก "ยังไม่ทราบ" — ไม่มีในรายการให้แจ้ง admin เพิ่มชื่อคู่แข่ง</div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่คู่แข่งเสนอ (บาท) <span v-if="spLostRequiresPrice" class="text-red-500">*</span></label>
+                <input v-model="spWinLossForm.winning_price" type="number" min="0" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ถ้าทราบจากลูกค้า">
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">มูลค่าที่เราเสนอ (บาท) <span v-if="spLostRequiresPrice" class="text-red-500">*</span></label>
+                <input v-model="spWinLossForm.value" type="number" min="0" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="0">
+              </div>
+            </div>
+            <div v-if="!spLostRequiresPrice" class="text-xs text-slate-500 mt-2">เหตุผลนี้ไม่มีราคาให้เทียบ จึงไม่บังคับกรอกราคา (ผู้ชนะยังต้องเลือก)</div>
+            <div v-if="spPriceGapText(spWinLossForm.value, spWinLossForm.winning_price)" class="text-sm font-semibold text-rose-700 mt-2">
+              {{ spPriceGapText(spWinLossForm.value, spWinLossForm.winning_price) }}
+            </div>
           </div>
         </div>
         <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -916,7 +1076,7 @@
           <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold text-white border-0 cursor-pointer min-h-[44px]"
             :style="spWinLossForm.stage==='Deal Signed' ? 'background:#16a34a' : 'background:#dc2626'"
             @click="submitSpWinLoss">
-            {{ spWinLossForm.stage==='Deal Signed' ? 'ยืนยันปิดดีล' : 'ยืนยันไม่สำเร็จ' }}
+            {{ spWinLossForm.stage==='Deal Signed' ? '✓ ยืนยันปิดดีล' : '✕ ยืนยันไม่สำเร็จ' }}
           </button>
         </div>
       </div>
@@ -1135,15 +1295,21 @@ createApp({
       spSaleStats: [],
       spFilter: { assigned_to: '', source_type: '', period: 'all', priority: '', product_category: '', brand: '', client_q: '', value_min: '', value_max: '', segment: '', specialization: '' },
       spLoading: false,
-spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' },
+spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:'', expected_close:'', next_action:'', next_followup_date:'', deal_type_id:'', competitor_ids:[], notes:'' },
       spFormHistory: [],
+      dealTypes: [], // master ประเภทดีล จาก api/pipeline_items.php?action=deal_types
+      competitors: [], // master คู่แข่ง จาก api/competitors.php?action=list (โหลดครั้งเดียว ค้นหาฝั่งหน้าเว็บ)
+      spSavedCompetitors: [], // คู่แข่งที่บันทึกไว้ของดีลที่เปิดแก้ — แสดงที่หัว modal
+      spCompetitorQuery: '',
+      spCompetitorDropdownOpen: false,
       // ช่องค้นหา/สร้างหน่วยงาน-บริษัทใหม่ ในฟอร์มสร้าง/แก้ไขดีล (ยืนยันจากผู้ใช้ 2026-09-22)
       spAccountQuery: '',
       spAccountResults: [],
       spAccountDropdownOpen: false,
       spAccountCreating: false,
       spNewAccountType: '',
-      spWinLossForm: { id:null, stage:'', title:'', reason:'', note:'', value:'' },
+      spWinLossForm: { id:null, stage:'', title:'', reason:'', note:'', value:'', winner_competitor_id:'', winning_price:'', deal_competitor_ids:[] },
+      winLossReasons: [], // master เหตุผลแพ้/ชนะ (api/win_loss_reasons.php) — ใช้เฉพาะ applies_to = sales / both
       // modal แยกต่างหากสำหรับดูรายละเอียดใบเสนอราคาเก่า — ไม่ใช้ modal.type/modal.data ร่วมกับ sp-form
       // เพราะ sp-form เป็นฟอร์มแก้ไขที่มีข้อมูลค้างอยู่ (title/notes ที่พิมพ์ไว้) ถ้าทับ modal เดิมจะเสียข้อมูลที่แก้ค้างไว้
       spQuotationModal: { show: false, data: null },
@@ -1157,6 +1323,29 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     };
   },
   computed: {
+    // ปุ่มประเภทดีลในฟอร์ม — แสดงเฉพาะที่ใช้งานอยู่ (is_active=1) + ประเภทเดิมของดีลที่กำลังแก้ (เผื่อถูกปิดใช้งานไปแล้ว)
+    // คู่แข่งที่เลือกอยู่ในฟอร์ม (แปลง competitor_ids เป็นชื่อ) — หาใน master ไม่เจอ (เช่นเพิ่งเพิ่มจากเครื่องอื่น) ก็ยังแสดงจากค่าที่บันทึกไว้
+    spSelectedCompetitors() {
+      return this.spForm.competitor_ids.map(id =>
+        this.competitors.find(c => Number(c.competitor_id) === id)
+        || this.spSavedCompetitors.find(c => Number(c.competitor_id) === id)
+        || { competitor_id: id, competitor_name: '#' + id });
+    },
+    // ตัวเลือกในรายการ: ใช้งานอยู่ + ยังไม่ได้เลือก + ชื่อตรงกับที่พิมพ์ (ไม่สนตัวพิมพ์เล็ก/ใหญ่และช่องว่าง)
+    spCompetitorOptions() {
+      const q = this.spCompetitorQuery.trim().toLowerCase().replace(/\s+/g, '');
+      return this.competitors.filter(c =>
+        Number(c.is_active) === 1
+        && !this.spForm.competitor_ids.includes(Number(c.competitor_id))
+        && c.competitor_name.toLowerCase().replace(/\s+/g, '').includes(q));
+    },
+    // พิมพ์แล้วไม่เจอรายไหนเลย → แสดงข้อความให้แจ้ง admin (sale เพิ่มคู่แข่งเองไม่ได้ — admin คุมรายชื่อ)
+    spCompetitorNotFound() {
+      return this.spCompetitorQuery.trim() !== '' && this.spCompetitorOptions.length === 0;
+    },
+    spDealTypeOptions() {
+      return this.dealTypes.filter(dt => Number(dt.is_active) === 1 || dt.deal_type_id === this.spForm.deal_type_id);
+    },
     tabItems() {
       return [
         { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
@@ -1289,12 +1478,34 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
       return all;
     },
 
+    // เหตุผลจาก master win_loss_reasons เฉพาะของงานขายตรง (applies_to = sales / both) — เดิม hardcode ไว้ในโค้ด (ย้ายเป็น master 2026-09-25)
+    // ค่าที่เลือก (spWinLossForm.reason) เป็นรหัส win_loss_reason_id — เปลี่ยนจากข้อความ 2026-09-25
     spWonReasons() {
-      return ['ราคาเหมาะสม','คุณภาพสินค้าดี','ความสัมพันธ์ดี','ส่งเร็ว/ตรงเวลา','ครบสเปก','อื่นๆ'];
+      return this.winLossReasons.filter(r => r.win_loss_type === 'won' && r.applies_to !== 'ebidding' && Number(r.is_active) === 1);
     },
 
     spLostReasons() {
-      return ['ราคาสูงกว่าคู่แข่ง','สินค้าไม่ตรงสเปก','ลูกค้าเลื่อน/ยกเลิก','งบประมาณถูกตัด','ติดต่อช้าไป','อื่นๆ'];
+      return this.winLossReasons.filter(r => r.win_loss_type === 'lost' && r.applies_to !== 'ebidding' && Number(r.is_active) === 1);
+    },
+    spSelectedReason() {
+      return this.winLossReasons.find(r => String(r.win_loss_reason_id) === String(this.spWinLossForm.reason)) || null;
+    },
+    // เหตุผลที่ admin ตั้ง "ต้องกรอกรายละเอียด" (requires_note เช่น อื่นๆ) — เดิมเช็คชื่อ "อื่นๆ" ตรงตัว
+    spNoteRequired() { return Number(this.spSelectedReason?.requires_note) === 1; },
+    // Lost: ยังไม่เลือกเหตุผล = แสดงว่าบังคับไว้ก่อน / เลือกแล้วตาม requires_winner ("ต้องกรอกราคา") ของเหตุผลนั้น
+    spLostRequiresPrice() {
+      if (this.spWinLossForm.stage !== 'Lost') return false;
+      if (!this.spWinLossForm.reason) return true;
+      return Number(this.spSelectedReason?.requires_winner) === 1;
+    },
+    // ตัวเลือกผู้ชนะ: แบ่ง 2 กลุ่ม — คู่แข่งที่ระบุไว้ในดีลนี้ (ขึ้นก่อน) / คู่แข่งอื่น (รวม "ยังไม่ทราบ") — ไม่รวม "ไม่มีคู่แข่ง"
+    spWinnerOptions() {
+      const usable = this.competitors.filter(c => Number(c.is_active) === 1 && !(Number(c.is_special) === 1 && c.competitor_name === 'ไม่มีคู่แข่ง'));
+      const inDealIds = this.spWinLossForm.deal_competitor_ids;
+      return {
+        inDeal: usable.filter(c => inDealIds.includes(Number(c.competitor_id)) && Number(c.is_special) !== 1),
+        others: usable.filter(c => !inDealIds.includes(Number(c.competitor_id)) || Number(c.is_special) === 1),
+      };
     },
   },
   watch: {
@@ -1329,6 +1540,9 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     if (this.isSecretary) {
       this.loadSales();
     }
+    this.loadDealTypes();
+    this.loadCompetitors();
+    this.loadWinLossReasons();
     this.loadSpKanban();
 
     // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky กันซ้อนทับ (เหมือน bid-pipeline.html)
@@ -1651,19 +1865,55 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
       else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 
-    openSpWinLoss(card, stage) {
-      this.spWinLossForm = { id: card.id, stage, title: card.title, reason: '', note: '', value: card.value || '' };
+    async loadWinLossReasons() {
+      const res = await apiCall('GET', 'api/win_loss_reasons.php?action=list');
+      if (res.success) this.winLossReasons = res.data;
+    },
+
+    // ส่วนต่างมูลค่าเราเทียบผู้ชนะ เช่น "เราแพงกว่าผู้ชนะ ฿45,000 (3.2%)" — แบบเดียวกับ bid-pipeline.html's priceGapText()
+    spPriceGapText(ourPrice, winnerPrice) {
+      const ours = Number(ourPrice), win = Number(winnerPrice);
+      if (!ours || !win) return '';
+      const diff = ours - win;
+      if (diff === 0) return 'ราคาเท่ากับผู้ชนะ';
+      const pct = Math.abs(diff) / win * 100;
+      return 'เรา' + (diff > 0 ? 'แพงกว่า' : 'ถูกกว่า') + 'ผู้ชนะ ' + this.formatPrice(Math.abs(diff)) + ' (' + pct.toFixed(1) + '%)';
+    },
+
+    async openSpWinLoss(card, stage) {
+      this.spWinLossForm = {
+        id: card.id, stage, title: card.title, reason: '', note: '', value: card.value || '',
+        winner_competitor_id: '', winning_price: '', deal_competitor_ids: [],
+      };
       this.modal = { type: 'sp-win-loss', data: card };
+      // คู่แข่งที่ระบุไว้ในดีลนี้ → ขึ้นก่อนในตัวเลือกผู้ชนะ
+      if (stage === 'Lost') {
+        const res = await apiCall('GET', `api/pipeline_items.php?action=one&id=${card.id}`);
+        if (res.success) this.spWinLossForm.deal_competitor_ids = (res.item.competitors || []).map(c => Number(c.competitor_id));
+      }
     },
 
     async submitSpWinLoss() {
-      if (!this.spWinLossForm.reason) { await this.showAlert('กรุณาเลือกเหตุผล', 'error'); return; }
+      const f = this.spWinLossForm;
+      if (!f.reason) { await this.showAlert('กรุณาเลือกเหตุผล', 'error'); return; }
+      if (this.spNoteRequired && !String(f.note || '').trim()) {
+        await this.showAlert(`กรุณากรอกรายละเอียดเพิ่มเติม (เหตุผล "${this.spSelectedReason.win_loss_reason_name}" ต้องระบุว่าเพราะอะไร)`, 'error'); return;
+      }
+      if (f.stage === 'Lost') {
+        if (!f.winner_competitor_id) { await this.showAlert('กรุณาเลือกผู้ชนะ (ถ้าไม่รู้หรือไม่มีผู้ชนะ ให้เลือก "ยังไม่ทราบ")', 'error'); return; }
+        if (this.spLostRequiresPrice && !(Number(f.winning_price) > 0)) { await this.showAlert('กรุณากรอกราคาที่คู่แข่ง (ผู้ชนะ) เสนอ', 'error'); return; }
+        if (this.spLostRequiresPrice && !(Number(f.value) > 0)) { await this.showAlert('กรุณากรอกมูลค่าที่เราเสนอ', 'error'); return; }
+      }
       const payload = {
-        stage:           this.spWinLossForm.stage,
-        win_loss_reason: this.spWinLossForm.reason,
-        win_loss_note:   this.spWinLossForm.note,
+        stage:              f.stage,
+        win_loss_reason_id: Number(f.reason),
+        win_loss_note:      f.note,
       };
-      if (this.spWinLossForm.value) payload.value = this.spWinLossForm.value;
+      if (f.value) payload.value = f.value;
+      if (f.stage === 'Lost') {
+        payload.winner_competitor_id = f.winner_competitor_id || null;
+        payload.winning_price = f.winning_price === '' ? null : f.winning_price;
+      }
       const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + this.spWinLossForm.id, payload);
       if (res.success) {
         this.closeModal();
@@ -1674,6 +1924,9 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
 
     async openSpForm(card) {
       this.spFormHistory = [];
+      this.spSavedCompetitors = [];
+      this.spCompetitorQuery = '';
+      this.spCompetitorDropdownOpen = false;
       if (card) {
         this.spForm = {
           id: card.id, project_code: card.project_code || '', source_type: card.source_type || 'self_sourced',
@@ -1687,9 +1940,10 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
           value: card.value || '', win_probability: card.win_probability != null ? Math.round(card.win_probability * 100) : 20,
           expected_close: card.expected_close || '',
           next_action: card.next_action || '', notes: card.notes || '',
+          next_followup_date: card.next_followup_date || '', deal_type_id: card.deal_type_id || 'normal', competitor_ids: [],
         };
       } else {
-        this.spForm = { id:null, source_type:'self_sourced', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:20, expected_close:'', next_action:'', notes:'' };
+        this.spForm = { id:null, source_type:'', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:'', expected_close:'', next_action:'', next_followup_date:'', deal_type_id:'', competitor_ids:[], notes:'' };
       }
       this.spAccountQuery = '';
       this.spAccountResults = [];
@@ -1703,6 +1957,8 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
           const res = await apiCall('GET', `api/pipeline_items.php?action=one&id=${card.id}`);
           if (res.success) {
             this.spFormHistory = res.item.history || [];
+            this.spSavedCompetitors = res.item.competitors || [];
+            this.spForm.competitor_ids = this.spSavedCompetitors.map(c => Number(c.competitor_id));
             // เติมข้อมูลผู้ติดต่อที่เคยบันทึกไว้ของ account นี้มาแสดง (ถ้ามี) ให้แก้ไขได้เลย ไม่ต้องกรอกใหม่ทั้งหมด
             if (res.item.contact) {
               this.spForm.contact_name = res.item.contact.full_name || '';
@@ -1731,6 +1987,10 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
       this.spForm.account_name = a.name;
       this.spForm.account_type = a.account_type;
       this.spForm.client_name = a.name;
+      // เติม "ประเภทลูกค้า" (segment) จากประเภทหน่วยงาน — เดิมให้เลือกซ้ำเองจนข้อมูลขัดกัน (ลูกค้าราชการ แต่ดีลบันทึกเป็น Private)
+      // ยังแก้เองได้ในฟอร์มถ้าไม่ตรง (ยืนยันจากผู้ใช้ 2026-09-23)
+      const segmentByAccountType = { government: 'Gov', private: 'Private' };
+      if (segmentByAccountType[a.account_type]) this.spForm.segment = segmentByAccountType[a.account_type];
       this.spAccountDropdownOpen = false;
       this.spAccountCreating = false;
       this.spAccountQuery = '';
@@ -1770,11 +2030,20 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     },
 
     async submitSpForm() {
-      if (!this.spForm.title.trim()) { await this.showAlert('กรุณาระบุชื่อโครงการ/รายการ', 'error'); return; }
+      // ลำดับการเช็คตรงกับลำดับช่องในฟอร์ม (ลูกค้า → ผู้ติดต่อ → ชื่อโครงการ → ...) ให้เตือนช่องบนสุดที่ยังขาดก่อน
       if (!this.spForm.id) {
         if (!this.spForm.account_id && !this.spForm.account_is_new) { await this.showAlert('กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท', 'error'); return; }
         if (!this.spForm.contact_name.trim())  { await this.showAlert('กรุณากรอกชื่อผู้ติดต่อ', 'error'); return; }
         if (!this.spForm.contact_phone.trim()) { await this.showAlert('กรุณากรอกเบอร์โทรผู้ติดต่อ', 'error'); return; }
+      }
+      if (!this.spForm.title.trim()) { await this.showAlert('กรุณาระบุชื่อโครงการ/รายการ', 'error'); return; }
+      // ดีลใหม่ไม่เลือกความสำคัญ/ประเภทดีล/ไม่ใส่โอกาสปิดดีลไว้ให้ก่อน — กันเผลอกดผ่านแล้วได้ค่า default ที่ไม่ได้ตั้งใจ (ยืนยันจากผู้ใช้ 2026-09-23)
+      // โอกาสปิดดีลเช็คใน requiredDealFields ด้านล่างอยู่แล้ว
+      if (!this.spForm.priority)     { await this.showAlert('กรุณาเลือกระดับความสำคัญ', 'error'); return; }
+      if (!this.spForm.deal_type_id) { await this.showAlert('กรุณาเลือกประเภทดีล', 'error'); return; }
+      // คู่แข่งบังคับเฉพาะดีลใหม่ (ดีลเก่ายังไม่มีข้อมูลคู่แข่ง — ยืนยันจากผู้ใช้ 2026-09-24)
+      if (!this.spForm.id && !this.spForm.competitor_ids.length) {
+        await this.showAlert('กรุณาเลือกคู่แข่ง (ถ้าไม่มีหรือไม่ทราบ ให้เลือก "ไม่มีคู่แข่ง" หรือ "ยังไม่ทราบ")', 'error'); return;
       }
       const requiredDealFields = [
         { key: 'value',            label: 'มูลค่า (บาท)' },
@@ -1793,6 +2062,8 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
           return;
         }
       }
+      // แหล่งที่มาไม่เลือกไว้ให้ก่อนเช่นกัน — ช่องสุดท้ายของกล่อง ④ จึงเช็คต่อจาก requiredDealFields (ยืนยันจากผู้ใช้ 2026-09-23)
+      if (!this.spForm.source_type) { await this.showAlert('กรุณาเลือกแหล่งที่มาของงาน', 'error'); return; }
       // ผ่าน validation ทุกอย่างแล้วเท่านั้นถึงค่อยสร้าง account จริงลง DB (ถ้าเป็น account ใหม่ที่จองชื่อไว้)
       // กันปัญหา account ถูกสร้างค้างไว้ทั้งที่ดีลไม่ถูกบันทึกเพราะฟิลด์อื่นไม่ครบ (เจอบั๊กจริงจากผู้ใช้ 2026-09-22)
       // ใช้เงื่อนไข account_is_new เพียงอย่างเดียว (ไม่เช็ค !spForm.id) เพราะตอนแก้ไขดีลเก่าก็เลือก "+ สร้างใหม่" เพื่อผูก account ใหม่ได้เหมือนกัน
@@ -1831,6 +2102,64 @@ spForm: { id:null, project_code:'', source_type:'self_sourced', title:'', client
     spViewToggleClass(active) {
       if (!active) return 'bg-white text-slate-500 hover:bg-slate-50';
       return 'bg-teal-700 text-white';
+    },
+
+    // master ประเภทดีล (ตาราง deal_types) ใช้สร้างปุ่มเลือกในฟอร์ม
+    async loadDealTypes() {
+      const res = await apiCall('GET', 'api/pipeline_items.php?action=deal_types');
+      if (res.success) this.dealTypes = res.items;
+    },
+
+    // master คู่แข่ง (ตาราง competitors) ใช้เป็นตัวเลือกในช่อง "คู่แข่งในดีลนี้"
+    async loadCompetitors() {
+      const res = await apiCall('GET', 'api/competitors.php?action=list');
+      if (res.success) this.competitors = res.data;
+    },
+    // ตัวเลือกพิเศษ (ไม่มีคู่แข่ง/ยังไม่ทราบ) เลือกเดี่ยวๆ — เลือกแล้วล้างรายอื่นออก, เลือกคู่แข่งจริงแล้วเอาตัวเลือกพิเศษออก (API เช็คซ้ำอีกชั้น)
+    addSpCompetitor(c) {
+      const id = Number(c.competitor_id);
+      const isSpecial = cid => Number(this.competitors.find(x => Number(x.competitor_id) === cid)?.is_special) === 1;
+      if (Number(c.is_special) === 1) {
+        this.spForm.competitor_ids = [id];
+      } else if (!this.spForm.competitor_ids.includes(id)) {
+        this.spForm.competitor_ids = this.spForm.competitor_ids.filter(x => !isSpecial(x)).concat(id);
+      }
+      this.spCompetitorQuery = '';
+    },
+    removeSpCompetitor(id) {
+      this.spForm.competitor_ids = this.spForm.competitor_ids.filter(x => x !== Number(id));
+    },
+    // กด Enter ในช่องพิมพ์: เลือกรายแรกในรายการ
+    pickFirstSpCompetitor() {
+      if (this.spCompetitorOptions.length) this.addSpCompetitor(this.spCompetitorOptions[0]);
+    },
+    // สถานะวันนัดติดตาม: 'overdue' เลยนัดแล้ว / 'today' ถึงนัดวันนี้ / 'upcoming' ยังไม่ถึง / null ไม่มีนัด หรือดีลจบแล้ว
+    spFollowupStatus(card) {
+      if (!card.next_followup_date || ['Deal Signed','Delivered','Lost'].includes(card.stage)) return null;
+      const today = this.spTodayStr();
+      if (card.next_followup_date < today) return 'overdue';
+      if (card.next_followup_date === today) return 'today';
+      return 'upcoming';
+    },
+    spFollowupClass(card) {
+      const map = {
+        overdue:  'bg-red-100 text-red-700',
+        today:    'bg-orange-100 text-orange-700',
+        upcoming: 'bg-slate-100 text-slate-600',
+      };
+      return map[this.spFollowupStatus(card)] || '';
+    },
+    spFollowupText(card) {
+      const status = this.spFollowupStatus(card);
+      const dateText = this.formatDateThai(card.next_followup_date);
+      if (status === 'overdue') return `🔴 เลยนัดติดตาม (${dateText})`;
+      if (status === 'today')   return '🟠 นัดติดตามวันนี้';
+      return `📅 นัดติดตาม ${dateText}`;
+    },
+    // วันนี้ตามเวลาเครื่อง รูปแบบ YYYY-MM-DD (ไม่ใช้ toISOString() เพราะเป็นเวลา UTC — ช่วงเช้ามืดไทยจะได้วันเมื่อวาน)
+    spTodayStr() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     },
 
     spSourceClass(sourceType) {

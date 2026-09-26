@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>จัดการงาน</title>
+<title>จัดการงานประมูล</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="shared/tailwind-config.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -30,7 +30,7 @@
             <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
             <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
           </svg>
-          จัดการงาน
+          จัดการงานประมูล
         </h1>
         <!-- สลับมุมมอง: ปฏิทิน (ค่าเริ่มต้น รวมทั้งทีมต่อวัน หน้าตาแบบ company-calendar.html) / Gantt (รายคน×วัน) / รายการ (list การ์ด กรองได้) -->
         <div class="ml-auto flex items-center gap-1 bg-slate-100 rounded-xl p-1">
@@ -441,6 +441,11 @@
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadge(h.new_status)">{{ h.new_status }}</span>
                   <span v-if="h.note"> · {{ h.note }}</span>
                 </div>
+                <!-- ผลแพ้/ชนะที่เก็บไว้ในประวัติ ณ ตอนบันทึกผล — ดูย้อนหลังได้แม้งานถูกย้ายกลับแล้ว (ยืนยันจากผู้ใช้ 2026-09-25) -->
+                <div v-if="h.win_loss_reason_name" class="text-xs text-slate-600 mt-0.5">
+                  เหตุผล: {{ h.win_loss_reason_name }}<span v-if="h.win_loss_note"> — {{ h.win_loss_note }}</span>
+                  <span v-if="h.winner_name"> · แพ้ให้ {{ h.winner_name }}<span v-if="Number(h.winning_price)"> ({{ formatPrice(h.winning_price) }})</span></span>
+                </div>
                 <div class="text-[11px] text-slate-400">{{ formatDateTimeThai(h.changed_at) }}</div>
               </div>
             </div>
@@ -502,7 +507,7 @@
             <div class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">สถานะใหม่</label>
               <select v-model="statusForm.status"
-                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
                 <option value="รอดำเนินการ">รอดำเนินการ</option>
                 <option value="รับงาน/ศึกษา TOR">รับงาน/ศึกษา TOR</option>
                 <option value="จัดเตรียมยื่นข้อเสนอ">จัดเตรียมยื่นข้อเสนอ</option>
@@ -516,17 +521,70 @@
             <div v-if="['จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล'].includes(statusForm.status)" class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">ราคาที่เสนอ (บาท)</label>
               <input type="number" v-model="statusForm.bid_amount" placeholder="0.00"
-                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <!-- ชนะก็บังคับเหตุผลทุกครั้ง รวมงานที่ชนะอยู่แล้วแต่ยังไม่มีเหตุผล (ยืนยันจากผู้ใช้ 2026-09-25) — API เช็คซ้ำ -->
+            <!-- กล่องพื้นเทาอ่อนเป็นกลาง + ป้าย ✓/✕ บอกผล แทนการทาพื้นเขียว/ชมพู — แบบเดียวกับ bid-pipeline.html (ปรับตามผู้ใช้ 2026-09-25) -->
+            <div v-if="statusForm.status==='ชนะการประมูล'" class="flex flex-col gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+              <div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">✓ ชนะ</span> <span class="text-xs font-bold text-slate-500 ml-1">เหตุผล</span></div>
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">เหตุผลที่ชนะ <span class="text-red-500">*</span></label>
+                <select v-model="statusForm.win_loss_reason_id" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือกเหตุผล --</option>
+                  <option v-for="r in wonReasonOptions" :key="r.win_loss_reason_id" :value="String(r.win_loss_reason_id)">{{ r.win_loss_reason_name }}</option>
+                </select>
+              </div>
+              <!-- มีป้ายชื่อกำกับเหมือนบล็อกแพ้ (เดิมใช้แค่ placeholder — ผู้ใช้ทัก 2026-09-25) -->
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">รายละเอียดเพิ่มเติม <span v-if="statusNoteRequired" class="text-red-500">*</span></label>
+                <textarea v-model="statusForm.win_loss_note" rows="3" placeholder="เช่น จุดแข็งที่ทำให้ชนะ / ราคาต่างจากคู่แข่ง..." class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+              </div>
+            </div>
+            <!-- ปิดช่องโหว่: เดิมเลือก "แพ้การประมูล" จากหน้านี้ได้โดยไม่ต้องระบุเหตุผล — ตอนนี้ใช้กติกาเดียวกับ bid-pipeline.html
+                 (เหตุผลจาก master win_loss_reasons + ผู้ชนะจาก master คู่แข่ง เมื่อเหตุผลนั้นบังคับ) ยืนยันจากผู้ใช้ 2026-09-25 — API เช็คซ้ำ -->
+            <div v-if="statusForm.status==='แพ้การประมูล'" class="flex flex-col gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+              <div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800">✕ แพ้</span> <span class="text-xs font-bold text-slate-500 ml-1">เหตุผล ผู้ชนะ และราคา</span></div>
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">เหตุผลที่แพ้ <span class="text-red-500">*</span></label>
+                <select v-model="statusForm.win_loss_reason_id" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือกเหตุผล --</option>
+                  <option v-for="r in lostReasonOptions" :key="r.win_loss_reason_id" :value="String(r.win_loss_reason_id)">{{ r.win_loss_reason_name }}</option>
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">รายละเอียดเพิ่มเติม <span v-if="statusNoteRequired" class="text-red-500">*</span></label>
+                <textarea v-model="statusForm.win_loss_note" rows="3" placeholder="เช่น สเปกที่ขาด / สิ่งที่ควรปรับครั้งหน้า..." class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">
+                  ผู้ชนะการประมูล <span class="text-red-500">*</span>
+                </label>
+                <select v-model="statusForm.winner_competitor_id" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <option value="">-- เลือกผู้ชนะ --</option>
+                  <option v-for="c in winnerOptions" :key="c.competitor_id" :value="c.competitor_id">{{ c.competitor_name }}</option>
+                </select>
+                <p class="text-xs text-slate-400">ไม่รู้ผู้ชนะ / ไม่มีผู้ชนะ (เช่น ลูกค้ายกเลิก) / ไม่มีในรายการ ให้เลือก "ยังไม่ทราบ" — ไม่มีในรายการให้แจ้ง admin เพิ่มชื่อคู่แข่ง</p>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="flex flex-col gap-1">
+                  <label class="block text-sm font-semibold text-slate-600">ราคาที่ผู้ชนะเสนอ (บาท) <span v-if="statusRequiresWinner" class="text-red-500">*</span></label>
+                  <input type="number" min="0" v-model="statusForm.winning_price" placeholder="ตามประกาศผล e-GP" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="block text-sm font-semibold text-slate-600">ราคาที่เราเสนอ (บาท) <span v-if="statusRequiresWinner" class="text-red-500">*</span></label>
+                  <input type="number" min="0" v-model="statusForm.bid_amount" placeholder="0.00" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+              </div>
             </div>
             <div class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">บันทึก / ความคืบหน้า</label>
               <textarea v-model="statusForm.sale_notes" rows="3" placeholder="ระบุความคืบหน้า, ปัญหา, หรือผลลัพธ์..."
-                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
             </div>
             <div class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">หมายเหตุการเปลี่ยนสถานะ</label>
               <input type="text" v-model="statusForm.note" placeholder="(ไม่บังคับ)"
-                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
             </div>
           </div>
         </div>
@@ -559,7 +617,9 @@ createApp({
       assignments: [],
       salesUsers: [],
       filter: { status: '', assigned_to: '' },
-      statusForm: { project_code: null, status: '', sale_notes: '', bid_amount: null, note: '' },
+      statusForm: { project_code: null, status: '', sale_notes: '', bid_amount: null, note: '', win_loss_reason_id: '', win_loss_note: '', winner_competitor_id: '', winning_price: '' },
+      winLossReasons: [], // master เหตุผลแพ้/ชนะ (api/win_loss_reasons.php) — ใช้ตอนเลือก "แพ้การประมูล"
+      competitors: [],    // master คู่แข่ง (api/competitors.php) — ตัวเลือกผู้ชนะ
       reassignForm: { project_code: null, assigned_to: '' },
       nudgeForm: { project_code: null, message: '' },
       view: 'calendar',
@@ -579,7 +639,36 @@ createApp({
       thMonths: ['','มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'],
     };
   },
+  watch: {
+    // เปลี่ยนสถานะระหว่างชนะ/แพ้: เหตุผลเดิมเป็นของอีกฝั่ง (เช่น เคยชนะด้วย "คุณสมบัติตรงสเปก" แล้วแก้เป็นแพ้) ไม่อยู่ในรายการ
+    // ของฝั่งใหม่ ช่องเหตุผลจะขึ้นว่างเปล่า → ล้างให้เลือกใหม่ (บั๊กที่ผู้ใช้เจอ 2026-09-25)
+    // สลับกลับมาฝั่งเดิม (เช่น ชนะ → แพ้ → ชนะ) → คืนเหตุผลที่บันทึกไว้ของงาน แทนที่จะว่างเปล่า
+    'statusForm.status'(status) {
+      const type = status === 'ชนะการประมูล' ? 'won' : status === 'แพ้การประมูล' ? 'lost' : null;
+      if (!type) return;
+      // เทียบด้วยรหัส win_loss_reason_id (เปลี่ยนจากข้อความ 2026-09-25)
+      const fits = id => this.winLossReasons.some(r => r.win_loss_type === type && r.applies_to !== 'sales' && String(r.win_loss_reason_id) === String(id));
+      if (this.statusForm.win_loss_reason_id && fits(this.statusForm.win_loss_reason_id)) return;
+      const saved = this.modal.data?.win_loss_reason_id ? String(this.modal.data.win_loss_reason_id) : '';
+      this.statusForm.win_loss_reason_id = fits(saved) ? saved : '';
+    },
+  },
   computed: {
+    // ตัวเลือกเหตุผลที่แพ้ (ใช้งานอยู่) และตัวเลือกผู้ชนะ (ไม่รวม "ไม่มีคู่แข่ง" เพราะแพ้ = มีผู้ชนะ) — เหมือน bid-pipeline.html
+    // เฉพาะเหตุผลของงานประมูล (applies_to = ebidding / both)
+    lostReasonOptions() { return this.winLossReasons.filter(r => r.win_loss_type === 'lost' && r.applies_to !== 'sales' && Number(r.is_active) === 1); },
+    wonReasonOptions()  { return this.winLossReasons.filter(r => r.win_loss_type === 'won'  && r.applies_to !== 'sales' && Number(r.is_active) === 1); },
+    winnerOptions() { return this.competitors.filter(c => Number(c.is_active) === 1 && !(Number(c.is_special) === 1 && c.competitor_name === 'ไม่มีคู่แข่ง')); },
+    // ยังไม่เลือกเหตุผล → ถือว่าบังคับไว้ก่อน (แสดง *) จะไม่บังคับก็ต่อเมื่อเลือกเหตุผลที่ไม่มีผู้ชนะจริง เช่น ลูกค้ายกเลิก
+    statusRequiresWinner() {
+      if (!this.statusForm.win_loss_reason_id) return true;
+      return Number(this.statusSelectedReason?.requires_winner) === 1;
+    },
+    statusSelectedReason() {
+      return this.winLossReasons.find(r => String(r.win_loss_reason_id) === String(this.statusForm.win_loss_reason_id)) || null;
+    },
+    // เหตุผลที่ admin ตั้ง "ต้องกรอกรายละเอียด" (requires_note เช่น อื่นๆ) — เดิมเช็คชื่อ "อื่นๆ" ตรงตัว
+    statusNoteRequired() { return Number(this.statusSelectedReason?.requires_note) === 1; },
     ganttMonthLabel() { return `${this.thMonths[this.ganttMonth]} ${this.ganttYear + 543}`; },
     ganttDaysInMonth() { return new Date(this.ganttYear, this.ganttMonth, 0).getDate(); },
     ganttToday() {
@@ -679,12 +768,58 @@ createApp({
         sale_notes: assignment.sale_notes || '',
         bid_amount: assignment.bid_amount || null,
         note:       '',
+        win_loss_reason_id: assignment.win_loss_reason_id ? String(assignment.win_loss_reason_id) : '',
+        win_loss_note:   assignment.win_loss_note || '',
+        winner_competitor_id: assignment.winner_competitor_id || '',
+        winning_price:   assignment.winning_price || '',
       };
       this.modal = { type: 'status', data: assignment };
+      if (!this.winLossReasons.length) this.loadWinLossMasters();
+    },
+
+    // master เหตุผลแพ้/ชนะ + คู่แข่ง — โหลดตอนเปิดหน้าต่างอัพเดตสถานะครั้งแรก
+    async loadWinLossMasters() {
+      const [r, c] = await Promise.all([
+        apiCall('GET', 'api/win_loss_reasons.php?action=list'),
+        apiCall('GET', 'api/competitors.php?action=list'),
+      ]);
+      if (r.success) this.winLossReasons = r.data;
+      if (c.success) this.competitors = c.data;
     },
 
     async submitStatusUpdate() {
-      const res = await apiCall('POST', 'api/assignments.php?action=update', this.statusForm);
+      const payload = { ...this.statusForm };
+      if (payload.win_loss_reason_id) payload.win_loss_reason_id = Number(payload.win_loss_reason_id);
+      if (payload.status === 'ชนะการประมูล') {
+        if (!payload.win_loss_reason_id) { await this.showAlert('กรุณาเลือกเหตุผลที่ชนะ', 'error'); return; }
+        if (this.statusNoteRequired && !String(payload.win_loss_note || '').trim()) {
+          await this.showAlert(`กรุณากรอกรายละเอียดเพิ่มเติม (เหตุผล "${this.statusSelectedReason.win_loss_reason_name}" ต้องระบุว่าเพราะอะไร)`, 'error'); return;
+        }
+        // งานชนะไม่มีผู้ชนะ/ราคาผู้ชนะ (เราชนะเอง) — ไม่ส่งไป
+        delete payload.winner_competitor_id; delete payload.winning_price;
+      } else if (payload.status === 'แพ้การประมูล') {
+        if (!payload.win_loss_reason_id) { await this.showAlert('กรุณาเลือกเหตุผลที่แพ้', 'error'); return; }
+        if (this.statusNoteRequired && !String(payload.win_loss_note || '').trim()) {
+          await this.showAlert(`กรุณากรอกรายละเอียดเพิ่มเติม (เหตุผล "${this.statusSelectedReason.win_loss_reason_name}" ต้องระบุว่าเพราะอะไร)`, 'error'); return;
+        }
+        // แพ้ทุกกรณีต้องระบุผู้ชนะ (ยืนยันจากผู้ใช้ 2026-09-25) — statusRequiresWinner ตอนนี้คุมแค่ราคา
+        if (!payload.winner_competitor_id) {
+          await this.showAlert('กรุณาเลือกผู้ชนะ (ถ้าไม่รู้หรือไม่มีผู้ชนะ ให้เลือก "ยังไม่ทราบ")', 'error'); return;
+        }
+        if (this.statusRequiresWinner && !(Number(payload.winning_price) > 0)) {
+          await this.showAlert('กรุณากรอกราคาที่ผู้ชนะเสนอ (ดูจากประกาศผล e-GP)', 'error'); return;
+        }
+        if (this.statusRequiresWinner && !(Number(payload.bid_amount) > 0)) {
+          await this.showAlert('กรุณากรอกราคาที่เราเสนอ', 'error'); return;
+        }
+        payload.winner_competitor_id = payload.winner_competitor_id || null;
+        payload.winning_price = payload.winning_price === '' ? null : payload.winning_price;
+      } else {
+        // สถานะอื่นไม่ส่งช่องผลแพ้ไป กันเขียนทับเหตุผลชนะ/แพ้ที่บันทึกไว้จากหน้าอื่น
+        delete payload.win_loss_reason_id; delete payload.win_loss_note;
+        delete payload.winner_competitor_id; delete payload.winning_price;
+      }
+      const res = await apiCall('POST', 'api/assignments.php?action=update', payload);
       if (res.success) {
         this.closeModal();
         this.refreshActiveView();

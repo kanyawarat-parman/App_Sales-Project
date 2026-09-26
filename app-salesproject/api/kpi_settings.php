@@ -25,6 +25,11 @@ $defaults = [
     'sla_send_pi'       => '7',
     'sla_negotiating'   => '14',
     'sla_deal_signed'   => '14',
+    // เกณฑ์กลุ่มส่วนต่างราคา (ราคาเราแพงกว่าผู้ชนะกี่ %) ใช้ในหน้า win-loss-analysis.html (ยืนยันจากผู้ใช้ 2026-09-25)
+    // ≤ near = เกือบชนะ, ≤ mid = ห่างปานกลาง, ≤ far = ห่างพอสมควร, > far = ห่างมาก
+    'price_gap_near'    => '2',
+    'price_gap_mid'     => '5',
+    'price_gap_far'     => '10',
 ];
 
 switch ($_SERVER['REQUEST_METHOD']) {

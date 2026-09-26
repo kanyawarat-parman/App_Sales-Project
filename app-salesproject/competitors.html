@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่แข่ง</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<!-- DataTables (ใช้เฉพาะหน้านี้ — jQuery plugin ควบคุมตารางแยกจาก Vue โดยเจตนา เหมือน sources.html/calendars.html) -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<style>
+  /* ชุด style ตารางเดียวกับหน้างานขายตรง (sales-pipeline.html's #spTable) ทั้งหมด — พื้นขาวทุกแถว ช่องค้นหา/ปุ่มหน้าแบบมน (ปรับตามผู้ใช้ 2026-09-24) */
+  #compTable_wrapper { padding: 0 1rem 1rem; }
+  #compTable_wrapper .dataTables_length,
+  #compTable_wrapper .dataTables_filter { float: none; margin-bottom: .75rem; }
+  #compTable_wrapper .dataTables_length label,
+  #compTable_wrapper .dataTables_filter label { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: .8125rem; color: #64748b; white-space: nowrap; }
+  #compTable_wrapper .dataTables_filter input { flex: 0 0 320px; width: 320px; }
+  @media (min-width: 640px) {
+    #compTable_wrapper { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; }
+    #compTable_wrapper .dataTables_length,
+    #compTable_wrapper .dataTables_filter,
+    #compTable_wrapper .dataTables_info,
+    #compTable_wrapper .dataTables_paginate { margin-bottom: 0; }
+    #compTable_wrapper > table { width: 100%; }
+  }
+  #compTable_wrapper .dataTables_filter input,
+  #compTable_wrapper .dataTables_length select { border-radius: 999px; border: 1px solid #e2e8f0; padding: .375rem .9rem; outline: none; }
+  #compTable_wrapper .dataTables_filter input:focus,
+  #compTable_wrapper .dataTables_length select:focus { border-color: #2dd4bf; box-shadow: 0 0 0 2px #ccfbf1; }
+  #compTable_wrapper .dataTables_info { font-size: .8125rem; color: #94a3b8; }
+  #compTable_wrapper .dataTables_paginate { display: flex; gap: .25rem; flex-wrap: wrap; }
+  #compTable_wrapper .dataTables_paginate .paginate_button.current { background: #0f766e !important; color: #fff !important; border-radius: 999px !important; border: none !important; }
+  #compTable_wrapper .dataTables_paginate .paginate_button { border-radius: 999px; padding: .25rem .7rem; }
+  #compTable_wrapper .dataTables_paginate .paginate_button:hover { background: #f0fdfa !important; color: #0f766e !important; }
+  #compTable thead th { background: #f8fafc; color: #64748b; }
+  #compTable tbody tr:hover { background: #f8fafc; }
+  /* ปิด zebra striping + ไฮไลต์คอลัมน์ที่กำลังเรียงอยู่ (DataTables ใส่ให้อัตโนมัติทั้งคู่) — เพิ่งมีผลจริงหลังเพิ่มฟีเจอร์ "เรียงตาม" เหมือน bid-pipeline.html
+     ⚠️ DataTables ไม่ได้ใช้ background-color แต่ใช้ box-shadow: inset 0 0 0 9999px กับทุก <td> ของแถว .odd (ไม่ใช่แค่คอลัมน์ที่เรียงอยู่)
+     ต้องปิด box-shadow ที่ตัว td ทุกตัวในตาราง ไม่งั้นแถวคี่ (.odd) ยังมีคราบเทาเหลืออยู่ทุกคอลัมน์ (ยืนยันปัญหาจากผู้ใช้ 2026-09-21) */
+  #compTable tbody td { box-shadow: none !important; }
+  #compTable tbody tr, #compTable tbody tr.odd, #compTable tbody tr.even { background: #fff !important; }
+</style>
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="competitors" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+          </svg>
+          คู่แข่ง
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <p class="text-sm text-slate-500 mb-4 max-w-[720px]">รายชื่อคู่แข่งภายนอกที่ sale เลือกได้ในฟอร์มดีลงานขายตรง (ช่อง "คู่แข่งในดีลนี้") — admin เป็นคนเพิ่ม/แก้ไขรายชื่อจากหน้านี้เท่านั้น ถ้า sale แจ้งว่าไม่พบคู่แข่งรายไหน ให้เพิ่มที่นี่ เลิกใช้รายไหนให้ "ซ่อน" ดีลเก่าที่เลือกรายนั้นไว้จะยังแสดงชื่อเดิม — ปุ่ม "ลบ" ใช้ได้เฉพาะรายที่ยังไม่มีดีลเลือกไว้ (เช่น เพิ่มผิด) — "ไม่มีคู่แข่ง"/"ยังไม่ทราบ" เป็นตัวเลือกพิเศษที่ sale ต้องใช้ตอนสร้างดีล จึงซ่อน/ลบไม่ได้</p>
+
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 gap-3 flex-wrap">
+            <span class="font-bold text-slate-700 flex items-center gap-2">
+              <span class="w-8 h-8 rounded-lg bg-orange-50 text-orange-700 flex items-center justify-center shrink-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              </span>
+              รายชื่อคู่แข่ง
+            </span>
+            <div class="flex items-center gap-3 flex-wrap">
+              <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                <input type="checkbox" v-model="showHidden" @change="redrawTable" class="accent-teal-600 w-4 h-4">
+                แสดงรายที่ซ่อนไว้ด้วย
+              </label>
+              <button @click="exportCompetitors"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Excel
+              </button>
+              <button @click="openCompetitorModal(null)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">
+                + เพิ่มคู่แข่ง
+              </button>
+            </div>
+          </div>
+
+          <div v-if="loading" class="flex flex-col items-center justify-center py-12 text-slate-400">
+            <div class="spinner w-8 h-8 mx-auto"></div>
+          </div>
+          <div v-show="!loading" class="p-4 overflow-x-auto">
+            <!-- ตารางนี้ DataTables (jQuery) เป็นผู้คุมทั้งหมด เหมือน sources.html — ห้ามใส่ v-for ในนี้เด็ดขาด -->
+            <table id="compTable" class="display w-full min-w-[900px] text-sm"></table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- MODAL: เพิ่ม/แก้ไขคู่แข่ง -->
+    <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
+      v-if="modal.type" @click.self="closeModal">
+      <div v-if="modal.type==='competitor'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">{{ compForm.competitor_id ? 'แก้ไขคู่แข่ง' : 'เพิ่มคู่แข่ง' }}</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 flex flex-col gap-4">
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อคู่แข่ง / แบรนด์ <span class="text-red-500">*</span></label>
+            <p class="text-xs text-slate-500 mb-1">ชื่อสั้นที่ sale ใช้ค้นหาและเลือกในฟอร์มดีล</p>
+            <input v-model="compForm.competitor_name" maxlength="150" placeholder="เช่น Pratika"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+            <p v-if="compForm.competitor_id && compForm.deal_count > 0" class="text-xs text-slate-500 mt-1">
+              แก้ชื่อแล้ว ดีลที่เลือกรายนี้ไว้ ({{ compForm.deal_count }} ดีล) จะเห็นชื่อใหม่ทันที
+            </p>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อบริษัททางการ</label>
+            <input v-model="compForm.competitor_legal_name" maxlength="255" placeholder="เช่น บริษัท โมเดอร์นฟอร์มกรุ๊ป จำกัด (มหาชน)"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ที่อยู่สำนักงานใหญ่</label>
+            <textarea v-model="compForm.competitor_address" rows="2" placeholder="เลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด รหัสไปรษณีย์"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ประเภทธุรกิจ</label>
+            <textarea v-model="compForm.competitor_business_type" rows="2" placeholder="เช่น ผลิตและจำหน่ายเฟอร์นิเจอร์สำนักงาน"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">หมายเหตุ <span class="text-slate-400 font-normal">(ไม่บังคับ)</span></label>
+            <textarea v-model="compForm.competitor_description" rows="3" placeholder="เช่น จุดแข็ง/จุดอ่อน ช่วงราคา กลุ่มลูกค้าหลัก"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+          </div>
+          <div v-if="compForm.competitor_id" class="text-xs text-slate-400">
+            สร้างโดย {{ compForm.created_by_name || 'ระบบ' }} · {{ formatDateTimeThai(compForm.created_at) }}<br>
+            แก้ไขล่าสุดโดย {{ compForm.updated_by_name || 'ระบบ' }} · {{ formatDateTimeThai(compForm.updated_at) }}
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button @click="closeModal"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+            ยกเลิก
+          </button>
+          <button @click="submitCompetitor" :disabled="saving"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-60">
+            {{ saving ? 'กำลังบันทึก...' : 'บันทึก' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=44"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      saving: false,
+      showHidden: false,
+      competitorList: [],
+      modal: { type: null, data: null },
+      compForm: { competitor_id: null, competitor_name: '', competitor_legal_name: '', competitor_address: '', competitor_business_type: '', competitor_description: '' },
+    };
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      // admin เท่านั้นจัดการรายชื่อคู่แข่ง ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-24)
+      if (this.currentUser.role !== 'admin') { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.$nextTick(); // รอให้ Vue วาง <table id="compTable"> ลง DOM ก่อน ค่อยให้ jQuery จับ
+    this.bindTableEvents();
+    // ตัวกรอง "แสดงรายที่ซ่อนไว้ด้วย" — DataTables ไม่ reactive ต้องผูก custom filter เอง (เหมือน sales-pipeline.html)
+    $.fn.dataTable.ext.search.push((settings, searchData, index, rowData) => {
+      if (settings.nTable.id !== 'compTable') return true;
+      return this.showHidden || Number(rowData.is_active) === 1;
+    });
+    await this.loadCompetitors();
+  },
+  methods: {
+    ...SharedMethods,
+
+    esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+
+    /** ผูก event ปุ่มในตาราง "ครั้งเดียว" ตอน mounted ด้วย delegated listener — เหมือน sources.html */
+    bindTableEvents() {
+      const self = this;
+      $('#compTable').on('click', '.edit-comp-btn', function () {
+        const c = self.competitorList.find(x => Number(x.competitor_id) === Number($(this).data('id')));
+        if (c) self.openCompetitorModal(c);
+      });
+      $('#compTable').on('click', '.delete-comp-btn', function () {
+        const c = self.competitorList.find(x => Number(x.competitor_id) === Number($(this).data('id')));
+        if (c) self.deleteCompetitor(c);
+      });
+      $('#compTable').on('click', '.toggle-comp-btn', function () {
+        const c = self.competitorList.find(x => Number(x.competitor_id) === Number($(this).data('id')));
+        if (c) self.toggleCompetitorActive(c);
+      });
+    },
+
+    initDataTable() {
+      const self = this;
+      $('#compTable').DataTable({
+        data: this.competitorList,
+        destroy: true,
+        autoWidth: false,
+        order: [[3, 'desc'], [0, 'asc']], // เจอบ่อยสุดขึ้นก่อน แล้วเรียงตามชื่อ
+        language: {
+          search: 'ค้นหา:',
+          lengthMenu: 'แสดง _MENU_ รายการ',
+          info: 'แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ',
+          infoEmpty: 'ไม่มีข้อมูล',
+          infoFiltered: '(กรองจาก _MAX_ รายการทั้งหมด)',
+          zeroRecords: 'ไม่พบคู่แข่งที่ตรงกับคำค้นหา',
+          paginate: { previous: 'ก่อนหน้า', next: 'ถัดไป' },
+        },
+        columns: [
+          // ชื่อทางการเป็นบรรทัดเล็กใต้ชื่อสั้น — อยู่ใน render ของคอลัมน์นี้ ช่องค้นหาของ DataTables จึงค้นได้ทั้ง 2 ชื่อ
+          {
+            data: 'competitor_name', title: 'ชื่อคู่แข่ง',
+            render: (d, type, row) => type === 'display'
+              ? `<div class="font-semibold text-slate-800">${self.esc(d)}${Number(row.is_special) ? ' <span class="ml-1 inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">ตัวเลือกพิเศษ</span>' : ''}</div>` + (row.competitor_legal_name ? `<div class="text-xs text-slate-500 mt-0.5">${self.esc(row.competitor_legal_name)}</div>` : '')
+              : `${d} ${row.competitor_legal_name || ''}`,
+          },
+          {
+            data: 'competitor_business_type', title: 'ประเภทธุรกิจ', orderable: false,
+            render: d => d ? `<span class="text-slate-600 text-xs leading-snug">${self.esc(d)}</span>` : `<span class="text-slate-300">-</span>`,
+          },
+          {
+            data: 'competitor_description', title: 'หมายเหตุ', orderable: false,
+            render: d => d ? `<span class="text-slate-600 text-xs">${self.esc(d)}</span>` : `<span class="text-slate-300">-</span>`,
+          },
+          {
+            data: 'deal_count', title: 'ดีลที่เจอ', className: 'text-center',
+            render: (d, type) => type === 'display' ? `<span class="font-semibold text-slate-700">${Number(d)}</span>` : Number(d),
+          },
+          {
+            data: 'updated_at', title: 'แก้ไขล่าสุด',
+            render: (d, type, row) => type === 'display'
+              ? `<span class="text-slate-500 text-xs">${self.esc(row.updated_by_name || 'ระบบ')} · ${self.esc(self.formatDateThai(d))}</span>`
+              : d,
+          },
+          {
+            data: 'is_active', title: 'สถานะ', orderable: false,
+            render: d => Number(d)
+              ? `<span class="inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">ใช้งาน</span>`
+              : `<span class="inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">ซ่อนอยู่</span>`,
+          },
+          {
+            data: null, title: 'จัดการ', orderable: false, className: 'text-right whitespace-nowrap',
+            render: (data, type, row) => {
+              const id = Number(row.competitor_id);
+              // ตัวเลือกพิเศษ (ไม่มีคู่แข่ง/ยังไม่ทราบ) แก้ไขข้อความได้ แต่ซ่อน/ลบไม่ได้ — sale ต้องใช้ตอนสร้างดีล (API เช็คซ้ำ)
+              if (Number(row.is_special)) {
+                return `<button class="edit-comp-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" data-id="${id}">แก้ไข</button>`;
+              }
+              let html = `<button class="edit-comp-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" data-id="${id}">แก้ไข</button> `;
+              html += Number(row.is_active)
+                ? `<button class="toggle-comp-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer" data-id="${id}">ซ่อน</button>`
+                : `<button class="toggle-comp-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-teal-200 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer" data-id="${id}">เลิกซ่อน</button>`;
+              html += ` <button class="delete-comp-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-rose-100 text-rose-500 hover:bg-rose-50 border-0 cursor-pointer" data-id="${id}">ลบ</button>`;
+              return html;
+            },
+          },
+        ],
+      });
+    },
+
+    redrawTable() {
+      if ($.fn.dataTable.isDataTable('#compTable')) $('#compTable').DataTable().draw();
+    },
+
+    exportCompetitors() {
+      const headers = ['ชื่อคู่แข่ง', 'ชื่อบริษัททางการ', 'ที่อยู่สำนักงานใหญ่', 'ประเภทธุรกิจ', 'หมายเหตุ', 'ดีลที่เจอ', 'สถานะ', 'แก้ไขล่าสุดโดย', 'แก้ไขล่าสุดเมื่อ'];
+      // export ตามลำดับ/ตัวกรองที่ DataTables แสดงอยู่ตอนนี้ (search:'applied') — เหมือน sources.html
+      const rows = $('#compTable').DataTable().rows({ search: 'applied' }).data().toArray().map(c => [
+        c.competitor_name,
+        c.competitor_legal_name || '',
+        c.competitor_address || '',
+        c.competitor_business_type || '',
+        c.competitor_description || '',
+        Number(c.deal_count),
+        Number(c.is_active) ? 'ใช้งาน' : 'ซ่อนอยู่',
+        c.updated_by_name || 'ระบบ',
+        this.formatDateTimeThai(c.updated_at),
+      ]);
+      this.exportExcel('คู่แข่ง', headers, rows);
+    },
+
+    async loadCompetitors() {
+      this.loading = true;
+      const r = await apiCall('GET', 'api/competitors.php?action=list');
+      this.competitorList = r.success ? r.data : [];
+      this.loading = false;
+      await this.$nextTick();
+      this.initDataTable();
+    },
+
+    openCompetitorModal(c) {
+      this.compForm = c
+        ? { ...c,
+            competitor_legal_name: c.competitor_legal_name || '', competitor_address: c.competitor_address || '',
+            competitor_business_type: c.competitor_business_type || '', competitor_description: c.competitor_description || '' }
+        : { competitor_id: null, competitor_name: '', competitor_legal_name: '', competitor_address: '', competitor_business_type: '', competitor_description: '' };
+      this.modal = { type: 'competitor', data: c };
+    },
+
+    async submitCompetitor() {
+      const name = this.compForm.competitor_name.trim();
+      if (!name) { await this.showAlert('กรุณาระบุชื่อคู่แข่ง', 'error'); return; }
+      const isNew = !this.compForm.competitor_id;
+
+      // เพิ่มใหม่: เตือนก่อนถ้าเจอชื่อคล้ายกัน (กันชื่อซ้ำแบบสะกดต่าง เช่น "Modern form" กับ "Modernform")
+      if (isNew) {
+        const dup = await apiCall('GET', 'api/competitors.php?action=check_duplicate&q=' + encodeURIComponent(name));
+        if (dup.success && dup.data.length) {
+          const names = dup.data.map(c => c.competitor_name).join(', ');
+          const ok = await this.showConfirm('พบชื่อคล้ายกัน', `มีคู่แข่งชื่อคล้ายกันอยู่แล้ว: ${names} — ต้องการเพิ่ม "${name}" เป็นรายใหม่จริงหรือไม่?`, 'เพิ่มรายใหม่');
+          if (!ok) return;
+        }
+      }
+
+      this.saving = true;
+      const payload = {
+        competitor_id: this.compForm.competitor_id, competitor_name: name,
+        competitor_legal_name: this.compForm.competitor_legal_name, competitor_address: this.compForm.competitor_address,
+        competitor_business_type: this.compForm.competitor_business_type, competitor_description: this.compForm.competitor_description,
+      };
+      let res;
+      try {
+        res = await apiCall('POST', `api/competitors.php?action=${isNew ? 'create' : 'update'}`, payload);
+      } catch {
+        res = { success: false, message: 'บันทึกไม่สำเร็จ ระบบขัดข้อง' };
+      } finally {
+        this.saving = false;
+      }
+      if (!res.success) { await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      this.closeModal();
+      await this.loadCompetitors();
+      await this.showAlert(isNew ? 'เพิ่มคู่แข่งเรียบร้อย' : 'บันทึกเรียบร้อย', 'success');
+    },
+
+    // ลบได้เฉพาะรายที่ยังไม่มีดีลเลือกไว้ — มีดีลใช้อยู่ แจ้งให้ซ่อนแทน (API เช็คซ้ำอีกชั้น)
+    async deleteCompetitor(c) {
+      const dealCount = Number(c.deal_count);
+      if (dealCount > 0) {
+        await this.showAlert(`ลบ "${c.competitor_name}" ไม่ได้ เพราะมีดีลเลือกคู่แข่งรายนี้ไว้ ${dealCount} ดีล — ใช้ปุ่ม "ซ่อน" แทน`, 'error');
+        return;
+      }
+      const ok = await this.showConfirm('ลบคู่แข่ง?', `ลบ "${c.competitor_name}" ออกจากรายชื่อถาวร กู้คืนไม่ได้`, 'ลบ');
+      if (!ok) return;
+      const r = await apiCall('POST', 'api/competitors.php?action=delete', { competitor_id: c.competitor_id });
+      if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      await this.loadCompetitors();
+      await this.showAlert('ลบคู่แข่งแล้ว', 'success');
+    },
+
+    async toggleCompetitorActive(c) {
+      const hide = Number(c.is_active) === 1;
+      const msg = hide
+        ? `ซ่อน "${c.competitor_name}" แล้วจะไม่ขึ้นในตัวเลือกของฟอร์มดีล — ดีลเก่าที่เลือกไว้ (${Number(c.deal_count)} ดีล) ยังแสดงชื่อเดิม`
+        : `เลิกซ่อน "${c.competitor_name}" ให้กลับมาเลือกได้ในฟอร์มดีล`;
+      const ok = await this.showConfirm(hide ? 'ซ่อนคู่แข่ง?' : 'เลิกซ่อนคู่แข่ง?', msg, hide ? 'ซ่อน' : 'เลิกซ่อน');
+      if (!ok) return;
+      const r = await apiCall('POST', 'api/competitors.php?action=set_active', { competitor_id: c.competitor_id, is_active: hide ? 0 : 1 });
+      if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      await this.loadCompetitors();
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

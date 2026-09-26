@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เหตุผลปิดงาน (ชนะ/แพ้)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<!-- DataTables (ใช้เฉพาะหน้านี้ — jQuery plugin ควบคุมตารางแยกจาก Vue โดยเจตนา เหมือน sources.html/calendars.html) -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<style>
+  /* ชุด style ตารางเดียวกับหน้างานขายตรง (sales-pipeline.html's #spTable) ทั้งหมด — พื้นขาวทุกแถว ช่องค้นหา/ปุ่มหน้าแบบมน (ปรับตามผู้ใช้ 2026-09-24) */
+  #wlrTable_wrapper { padding: 0 1rem 1rem; }
+  #wlrTable_wrapper .dataTables_length,
+  #wlrTable_wrapper .dataTables_filter { float: none; margin-bottom: .75rem; }
+  #wlrTable_wrapper .dataTables_length label,
+  #wlrTable_wrapper .dataTables_filter label { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: .8125rem; color: #64748b; white-space: nowrap; }
+  #wlrTable_wrapper .dataTables_filter input { flex: 0 0 320px; width: 320px; }
+  @media (min-width: 640px) {
+    #wlrTable_wrapper { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; }
+    #wlrTable_wrapper .dataTables_length,
+    #wlrTable_wrapper .dataTables_filter,
+    #wlrTable_wrapper .dataTables_info,
+    #wlrTable_wrapper .dataTables_paginate { margin-bottom: 0; }
+    #wlrTable_wrapper > table { width: 100%; }
+  }
+  #wlrTable_wrapper .dataTables_filter input,
+  #wlrTable_wrapper .dataTables_length select { border-radius: 999px; border: 1px solid #e2e8f0; padding: .375rem .9rem; outline: none; }
+  #wlrTable_wrapper .dataTables_filter input:focus,
+  #wlrTable_wrapper .dataTables_length select:focus { border-color: #2dd4bf; box-shadow: 0 0 0 2px #ccfbf1; }
+  #wlrTable_wrapper .dataTables_info { font-size: .8125rem; color: #94a3b8; }
+  #wlrTable_wrapper .dataTables_paginate { display: flex; gap: .25rem; flex-wrap: wrap; }
+  #wlrTable_wrapper .dataTables_paginate .paginate_button.current { background: #0f766e !important; color: #fff !important; border-radius: 999px !important; border: none !important; }
+  #wlrTable_wrapper .dataTables_paginate .paginate_button { border-radius: 999px; padding: .25rem .7rem; }
+  #wlrTable_wrapper .dataTables_paginate .paginate_button:hover { background: #f0fdfa !important; color: #0f766e !important; }
+  #wlrTable thead th { background: #f8fafc; color: #64748b; }
+  #wlrTable tbody tr:hover { background: #f8fafc; }
+  /* ปิด zebra striping + ไฮไลต์คอลัมน์ที่กำลังเรียงอยู่ (DataTables ใส่ให้อัตโนมัติทั้งคู่) — เพิ่งมีผลจริงหลังเพิ่มฟีเจอร์ "เรียงตาม" เหมือน bid-pipeline.html
+     ⚠️ DataTables ไม่ได้ใช้ background-color แต่ใช้ box-shadow: inset 0 0 0 9999px กับทุก <td> ของแถว .odd (ไม่ใช่แค่คอลัมน์ที่เรียงอยู่)
+     ต้องปิด box-shadow ที่ตัว td ทุกตัวในตาราง ไม่งั้นแถวคี่ (.odd) ยังมีคราบเทาเหลืออยู่ทุกคอลัมน์ (ยืนยันปัญหาจากผู้ใช้ 2026-09-21) */
+  #wlrTable tbody td { box-shadow: none !important; }
+  #wlrTable tbody tr, #wlrTable tbody tr.odd, #wlrTable tbody tr.even { background: #fff !important; }
+</style>
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="win-loss-reasons" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          เหตุผลปิดงาน (ชนะ/แพ้)
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <p class="text-sm text-slate-500 mb-4 max-w-[760px]">รายการเหตุผลที่ sale เลือกตอนปิดงาน — <b>งานประมูล</b>: ชนะการประมูล / แพ้การประมูล · <b>งานขายตรง</b>: ปิดดีลได้ / ไม่สำเร็จ (Lost) — admin เป็นคนเพิ่ม/แก้ไขจากหน้านี้เท่านั้น ฝั่งไม่สำเร็จต้องเลือกผู้ชนะทุกครั้ง ส่วนเหตุผลที่ติ๊ก "ต้องกรอกราคา" จะบังคับกรอกราคาผู้ชนะและราคาของเราด้วย เลิกใช้เหตุผลไหนให้ "ซ่อน" แทนการลบ งานเดิมยังแสดงข้อความเดิม</p>
+
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 gap-3 flex-wrap">
+            <!-- แท็บกรองตามงาน: งานประมูล/งานขายตรง แสดงรายการเดียวกับที่ sale เห็นในหน้านั้น (ของฝั่งนั้น + ทั้ง 2 ฝั่ง) — เพิ่ม 2026-09-25 -->
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button v-for="t in scopeTabs" :key="t.val" type="button" @click="scopeTab = t.val; redrawTable()"
+                class="px-3.5 py-1.5 rounded-full text-sm font-semibold border-0 cursor-pointer transition-all"
+                :class="scopeTab===t.val ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">{{ t.label }}</button>
+            </div>
+            <div class="flex items-center gap-3 flex-wrap">
+              <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                <input type="checkbox" v-model="showHidden" @change="redrawTable" class="accent-teal-600 w-4 h-4">
+                แสดงรายที่ซ่อนไว้ด้วย
+              </label>
+              <!-- Export Excel แบบเดียวกับหน้าคู่แข่ง/แหล่งที่มา — ส่งออกตามแท็บ/ตัวกรอง/การค้นหาที่แสดงอยู่ (เพิ่ม 2026-09-25) -->
+              <button @click="exportReasons"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Excel
+              </button>
+              <button @click="openReasonModal(null)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">
+                + เพิ่มเหตุผล
+              </button>
+            </div>
+          </div>
+
+          <div v-if="loading" class="flex flex-col items-center justify-center py-12 text-slate-400">
+            <div class="spinner w-8 h-8 mx-auto"></div>
+          </div>
+          <div v-show="!loading" class="p-4 overflow-x-auto">
+            <!-- ตารางนี้ DataTables (jQuery) เป็นผู้คุมทั้งหมด เหมือน competitors.html — ห้ามใส่ v-for ในนี้เด็ดขาด -->
+            <table id="wlrTable" class="display w-full min-w-[820px] text-sm"></table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- MODAL: เพิ่ม/แก้ไขเหตุผล -->
+    <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
+      v-if="modal.type" @click.self="closeModal">
+      <div v-if="modal.type==='reason'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">{{ form.win_loss_reason_id ? 'แก้ไขเหตุผล' : 'เพิ่มเหตุผล' }}</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 flex flex-col gap-4">
+          <!-- เหตุผลอยู่บนสุด: admin เริ่มจากชื่อเหตุผลก่อน แล้วค่อยจัดว่าใช้กับงานไหน/ผลแบบไหน (ปรับตามผู้ใช้ 2026-09-25) -->
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">เหตุผล <span class="text-red-500">*</span></label>
+            <input v-model="form.win_loss_reason_name" maxlength="100" placeholder="เช่น ราคาสูงกว่าคู่แข่ง"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+            <!-- งานเก็บเป็นรหัสเหตุผลแล้ว (2026-09-25) — แก้ชื่อแล้วงานเก่าเปลี่ยนตามทันที จึงเตือนให้ใช้แก้คำผิดเท่านั้น -->
+            <div v-if="form.win_loss_reason_id" class="mt-2 px-3 py-2 rounded-lg bg-amber-50 ring-1 ring-amber-200 text-xs text-amber-800 leading-relaxed">
+              แก้ชื่อได้เฉพาะ<b>แก้คำผิด / ปรับถ้อยคำ</b> — งานที่ใช้เหตุผลนี้<span v-if="form.used_count > 0"> ({{ form.used_count }} งาน)</span> จะแสดงชื่อใหม่ทันที<br>
+              ถ้าความหมายเปลี่ยน ให้<b>เพิ่มเหตุผลใหม่</b> แล้วซ่อนอันเดิม
+            </div>
+          </div>
+          <!-- "ใช้กับงาน" ต้องอยู่ก่อน "ผล" เพราะชื่อผลเปลี่ยนตามงาน (งานประมูล: ชนะ/แพ้ · งานขายตรง: ปิดดีลได้/ไม่สำเร็จ) — ปรับตามผู้ใช้ 2026-09-25 -->
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ใช้กับงาน <span class="text-red-500">*</span></label>
+            <div class="grid grid-cols-3 gap-2">
+              <button v-for="a in appliesToOptions" :key="a.val" type="button" @click="form.applies_to = a.val"
+                class="border-2 rounded-xl py-2.5 px-2 text-center text-[.9rem] font-semibold cursor-pointer transition-all"
+                :class="form.applies_to===a.val ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
+                {{ a.label }}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ผล <span class="text-red-500">*</span></label>
+            <div class="grid grid-cols-2 gap-2">
+              <button v-for="t in ['won','lost']" :key="t" type="button" @click="form.win_loss_type = t"
+                class="border-2 rounded-xl py-2.5 px-2 text-center text-[.9rem] font-semibold cursor-pointer transition-all" :class="form.win_loss_type===t ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
+                {{ resultLabel(t, form.applies_to) }}
+              </button>
+            </div>
+          </div>
+          <label v-if="form.win_loss_type==='lost'" class="flex items-start gap-2.5 cursor-pointer px-3 py-2.5 rounded-lg border-2 transition-all"
+            :class="form.requires_winner ? 'border-teal-500 bg-teal-50' : 'border-slate-200 bg-white'">
+            <input type="checkbox" v-model="form.requires_winner" class="shrink-0 accent-teal-600 mt-1">
+            <div>
+              <div class="text-sm font-semibold text-slate-700">ต้องกรอกราคา</div>
+              <div class="text-xs text-slate-500">{{ requirePriceHint }}</div>
+            </div>
+          </label>
+          <!-- แทนการเช็คชื่อ "อื่นๆ" ในโค้ด — admin ติ๊กเองว่าเหตุผลไหนต้องกรอกรายละเอียด (เพิ่ม 2026-09-25) -->
+          <label class="flex items-start gap-2.5 cursor-pointer px-3 py-2.5 rounded-lg border-2 transition-all"
+            :class="form.requires_note ? 'border-teal-500 bg-teal-50' : 'border-slate-200 bg-white'">
+            <input type="checkbox" v-model="form.requires_note" class="shrink-0 accent-teal-600 mt-1">
+            <div>
+              <div class="text-sm font-semibold text-slate-700">ต้องกรอกรายละเอียดเพิ่มเติม</div>
+              <div class="text-xs text-slate-500">ติ๊กเมื่อเหตุผลนี้กว้างเกินไปจนต้องอธิบายเพิ่ม (เช่น อื่นๆ) — sale ต้องกรอกช่อง "รายละเอียดเพิ่มเติม" ก่อนบันทึก</div>
+            </div>
+          </label>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ลำดับการแสดงผล</label>
+            <input v-model="form.sort_order" type="number" min="0" placeholder="0"
+              class="w-32 border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+            <p class="text-xs text-slate-500 mt-1">เลขน้อยขึ้นก่อน</p>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button @click="closeModal"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+          <button @click="submitReason" :disabled="saving"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-60">
+            {{ saving ? 'กำลังบันทึก...' : 'บันทึก' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=44"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      saving: false,
+      showHidden: false,
+      reasonList: [],
+      modal: { type: null, data: null },
+      form: { win_loss_reason_id: null, win_loss_type: 'lost', applies_to: 'both', win_loss_reason_name: '', requires_winner: false, requires_note: false, sort_order: 0 },
+      // ใช้กับงานไหน — งานประมูล / งานขายตรง / ใช้ทั้ง 2 ฝั่ง (เพิ่ม 2026-09-25)
+      appliesToOptions: [{ val: 'both', label: 'ทั้ง 2 ฝั่ง' }, { val: 'ebidding', label: 'งานประมูล' }, { val: 'sales', label: 'งานขายตรง' }],
+      scopeTab: 'all',
+      scopeTabs: [{ val: 'all', label: 'ทั้งหมด' }, { val: 'ebidding', label: 'งานประมูล' }, { val: 'sales', label: 'งานขายตรง' }],
+    };
+  },
+  computed: {
+    // คำอธิบายช่อง "ต้องกรอกราคา" ตามงาน — งานขายตรงไม่มีการยื่นซอง
+    requirePriceHint() {
+      const hints = {
+        ebidding: 'ติ๊กเมื่อเหตุผลนี้มีราคาให้เทียบจริง (เช่น ราคาสูงกว่าคู่แข่ง, ตกสเปก) — บังคับกรอกราคาผู้ชนะ (จากประกาศผล e-GP) และราคาที่เราเสนอ / ไม่ต้องติ๊กถ้าไม่มีผู้ชนะจริงหรือเราไม่ได้ยื่นซอง (เช่น ลูกค้ายกเลิก, เวลาไม่พอ)',
+        sales:    'ติ๊กเมื่อเหตุผลนี้มีราคาให้เทียบจริง (เช่น ราคาสูงกว่าคู่แข่ง, สินค้าไม่ตรงสเปก) — บังคับกรอกราคาที่คู่แข่งเสนอและมูลค่าที่เราเสนอ / ไม่ต้องติ๊กถ้าไม่มีราคาให้เทียบ (เช่น งบประมาณถูกตัด, ลูกค้ายกเลิก)',
+        both:     'ติ๊กเมื่อเหตุผลนี้มีราคาให้เทียบจริง (เช่น ราคาสูงกว่าคู่แข่ง) — บังคับกรอกราคาผู้ชนะ/คู่แข่ง และราคา/มูลค่าที่เราเสนอ ทั้งงานประมูลและงานขายตรง / ไม่ต้องติ๊กถ้าไม่มีราคาให้เทียบ (เช่น ลูกค้ายกเลิก)',
+      };
+      return hints[this.form.applies_to] || hints.both;
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      // admin เท่านั้นจัดการรายการเหตุผล ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-25)
+      if (this.currentUser.role !== 'admin') { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.$nextTick();
+    this.bindTableEvents();
+    $.fn.dataTable.ext.search.push((settings, searchData, index, rowData) => {
+      if (settings.nTable.id !== 'wlrTable') return true;
+      if (this.scopeTab !== 'all' && rowData.applies_to !== this.scopeTab && rowData.applies_to !== 'both') return false;
+      return this.showHidden || Number(rowData.is_active) === 1;
+    });
+    await this.loadReasons();
+  },
+  methods: {
+    ...SharedMethods,
+
+    esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+    appliesToLabel(v) { return this.appliesToOptions.find(a => a.val === v)?.label || v; },
+    // ชื่อผลตามงาน: งานประมูล ชนะ/แพ้การประมูล · งานขายตรง ปิดดีลได้/ไม่สำเร็จ (Lost) · ทั้ง 2 ฝั่ง แสดงคู่กัน
+    resultLabel(type, appliesTo) {
+      const map = {
+        ebidding: { won: 'ชนะการประมูล', lost: 'แพ้การประมูล' },
+        sales:    { won: 'ปิดดีลได้',     lost: 'ไม่สำเร็จ (Lost)' },
+        both:     { won: 'ชนะ / ปิดดีลได้', lost: 'แพ้ / ไม่สำเร็จ' },
+      };
+      return (map[appliesTo] || map.both)[type] || type;
+    },
+
+    bindTableEvents() {
+      const self = this;
+      const find = el => self.reasonList.find(x => Number(x.win_loss_reason_id) === Number($(el).data('id')));
+      $('#wlrTable').on('click', '.edit-wlr-btn', function () { const r = find(this); if (r) self.openReasonModal(r); });
+      $('#wlrTable').on('click', '.toggle-wlr-btn', function () { const r = find(this); if (r) self.toggleActive(r); });
+    },
+
+    initDataTable() {
+      const self = this;
+      $('#wlrTable').DataTable({
+        data: this.reasonList,
+        destroy: true,
+        autoWidth: false,
+        order: [],  // ใช้ลำดับจาก API (แพ้ก่อน แล้วตาม sort_order)
+        language: {
+          search: 'ค้นหา:', lengthMenu: 'แสดง _MENU_ รายการ', info: 'แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ',
+          infoEmpty: 'ไม่มีข้อมูล', infoFiltered: '(กรองจาก _MAX_ รายการทั้งหมด)', zeroRecords: 'ไม่พบเหตุผลที่ตรงกับคำค้นหา',
+          paginate: { previous: 'ก่อนหน้า', next: 'ถัดไป' },
+        },
+        columns: [
+          // ลำดับคอลัมน์ตามฟอร์มเพิ่ม/แก้ไข: เหตุผล → ใช้กับงาน → ผล → ต้องกรอกราคา → ลำดับการแสดงผล → ... (ปรับตามผู้ใช้ 2026-09-25)
+          { data: 'win_loss_reason_name', title: 'เหตุผล', render: d => `<span class="font-semibold text-slate-800">${self.esc(d)}</span>` },
+          {
+            data: 'applies_to', title: 'ใช้กับงาน',
+            render: d => `<span class="inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${self.esc(self.appliesToLabel(d))}</span>`,
+          },
+          {
+            data: 'win_loss_type', title: 'ผล',
+            render: (d, type, row) => {
+              const cls = d === 'lost' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700';
+              return `<span class="inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full ${cls}">${self.esc(self.resultLabel(d, row.applies_to))}</span>`;
+            },
+          },
+          {
+            data: 'requires_winner', title: 'ต้องกรอกราคา', className: 'text-center', orderable: false,
+            render: (d, type, row) => row.win_loss_type !== 'lost' ? '<span class="text-slate-300">-</span>'
+              : (Number(d) ? '<span class="text-teal-700 font-semibold">ต้องกรอก</span>' : '<span class="text-slate-400">ไม่บังคับ</span>'),
+          },
+          {
+            data: 'requires_note', title: 'ต้องกรอกรายละเอียด', className: 'text-center', orderable: false,
+            render: d => Number(d) ? '<span class="text-teal-700 font-semibold">ต้องกรอก</span>' : '<span class="text-slate-400">ไม่บังคับ</span>',
+          },
+          { data: 'sort_order', title: 'ลำดับการแสดงผล', className: 'text-center' },
+          { data: 'used_count', title: 'จำนวนงานที่ใช้', className: 'text-center', render: d => `<span class="font-semibold text-slate-700">${Number(d)}</span>` },
+          {
+            data: 'updated_at', title: 'แก้ไขล่าสุด',
+            render: (d, type, row) => type === 'display'
+              ? `<span class="text-slate-500 text-xs">${self.esc(row.updated_by_name || 'ระบบ')} · ${self.esc(self.formatDateThai(d))}</span>` : d,
+          },
+          {
+            data: 'is_active', title: 'สถานะ', orderable: false,
+            render: d => Number(d)
+              ? `<span class="inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">ใช้งาน</span>`
+              : `<span class="inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">ซ่อนอยู่</span>`,
+          },
+          {
+            data: null, title: 'จัดการ', orderable: false, className: 'text-right whitespace-nowrap',
+            render: (data, type, row) => {
+              const id = Number(row.win_loss_reason_id);
+              let html = `<button class="edit-wlr-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" data-id="${id}">แก้ไข</button> `;
+              html += Number(row.is_active)
+                ? `<button class="toggle-wlr-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer" data-id="${id}">ซ่อน</button>`
+                : `<button class="toggle-wlr-btn inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-teal-200 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer" data-id="${id}">เลิกซ่อน</button>`;
+              return html;
+            },
+          },
+        ],
+      });
+    },
+
+    // ลำดับคอลัมน์เดียวกับตาราง — ส่งออกตามที่ DataTables แสดงอยู่ (search:'applied' = รวมแท็บ/ซ่อน/ค้นหา) เหมือน competitors.html
+    exportReasons() {
+      const headers = ['เหตุผล', 'ใช้กับงาน', 'ผล', 'ต้องกรอกราคา', 'ต้องกรอกรายละเอียด', 'ลำดับการแสดงผล', 'จำนวนงานที่ใช้', 'แก้ไขล่าสุดโดย', 'แก้ไขล่าสุดเมื่อ', 'สถานะ'];
+      const rows = $('#wlrTable').DataTable().rows({ search: 'applied' }).data().toArray().map(r => [
+        r.win_loss_reason_name,
+        this.appliesToLabel(r.applies_to),
+        this.resultLabel(r.win_loss_type, r.applies_to),
+        r.win_loss_type !== 'lost' ? '-' : (Number(r.requires_winner) ? 'ต้องกรอก' : 'ไม่บังคับ'),
+        Number(r.requires_note) ? 'ต้องกรอก' : 'ไม่บังคับ',
+        Number(r.sort_order),
+        Number(r.used_count),
+        r.updated_by_name || 'ระบบ',
+        this.formatDateTimeThai(r.updated_at),
+        Number(r.is_active) ? 'ใช้งาน' : 'ซ่อนอยู่',
+      ]);
+      this.exportExcel('เหตุผลปิดงาน', headers, rows);
+    },
+
+    redrawTable() {
+      if ($.fn.dataTable.isDataTable('#wlrTable')) $('#wlrTable').DataTable().draw();
+    },
+
+    async loadReasons() {
+      this.loading = true;
+      const r = await apiCall('GET', 'api/win_loss_reasons.php?action=list');
+      this.reasonList = r.success ? r.data : [];
+      this.loading = false;
+      await this.$nextTick();
+      this.initDataTable();
+    },
+
+    openReasonModal(r) {
+      this.form = r
+        ? { ...r, requires_winner: Number(r.requires_winner) === 1, requires_note: Number(r.requires_note) === 1, sort_order: Number(r.sort_order) }
+        : { win_loss_reason_id: null, win_loss_type: 'lost', applies_to: 'both', win_loss_reason_name: '', requires_winner: false, requires_note: false, sort_order: 0 };
+      this.modal = { type: 'reason', data: r };
+    },
+
+    async submitReason() {
+      const name = this.form.win_loss_reason_name.trim();
+      if (!name) { await this.showAlert('กรุณาระบุเหตุผล', 'error'); return; }
+      const isNew = !this.form.win_loss_reason_id;
+      const payload = {
+        win_loss_reason_id: this.form.win_loss_reason_id, win_loss_type: this.form.win_loss_type, applies_to: this.form.applies_to,
+        win_loss_reason_name: name, requires_winner: this.form.requires_winner ? 1 : 0, requires_note: this.form.requires_note ? 1 : 0, sort_order: Number(this.form.sort_order) || 0,
+      };
+      this.saving = true;
+      let res;
+      try {
+        res = await apiCall('POST', `api/win_loss_reasons.php?action=${isNew ? 'create' : 'update'}`, payload);
+      } catch {
+        res = { success: false, message: 'บันทึกไม่สำเร็จ ระบบขัดข้อง' };
+      } finally {
+        this.saving = false;
+      }
+      if (!res.success) { await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      this.closeModal();
+      await this.loadReasons();
+      await this.showAlert(isNew ? 'เพิ่มเหตุผลเรียบร้อย' : 'บันทึกเรียบร้อย', 'success');
+    },
+
+    async toggleActive(r) {
+      const hide = Number(r.is_active) === 1;
+      const ok = await this.showConfirm(hide ? 'ซ่อนเหตุผล?' : 'เลิกซ่อนเหตุผล?',
+        hide ? `ซ่อน "${r.win_loss_reason_name}" แล้วจะไม่ขึ้นเป็นตัวเลือกตอนบันทึกผล — งานเดิมยังแสดงข้อความเดิม` : `เลิกซ่อน "${r.win_loss_reason_name}" ให้กลับมาเลือกได้`,
+        hide ? 'ซ่อน' : 'เลิกซ่อน');
+      if (!ok) return;
+      const res = await apiCall('POST', 'api/win_loss_reasons.php?action=set_active', { win_loss_reason_id: r.win_loss_reason_id, is_active: hide ? 0 : 1 });
+      if (!res.success) { await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      await this.loadReasons();
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

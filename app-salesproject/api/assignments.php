@@ -8,6 +8,7 @@ require_once __DIR__ . '/../includes/mail_helper.php';
 require_once __DIR__ . '/../includes/calendar_helper.php';
 require_once __DIR__ . '/../includes/project_code_helper.php';
 require_once __DIR__ . '/../includes/account_helper.php';
+require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
 require_once __DIR__ . '/../api/line.php';
 
 $user   = requireAuth();
@@ -140,7 +141,9 @@ function getDetail(PDO $db, array $user): void {
     $sql = "
         SELECT pi.id, pi.project_code, pi.announcement_id, pi.assigned_to, pi.assigned_by,
                pi.stage AS status, pi.priority, pi.secretary_notes, pi.notes AS sale_notes,
-               pi.win_loss_reason, pi.win_loss_note, pi.value AS bid_amount,
+               COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason, pi.win_loss_reason_id,
+               pi.win_loss_note, pi.value AS bid_amount,
+               pi.winner_competitor_id, wc.competitor_name AS winner_name, pi.winning_price,
                pi.sla_deadline, pi.sla_status, pi.line_notified_at, pi.email_notified_at,
                pi.created_at AS assigned_at, pi.updated_at,
                a.project_no, a.project_name, a.unit_name, a.announce_date, a.close_date,
@@ -154,6 +157,8 @@ function getDetail(PDO $db, array $user): void {
         LEFT JOIN accounts acc ON acc.id = a.account_id
         JOIN users u1 ON u1.id = pi.assigned_to
         JOIN users u2 ON u2.id = pi.assigned_by
+        LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id
+        LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id
         WHERE pi.project_code = ? AND pi.source_type = 'ebidding' $extra
     ";
     $stmt = $db->prepare($sql);
@@ -165,9 +170,13 @@ function getDetail(PDO $db, array $user): void {
     $stmt2 = $db->prepare("
         SELECT pih.id, pih.pipeline_item_id AS assignment_id, pih.project_code, pih.changed_by,
                pih.old_stage AS old_status, pih.new_stage AS new_status, pih.note, pih.changed_at,
-               u.full_name AS changed_by_name
+               u.full_name AS changed_by_name,
+               pih.win_loss_reason_id, hr.win_loss_reason_name, pih.win_loss_note,
+               pih.winner_competitor_id, hc.competitor_name AS winner_name, pih.winning_price, pih.value AS bid_amount
         FROM pipeline_item_history pih JOIN users u ON u.id = pih.changed_by
-        WHERE pih.pipeline_item_id = ? ORDER BY pih.changed_at DESC
+        LEFT JOIN win_loss_reasons hr ON hr.win_loss_reason_id = pih.win_loss_reason_id
+        LEFT JOIN competitors hc ON hc.competitor_id = pih.winner_competitor_id
+        WHERE pih.pipeline_item_id = ? ORDER BY pih.changed_at DESC, pih.id DESC
     ");
     $stmt2->execute([$id]);
     $row['history'] = $stmt2->fetchAll();
@@ -319,6 +328,62 @@ function createAssignment(PDO $db, array $user): void {
     }
 }
 
+// กติกาบันทึกผล "แพ้การประมูล" ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-25) — ใช้ทุกหน้าที่เปลี่ยนสถานะ (bid-pipeline.html, assignments.html)
+// 1) ต้องมีเหตุผลที่อยู่ใน master win_loss_reasons (ประเภท lost)
+// 2) แพ้ทุกกรณีต้องระบุผู้ชนะ จาก master competitors — ไม่รู้/ไม่มีผู้ชนะจริง (เช่น ลูกค้ายกเลิก) ให้เลือก "ยังไม่ทราบ" (ยืนยันจากผู้ใช้ 2026-09-25)
+// 3) เหตุผลที่ requires_winner=1 (ในหน้าจอเรียก "ต้องกรอกราคา") ต้องกรอกราคาผู้ชนะ (จากประกาศผล e-GP) + ราคาที่เราเสนอ
+//    เหตุผลที่ไม่มีผู้ชนะจริง (ลูกค้ายกเลิก) หรือเราไม่ได้ยื่นซอง (เวลาไม่พอ) ไม่บังคับราคา เพราะไม่มีราคาให้กรอก
+//    (ชื่อคอลัมน์ requires_winner คงไว้ตามเดิม — เดิมใช้คุมทั้งผู้ชนะและราคา ตอนนี้ผู้ชนะบังคับเสมอ จึงเหลือคุมแค่ราคา)
+//    ห้ามเลือก "ไม่มีคู่แข่ง" เป็นผู้ชนะ (มีผู้ชนะแน่นอนถ้าเราแพ้)
+function validateLostResult(PDO $db, array $body): void {
+    // เหตุผลส่งมาเป็นรหัส win_loss_reason_id (เปลี่ยนจากข้อความ 2026-09-25)
+    if (empty($body['win_loss_reason_id'])) jsonResponse(false, null, 'กรุณาเลือกเหตุผลที่แพ้', 400);
+    $reason = findWinLossReason($db, $body['win_loss_reason_id'], 'lost', 'ebidding');
+    if (!$reason) jsonResponse(false, null, 'เหตุผลที่แพ้ไม่อยู่ในรายการ', 400);
+    $requiresWinner = $reason['requires_winner'];
+    requireNoteForReason($reason, $body);
+
+    $winnerId = !empty($body['winner_competitor_id']) ? (int)$body['winner_competitor_id'] : 0;
+    if (!$winnerId) {
+        jsonResponse(false, null, 'กรุณาเลือกผู้ชนะ (ถ้าไม่รู้หรือไม่มีผู้ชนะ ให้เลือก "ยังไม่ทราบ")', 400);
+    }
+    if ((int)$requiresWinner === 1) {
+        if (!isset($body['winning_price']) || $body['winning_price'] === '' || (float)$body['winning_price'] <= 0) {
+            jsonResponse(false, null, 'กรุณากรอกราคาที่ผู้ชนะเสนอ (ดูจากประกาศผล e-GP)', 400);
+        }
+        if (!isset($body['bid_amount']) || $body['bid_amount'] === '' || (float)$body['bid_amount'] <= 0) {
+            jsonResponse(false, null, 'กรุณากรอกราคาที่เราเสนอ', 400);
+        }
+    }
+    if ($winnerId) {
+        $c = $db->prepare('SELECT competitor_name, is_special FROM competitors WHERE competitor_id = ?');
+        $c->execute([$winnerId]);
+        $winner = $c->fetch();
+        if (!$winner) jsonResponse(false, null, 'ไม่พบผู้ชนะในรายชื่อคู่แข่ง', 400);
+        if ((int)$winner['is_special'] === 1 && $winner['competitor_name'] === 'ไม่มีคู่แข่ง') {
+            jsonResponse(false, null, 'เลือก "ไม่มีคู่แข่ง" เป็นผู้ชนะไม่ได้ — ถ้าไม่รู้ให้เลือก "ยังไม่ทราบ"', 400);
+        }
+    }
+    if (isset($body['winning_price']) && $body['winning_price'] !== '' && (float)$body['winning_price'] < 0) {
+        jsonResponse(false, null, 'ราคาผู้ชนะไม่ถูกต้อง', 400);
+    }
+}
+
+// เหตุผลที่ admin ตั้ง "ต้องกรอกรายละเอียด" (requires_note เช่น อื่นๆ) ต้องมี win_loss_note ทั้งชนะและแพ้ (ยืนยันจากผู้ใช้ 2026-09-25)
+// เดิมเช็คจากชื่อ "อื่นๆ" ตรงตัว — เปลี่ยนเป็นคอลัมน์ใน master 2026-09-25 (admin เปลี่ยนชื่อได้โดยไม่ต้องแก้โค้ด)
+function requireNoteForReason(array $reason, array $body): void {
+    $error = winLossNoteError($reason, $body);
+    if ($error) jsonResponse(false, null, $error, 400);
+}
+
+// กติกาบันทึกผล "ชนะการประมูล" — ต้องมีเหตุผลที่อยู่ใน master win_loss_reasons (ประเภท won) (ยืนยันจากผู้ใช้ 2026-09-25)
+function validateWonResult(PDO $db, array $body): void {
+    if (empty($body['win_loss_reason_id'])) jsonResponse(false, null, 'กรุณาเลือกเหตุผลที่ชนะ', 400);
+    $reason = findWinLossReason($db, $body['win_loss_reason_id'], 'won', 'ebidding');
+    if (!$reason) jsonResponse(false, null, 'เหตุผลที่ชนะไม่อยู่ในรายการ', 400);
+    requireNoteForReason($reason, $body);
+}
+
 // Phase 4c: เปลี่ยนให้รับ project_code แทน id
 function updateAssignment(PDO $db, array $user): void {
     $body = getJsonBody();
@@ -361,11 +426,6 @@ function updateAssignment(PDO $db, array $user): void {
             $fields[] = 'bid_amount = ?'; $params[] = $v;
             $piFields[] = 'value = ?'; $piParams[] = $v;
         }
-        if (array_key_exists('win_loss_reason', $body)) {
-            $v = $body['win_loss_reason'] ?: null;
-            $fields[] = 'win_loss_reason = ?'; $params[] = $v;
-            $piFields[] = 'win_loss_reason = ?'; $piParams[] = $v;
-        }
         if (array_key_exists('win_loss_note', $body)) {
             $v = $body['win_loss_note'] ?: null;
             $fields[] = 'win_loss_note = ?'; $params[] = $v;
@@ -393,16 +453,60 @@ function updateAssignment(PDO $db, array $user): void {
             $fields[] = 'bid_amount = ?'; $params[] = $v;
             $piFields[] = 'value = ?'; $piParams[] = $v;
         }
-        if (array_key_exists('win_loss_reason', $body)) {
-            $v = $body['win_loss_reason'] ?: null;
-            $fields[] = 'win_loss_reason = ?'; $params[] = $v;
-            $piFields[] = 'win_loss_reason = ?'; $piParams[] = $v;
-        }
         if (array_key_exists('win_loss_note', $body)) {
             $v = $body['win_loss_note'] ?: null;
             $fields[] = 'win_loss_note = ?'; $params[] = $v;
             $piFields[] = 'win_loss_note = ?'; $piParams[] = $v;
         }
+    }
+
+    // เหตุผลแพ้/ชนะ — เก็บรหัส win_loss_reason_id + ชื่อ ณ วันที่บันทึกลงคอลัมน์ข้อความเดิม (เปลี่ยนจากข้อความ 2026-09-25)
+    // sale และธุรการบันทึกได้เหมือนกัน, sync ไป pipeline_items ด้วย
+    if (array_key_exists('win_loss_reason_id', $body)) {
+        $reasonId   = !empty($body['win_loss_reason_id']) ? (int)$body['win_loss_reason_id'] : null;
+        $reasonName = $reasonId ? winLossReasonName($db, $reasonId) : null;
+        if ($reasonId && $reasonName === null) jsonResponse(false, null, 'ไม่พบเหตุผลที่เลือก', 400);
+        $fields[] = 'win_loss_reason_id = ?'; $params[] = $reasonId;
+        $fields[] = 'win_loss_reason = ?';    $params[] = $reasonName;
+        $piFields[] = 'win_loss_reason_id = ?'; $piParams[] = $reasonId;
+        $piFields[] = 'win_loss_reason = ?';    $piParams[] = $reasonName;
+    }
+
+    // ผู้ชนะ + ราคาผู้ชนะ (กรณีแพ้) — sale และธุรการบันทึกได้เหมือนกัน, sync ไป pipeline_items ด้วย (ยืนยันจากผู้ใช้ 2026-09-25)
+    if (array_key_exists('winner_competitor_id', $body)) {
+        $v = !empty($body['winner_competitor_id']) ? (int)$body['winner_competitor_id'] : null;
+        $fields[] = 'winner_competitor_id = ?'; $params[] = $v;
+        $piFields[] = 'winner_competitor_id = ?'; $piParams[] = $v;
+    }
+    if (array_key_exists('winning_price', $body)) {
+        $v = ($body['winning_price'] === null || $body['winning_price'] === '') ? null : $body['winning_price'];
+        $fields[] = 'winning_price = ?'; $params[] = $v;
+        $piFields[] = 'winning_price = ?'; $piParams[] = $v;
+    }
+    $newStatus = $body['status'] ?? null;
+    if ($newStatus === 'แพ้การประมูล') {
+        validateLostResult($db, $body);
+    } elseif ($newStatus === 'ชนะการประมูล') {
+        // ชนะก็บังคับเหตุผลทุกครั้งที่บันทึกด้วยสถานะชนะ (ยืนยันจากผู้ใช้ 2026-09-25 — เดิมบังคับแค่ตอนเปลี่ยนเป็นชนะ ผู้ใช้ขอให้บังคับเสมอ)
+        // งานที่ชนะไปก่อนมีกติกานี้ (ไม่มีเหตุผล) จึงต้องเลือกเหตุผลย้อนหลังตอนแก้ไขครั้งถัดไปด้วย
+        validateWonResult($db, $body);
+    }
+    // ย้ายจากสถานะที่มีผลแล้ว (ชนะ/ส่งมอบ/แพ้) กลับไปสถานะที่ยังไม่จบ (เช่น แก้สถานะผิด) → ล้างผลแพ้/ชนะที่ตัวงาน (ยืนยันจากผู้ใช้ 2026-09-25)
+    // ค่าเดิมไม่หาย เพราะถูกเก็บไว้ในแถวประวัติตอนบันทึกผลแล้ว (ดู snapshot ด้านล่าง) — ล้างเฉพาะช่องที่ไม่ได้ส่งมา กันกำหนดคอลัมน์ซ้ำใน UPDATE
+    $resultStatuses = ['ชนะการประมูล', 'ส่งมอบแล้ว', 'แพ้การประมูล'];
+    $leavingResult  = $newStatus !== null && in_array($current['status'], $resultStatuses, true) && !in_array($newStatus, $resultStatuses, true);
+    if ($leavingResult) {
+        $clearColumns = ['win_loss_reason_id' => ['win_loss_reason_id', 'win_loss_reason'], 'win_loss_note' => ['win_loss_note'],
+                         'winner_competitor_id' => ['winner_competitor_id'], 'winning_price' => ['winning_price']];
+        foreach ($clearColumns as $bodyKey => $columns) {
+            if (array_key_exists($bodyKey, $body)) continue;
+            foreach ($columns as $col) { $fields[] = "{$col} = NULL"; $piFields[] = "{$col} = NULL"; }
+        }
+    } elseif ($newStatus !== null && $newStatus !== 'แพ้การประมูล' && $current['status'] === 'แพ้การประมูล'
+        && !array_key_exists('winner_competitor_id', $body)) {
+        // ย้ายจาก "แพ้การประมูล" ไป "ชนะ" (แก้ผลผิด) → ล้างผู้ชนะ/ราคาผู้ชนะที่ไม่เกี่ยวแล้ว
+        $fields[] = 'winner_competitor_id = NULL'; $fields[] = 'winning_price = NULL';
+        $piFields[] = 'winner_competitor_id = NULL'; $piFields[] = 'winning_price = NULL';
     }
 
     if (empty($fields)) jsonResponse(false, null, 'ไม่มีข้อมูลให้อัพเดต', 400);
@@ -422,16 +526,32 @@ function updateAssignment(PDO $db, array $user): void {
 
     // บันทึก history ถ้าสถานะเปลี่ยน
     if (isset($body['status']) && $body['status'] !== $current['status']) {
-        $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note) VALUES (?, ?, ?, ?, ?, ?)")
-           ->execute([$id, $current['project_code'], $user['id'], $current['status'], $body['status'], $body['note'] ?? null]);
+        // เปลี่ยนเป็นสถานะที่มีผล (ชนะ/ส่งมอบ/แพ้) → เก็บผลแพ้/ชนะ ณ ตอนนี้ไว้ในแถวประวัติด้วย (ยืนยันจากผู้ใช้ 2026-09-25)
+        // อ่านค่าหลัง UPDATE แล้ว จึงได้ค่าที่บันทึกจริง / ผู้ชนะ+ราคาผู้ชนะเก็บเฉพาะแพ้
+        $snap = ['win_loss_reason_id' => null, 'win_loss_note' => null, 'winner_competitor_id' => null, 'winning_price' => null, 'bid_amount' => null];
+        if (in_array($body['status'], $resultStatuses, true)) {
+            $snapStmt = $db->prepare('SELECT win_loss_reason_id, win_loss_note, winner_competitor_id, winning_price, bid_amount FROM project_assignments WHERE id = ?');
+            $snapStmt->execute([$id]);
+            $snap = $snapStmt->fetch();
+            if ($body['status'] !== 'แพ้การประมูล') { $snap['winner_competitor_id'] = null; $snap['winning_price'] = null; }
+        }
+        $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note,
+                          win_loss_reason_id, win_loss_note, winner_competitor_id, winning_price, bid_amount)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+           ->execute([$id, $current['project_code'], $user['id'], $current['status'], $body['status'], $body['note'] ?? null,
+                      $snap['win_loss_reason_id'], $snap['win_loss_note'], $snap['winner_competitor_id'], $snap['winning_price'], $snap['bid_amount']]);
 
         // Phase 5b: sync ประวัติไปที่ pipeline_item_history ด้วย ถ้ามี mirror อยู่แล้ว (ถูก UPDATE ให้ stage ตรงกันไปแล้วที่ด้านบน)
         $piIdStmt = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'");
         $piIdStmt->execute([$current['announcement_id'], $current['assigned_to']]);
         $piId = $piIdStmt->fetchColumn();
         if ($piId) {
-            $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)")
-               ->execute([$piId, $current['project_code'], $user['id'], $current['status'], $body['status'], $body['note'] ?? null]);
+            // ผลแพ้/ชนะชุดเดียวกับ assignment_history (bid_amount ของงานประมูล = value ของ pipeline_items)
+            $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note,
+                              win_loss_reason_id, win_loss_note, winner_competitor_id, winning_price, value)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+               ->execute([$piId, $current['project_code'], $user['id'], $current['status'], $body['status'], $body['note'] ?? null,
+                          $snap['win_loss_reason_id'], $snap['win_loss_note'], $snap['winner_competitor_id'], $snap['winning_price'], $snap['bid_amount']]);
         }
 
         // เมื่อชนะประมูล → auto สร้าง pipeline_item (เผื่อยังไม่เคยมี — ปกติจะมีจากตอนมอบหมายแล้ว) เพื่อบันทึกไว้ครบ
@@ -858,7 +978,9 @@ function fetchKanbanBuckets(PDO $db, array $where, array $params): array {
     $whereStr = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     $sql = "
         SELECT pi.id, pi.project_code, pi.stage AS status, pi.priority, pi.sla_status,
-               pi.value AS bid_amount, pi.win_loss_reason, pi.win_loss_note,
+               pi.value AS bid_amount, COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason,
+               pi.win_loss_reason_id, pi.win_loss_note,
+               pi.winner_competitor_id, wc.competitor_name AS winner_name, pi.winning_price,
                pi.sla_deadline, pi.created_at AS assigned_at,
                a.project_no, a.project_name, a.unit_name, a.close_date, a.price_median,
                u1.id AS sale_id, u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url,
@@ -866,6 +988,8 @@ function fetchKanbanBuckets(PDO $db, array $where, array $params): array {
         FROM pipeline_items pi
         JOIN announcements a ON a.id = pi.announcement_id
         JOIN users u1 ON u1.id = pi.assigned_to
+        LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id
+        LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id
         LEFT JOIN (
             SELECT pipeline_item_id, MAX(changed_at) AS last_changed_at
             FROM pipeline_item_history

@@ -478,7 +478,7 @@
                 <!-- Win/Loss reason -->
                 <div v-if="card.win_loss_reason"
                   class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-1">
-                  {{ card.win_loss_reason }}
+                  {{ card.win_loss_reason }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
                 </div>
                 <!-- Action buttons -->
                 <div v-if="canMove(card.status)" class="flex gap-1 mt-2" @click.stop>
@@ -540,7 +540,7 @@
             <!-- Win/Loss reason -->
             <div v-if="card.win_loss_reason"
               class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-1">
-              {{ card.win_loss_reason }}
+              {{ card.win_loss_reason }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
             </div>
             <!-- Action buttons -->
             <div v-if="canMove(card.status)" class="flex gap-1 mt-2" @click.stop>
@@ -729,6 +729,13 @@
               {{ modal.data.win_loss_reason }}<span v-if="modal.data.win_loss_note"> — {{ modal.data.win_loss_note }}</span>
             </div>
           </div>
+          <div v-if="modal.data.status==='แพ้การประมูล' && (modal.data.winner_name || modal.data.winning_price)" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ผู้ชนะการประมูล</div>
+            <div class="text-sm p-3 rounded-xl bg-rose-50 text-rose-800">
+              <div class="font-semibold">{{ modal.data.winner_name || 'ไม่ระบุ' }}<span v-if="modal.data.winning_price"> · {{ formatPrice(modal.data.winning_price) }}</span></div>
+              <div v-if="priceGapText(modal.data.bid_amount, modal.data.winning_price)" class="text-xs mt-1">{{ priceGapText(modal.data.bid_amount, modal.data.winning_price) }}</div>
+            </div>
+          </div>
           <div v-if="modal.data.history?.length" class="mb-2">
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติสถานะ</div>
             <div v-for="h in modal.data.history" :key="h.id" class="flex gap-3 py-2 border-b border-slate-50">
@@ -740,6 +747,11 @@
                   <span v-if="h.old_status">→</span>
                   <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadge(h.new_status)">{{ h.new_status }}</span>
                   <span v-if="h.note" class="text-slate-400">· {{ h.note }}</span>
+                </div>
+                <!-- ผลแพ้/ชนะที่เก็บไว้ในประวัติ ณ ตอนบันทึกผล — ดูย้อนหลังได้แม้งานถูกย้ายกลับแล้ว (ยืนยันจากผู้ใช้ 2026-09-25) -->
+                <div v-if="h.win_loss_reason_name" class="text-xs text-slate-600 mt-0.5">
+                  เหตุผล: {{ h.win_loss_reason_name }}<span v-if="h.win_loss_note"> — {{ h.win_loss_note }}</span>
+                  <span v-if="h.winner_name"> · แพ้ให้ {{ h.winner_name }}<span v-if="Number(h.winning_price)"> ({{ formatPrice(h.winning_price) }})</span></span>
                 </div>
                 <div class="text-[11px] text-slate-400 mt-0.5">{{ formatDateTimeThai(h.changed_at) }}</div>
               </div>
@@ -855,40 +867,77 @@
 
       <!-- Win/Loss Modal -->
       <div v-if="modal.type==='win-loss'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
-        <div class="px-6 py-5 flex items-center justify-between border-b"
-          :style="winLossForm.newStatus==='ชนะการประมูล' ? 'background:#f0fdf4;border-color:#bbf7d0' : 'background:#fff1f2;border-color:#fecdd3'">
-          <h3 class="font-bold text-lg" :style="winLossForm.newStatus==='ชนะการประมูล' ? 'color:#15803d' : 'color:#b91c1c'">
-            {{ winLossForm.newStatus==='ชนะการประมูล' ? 'บันทึก — ชนะการประมูล' : 'บันทึก — แพ้การประมูล' }}
-          </h3>
+        <!-- หัวขาวเหมือน modal อื่นในระบบ — ใช้ป้าย ✓ ชนะ / ✕ แพ้ บอกผลแทนการทาสีทั้งแถบ (ปรับตามผู้ใช้ 2026-09-25) -->
+        <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100 bg-white">
+          <div class="flex items-center gap-2.5">
+            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold"
+              :class="winLossForm.newStatus==='ชนะการประมูล' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'">
+              {{ winLossForm.newStatus==='ชนะการประมูล' ? '✓ ชนะ' : '✕ แพ้' }}
+            </span>
+            <h3 class="font-bold text-lg text-slate-800">บันทึกผลการประมูล</h3>
+          </div>
           <button class="bg-transparent border-0 text-2xl cursor-pointer leading-none text-slate-500 hover:text-slate-700" @click="closeModal">×</button>
         </div>
         <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
           <div class="text-sm font-semibold text-slate-800 mb-4 px-3 py-2.5 bg-slate-50 rounded-xl ring-1 ring-slate-200 line-clamp-2">
             {{ modal.data?.project_name }}
           </div>
-          <div class="mb-4">
-            <label class="block text-sm font-semibold text-slate-600 mb-2">เหตุผลหลัก <span class="text-red-500">*</span></label>
-            <div class="flex gap-2 flex-wrap">
-              <div v-for="r in (winLossForm.newStatus==='ชนะการประมูล' ? wonReasons : lostReasons)" :key="r"
-                @click="winLossForm.reason = r"
-                class="px-3 py-1.5 rounded-xl border-[1.5px] text-sm font-semibold cursor-pointer transition-all"
-                :style="winLossForm.reason===r
-                  ? (winLossForm.newStatus==='ชนะการประมูล' ? 'background:#166534;color:#fff;border-color:#166534' : 'background:#b91c1c;color:#fff;border-color:#b91c1c')
-                  : (winLossForm.newStatus==='ชนะการประมูล' ? 'background:#f0fdf4;color:#166534;border-color:#86efac' : 'background:#fff1f2;color:#b91c1c;border-color:#fca5a5')">
-                {{ r }}
-              </div>
+          <!-- กล่องพื้นเทาอ่อนเป็นกลาง มีหัวกล่องกำกับ — สีเขียว/แดงใช้แค่ป้ายหัว modal กับปุ่มยืนยัน (ปรับตามผู้ใช้ 2026-09-25) -->
+          <div class="mb-4 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-500 mb-2">เหตุผล</div>
+            <div class="mb-4">
+              <!-- dropdown แบบเดียวกับหน้าต่างอัพเดตสถานะของ assignments.html (เดิมเป็นปุ่ม chip — ปรับให้เหมือนกันตามผู้ใช้ 2026-09-25) -->
+              <label class="block text-sm font-semibold text-slate-600 mb-1">{{ winLossForm.newStatus==='ชนะการประมูล' ? 'เหตุผลที่ชนะ' : 'เหตุผลที่แพ้' }} <span class="text-red-500">*</span></label>
+              <select v-model="winLossForm.reason" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="">-- เลือกเหตุผล --</option>
+                <option v-for="r in (winLossForm.newStatus==='ชนะการประมูล' ? wonReasons : lostReasons)" :key="r.win_loss_reason_id" :value="String(r.win_loss_reason_id)">{{ r.win_loss_reason_name }}</option>
+              </select>
+            </div>
+            <!-- รายละเอียดเพิ่มเติมอยู่ต่อจากเหตุผลทันที — เลือก "อื่นๆ" แล้วเห็นช่องที่ต้องกรอกเลย (ปรับตามผู้ใช้ 2026-09-25) -->
+            <div>
+              <label class="block text-sm font-semibold text-slate-600 mb-1">รายละเอียดเพิ่มเติม <span v-if="winLossNoteRequired" class="text-red-500">*</span></label>
+              <textarea v-model="winLossForm.note" rows="3"
+                :placeholder="winLossForm.newStatus==='ชนะการประมูล' ? 'เช่น ราคาต่างจากคู่แข่ง / จุดแข็งที่ทำให้ชนะ...' : 'เช่น สเปกที่ขาด / สิ่งที่ควรปรับครั้งหน้า...'"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
             </div>
           </div>
-          <div v-if="winLossForm.newStatus==='ชนะการประมูล'" class="mb-4">
+          <div v-if="winLossForm.newStatus==='ชนะการประมูล'" class="mb-4 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-500 mb-2">ราคา</div>
             <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่เสนอ (บาท)</label>
             <input type="number" v-model="winLossForm.bid_amount" placeholder="0.00"
-              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
           </div>
-          <div class="mb-4">
-            <label class="block text-sm font-semibold text-slate-600 mb-1">รายละเอียดเพิ่มเติม</label>
-            <textarea v-model="winLossForm.note" rows="3"
-              :placeholder="winLossForm.newStatus==='ชนะการประมูล' ? 'เช่น ราคาต่างจากคู่แข่ง / จุดแข็งที่ทำให้ชนะ...' : 'เช่น ชื่อผู้ชนะ / ราคาที่ต่างกัน / สเปกที่ขาด...'"
-              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+          <!-- แพ้: ผู้ชนะ + ราคาผู้ชนะ (ยืนยันจากผู้ใช้ 2026-09-25) — ผู้ชนะเลือกจาก master คู่แข่งชุดเดียวกับฟอร์มดีล (ไม่มี "ไม่มีคู่แข่ง" เพราะแพ้ = มีผู้ชนะ)
+               บังคับเฉพาะเหตุผลที่ requires_winner=1 (เช่น ราคาสูงกว่าคู่แข่ง) — ข้อมูลผู้ชนะ/ราคาดูได้จากประกาศผล e-GP -->
+          <div v-if="winLossForm.newStatus==='แพ้การประมูล'" class="mb-4 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-500 mb-2">ผู้ชนะและราคา</div>
+            <div class="mb-3">
+              <label class="block text-sm font-semibold text-slate-600 mb-1">
+                ผู้ชนะการประมูล <span class="text-red-500">*</span>
+              </label>
+              <select v-model="winLossForm.winner_competitor_id"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <option value="">-- เลือกผู้ชนะ --</option>
+                <option v-for="c in winnerOptions" :key="c.competitor_id" :value="c.competitor_id">{{ c.competitor_name }}</option>
+              </select>
+              <div class="text-xs text-slate-500 mt-1">ไม่รู้ผู้ชนะ / ไม่มีผู้ชนะ (เช่น ลูกค้ายกเลิก) / ไม่มีในรายการ ให้เลือก "ยังไม่ทราบ" — ไม่มีในรายการให้แจ้ง admin เพิ่มชื่อคู่แข่ง</div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่ผู้ชนะเสนอ (บาท) <span v-if="winLossRequiresWinner" class="text-red-500">*</span></label>
+                <input type="number" min="0" v-model="winLossForm.winning_price" placeholder="ตามประกาศผล e-GP"
+                  class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่เราเสนอ (บาท) <span v-if="winLossRequiresWinner" class="text-red-500">*</span></label>
+                <input type="number" min="0" v-model="winLossForm.bid_amount" placeholder="0.00"
+                  class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              </div>
+            </div>
+            <div v-if="!winLossRequiresWinner" class="text-xs text-slate-500 mt-2">เหตุผลนี้ไม่มีผู้ชนะจริง หรือเราไม่ได้ยื่นซอง จึงไม่บังคับกรอกราคา (ผู้ชนะยังต้องเลือก)</div>
+            <div v-if="priceGapText(winLossForm.bid_amount, winLossForm.winning_price)" class="text-sm font-semibold text-rose-700 mt-2">
+              {{ priceGapText(winLossForm.bid_amount, winLossForm.winning_price) }}
+            </div>
           </div>
         </div>
         <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -896,7 +945,7 @@
           <button class="px-5 py-2 rounded-xl text-sm font-bold text-white border-0 cursor-pointer"
             :class="winLossForm.newStatus==='ชนะการประมูล' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'"
             @click="submitWinLoss">
-            {{ winLossForm.newStatus==='ชนะการประมูล' ? 'ยืนยันชนะ ✓' : 'ยืนยันแพ้' }}
+            {{ winLossForm.newStatus==='ชนะการประมูล' ? '✓ ยืนยันชนะ' : '✕ ยืนยันแพ้' }}
           </button>
         </div>
       </div>
@@ -1161,7 +1210,9 @@ createApp({
       openFilterDropdown: null, // 'sales' | 'period' | 'sort' | null — custom dropdown ตัวกรอง Sales/ช่วงเวลา/เรียงตาม (ยืนยันจากผู้ใช้ 2026-09-20)
       sortBy: 'close_asc', // เรียงลำดับข้อมูลทั้ง 3 มุมมอง (Kanban/การ์ด/ตาราง) ด้วยตัวแปรเดียวกัน (ยืนยันจากผู้ใช้ 2026-09-20)
       navHeight: 0, // ความสูงจริงของแถบ AppNav (เปลี่ยนตามจอ/เนื้อหา) ใช้เป็นค่า top ของ header หน้านี้ตอน sticky กันซ้อนทับ — AppNav แก้ให้ sticky จริงแล้ว (shared/app.js, 2026-09-20)
-      winLossForm: { id: null, newStatus: '', reason: '', note: '', bid_amount: null },
+      winLossForm: { id: null, newStatus: '', reason: '', note: '', bid_amount: null, winner_competitor_id: '', winning_price: '' },
+      winLossReasons: [], // master เหตุผลแพ้/ชนะ จาก api/win_loss_reasons.php (admin แก้ได้ที่ win-loss-reasons.html)
+      competitors: [],    // master คู่แข่ง จาก api/competitors.php — ใช้เป็นตัวเลือก "ผู้ชนะการประมูล"
       editingUnitName: false,
       savingUnitName: false,
       unitNameDraft: '',
@@ -1282,8 +1333,27 @@ createApp({
       return n;
     },
 
-    wonReasons()  { return ['ราคากลาง','คุณสมบัติตรงสเปก','ความสัมพันธ์ลูกค้า','ส่งเร็วกว่าคู่แข่ง','อื่นๆ']; },
-    lostReasons() { return ['ราคาสูงกว่าคู่แข่ง','ตกสเปก','เอกสารไม่ครบ','เวลาไม่พอ','ลูกค้าเลื่อน/ยกเลิก','อื่นๆ']; },
+    // เหตุผลแพ้/ชนะจาก master win_loss_reasons (เดิม hardcode ในโค้ด — ย้ายเป็น master ให้ admin แก้ได้ ยืนยันจากผู้ใช้ 2026-09-25)
+    // เฉพาะเหตุผลของงานประมูล (applies_to = ebidding / both) — ของงานขายตรงไม่แสดงที่นี่
+    // ค่าที่เลือก (winLossForm.reason) เป็นรหัส win_loss_reason_id — เปลี่ยนจากข้อความ 2026-09-25
+    wonReasons()  { return this.winLossReasons.filter(r => r.win_loss_type === 'won'  && r.applies_to !== 'sales' && Number(r.is_active) === 1); },
+    lostReasons() { return this.winLossReasons.filter(r => r.win_loss_type === 'lost' && r.applies_to !== 'sales' && Number(r.is_active) === 1); },
+    winLossSelectedReason() {
+      return this.winLossReasons.find(r => String(r.win_loss_reason_id) === String(this.winLossForm.reason)) || null;
+    },
+    // เหตุผลที่ admin ตั้ง "ต้องกรอกรายละเอียด" (requires_note เช่น อื่นๆ) — เดิมเช็คชื่อ "อื่นๆ" ตรงตัว
+    winLossNoteRequired() { return Number(this.winLossSelectedReason?.requires_note) === 1; },
+    // เหตุผลที่เลือกอยู่ต้องระบุผู้ชนะหรือไม่ (requires_winner)
+    // ยังไม่เลือกเหตุผล → ถือว่าบังคับไว้ก่อน (แสดง *) จะไม่บังคับก็ต่อเมื่อเลือกเหตุผลที่ไม่มีผู้ชนะจริง เช่น ลูกค้ายกเลิก
+    winLossRequiresWinner() {
+      if (this.winLossForm.newStatus !== 'แพ้การประมูล') return false;
+      if (!this.winLossForm.reason) return true;
+      return Number(this.winLossSelectedReason?.requires_winner) === 1;
+    },
+    // ตัวเลือกผู้ชนะ: คู่แข่งที่ใช้งานอยู่ + "ยังไม่ทราบ" — ไม่รวม "ไม่มีคู่แข่ง" เพราะแพ้ = มีผู้ชนะแน่นอน (API เช็คซ้ำ)
+    winnerOptions() {
+      return this.competitors.filter(c => Number(c.is_active) === 1 && !(Number(c.is_special) === 1 && c.competitor_name === 'ไม่มีคู่แข่ง'));
+    },
 
     parsedItems() {
       const raw = this.modal?.data?.items;
@@ -1359,6 +1429,7 @@ createApp({
       return this.matchesSearch(rowData);
     });
     if (this.isManager) this.loadSales();
+    this.loadWinLossMasters();
     this.loadData();
 
     // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky กันซ้อนทับ (ยืนยันจากผู้ใช้ 2026-09-20)
@@ -1698,20 +1769,62 @@ createApp({
       }
     },
 
+    // master เหตุผลแพ้/ชนะ + คู่แข่ง (สำหรับเลือกผู้ชนะ) — โหลดครั้งเดียวตอนเปิดหน้า
+    async loadWinLossMasters() {
+      const [r, c] = await Promise.all([
+        apiCall('GET', 'api/win_loss_reasons.php?action=list'),
+        apiCall('GET', 'api/competitors.php?action=list'),
+      ]);
+      if (r.success) this.winLossReasons = r.data;
+      if (c.success) this.competitors = c.data;
+    },
+
+    // ส่วนต่างราคาเราเทียบผู้ชนะ เช่น "เราแพงกว่าผู้ชนะ ฿45,000 (3.2%)" — คำนวณเฉพาะเมื่อมีทั้ง 2 ราคา
+    priceGapText(ourPrice, winnerPrice) {
+      const ours = Number(ourPrice), win = Number(winnerPrice);
+      if (!ours || !win) return '';
+      const diff = ours - win;
+      if (diff === 0) return 'ราคาเท่ากับผู้ชนะ';
+      const pct = Math.abs(diff) / win * 100;
+      return 'เรา' + (diff > 0 ? 'แพงกว่า' : 'ถูกกว่า') + 'ผู้ชนะ ' + this.formatPrice(Math.abs(diff)) + ' (' + pct.toFixed(1) + '%)';
+    },
+
     openWinLoss(card, newStatus) {
-      this.winLossForm = { project_code: card.project_code, newStatus, reason: '', note: '', bid_amount: card.bid_amount || null };
+      this.winLossForm = {
+        project_code: card.project_code, newStatus, reason: '', note: '', bid_amount: card.bid_amount || null,
+        winner_competitor_id: card.winner_competitor_id || '', winning_price: card.winning_price || '',
+      };
       this.modal = { type: 'win-loss', data: card };
     },
 
     async submitWinLoss() {
       if (!this.winLossForm.reason) { await this.showAlert('กรุณาเลือกเหตุผล', 'error'); return; }
+      // เหตุผลที่ต้องกรอกรายละเอียด (เช่น อื่นๆ) ต้องระบุว่าเพราะอะไร (ยืนยันจากผู้ใช้ 2026-09-25) — API เช็คซ้ำ
+      if (this.winLossNoteRequired && !String(this.winLossForm.note || '').trim()) {
+        await this.showAlert(`กรุณากรอกรายละเอียดเพิ่มเติม (เหตุผล "${this.winLossSelectedReason.win_loss_reason_name}" ต้องระบุว่าเพราะอะไร)`, 'error'); return;
+      }
+      // แพ้ทุกกรณีต้องระบุผู้ชนะ (ยืนยันจากผู้ใช้ 2026-09-25) — winLossRequiresWinner ตอนนี้คุมแค่ราคา
+      if (this.winLossForm.newStatus === 'แพ้การประมูล' && !this.winLossForm.winner_competitor_id) {
+        await this.showAlert('กรุณาเลือกผู้ชนะ (ถ้าไม่รู้หรือไม่มีผู้ชนะ ให้เลือก "ยังไม่ทราบ")', 'error'); return;
+      }
+      // เหตุผลที่มีผู้ชนะจริง บังคับกรอกราคาทั้ง 2 ฝั่ง (ยืนยันจากผู้ใช้ 2026-09-25) — API เช็คซ้ำ
+      if (this.winLossRequiresWinner && !(Number(this.winLossForm.winning_price) > 0)) {
+        await this.showAlert('กรุณากรอกราคาที่ผู้ชนะเสนอ (ดูจากประกาศผล e-GP)', 'error'); return;
+      }
+      if (this.winLossRequiresWinner && !(Number(this.winLossForm.bid_amount) > 0)) {
+        await this.showAlert('กรุณากรอกราคาที่เราเสนอ', 'error'); return;
+      }
       const payload = {
         project_code:    this.winLossForm.project_code,
         status:          this.winLossForm.newStatus,
-        win_loss_reason: this.winLossForm.reason,
-        win_loss_note:   this.winLossForm.note,
+        win_loss_reason_id: Number(this.winLossForm.reason),
+        win_loss_note:      this.winLossForm.note,
       };
       if (this.winLossForm.bid_amount) payload.bid_amount = this.winLossForm.bid_amount;
+      if (this.winLossForm.newStatus === 'แพ้การประมูล') {
+        payload.winner_competitor_id = this.winLossForm.winner_competitor_id || null;
+        payload.winning_price = this.winLossForm.winning_price === '' ? null : this.winLossForm.winning_price;
+      }
       const res = await apiCall('POST', 'api/assignments.php?action=update', payload);
       if (res.success) {
         this.closeModal();

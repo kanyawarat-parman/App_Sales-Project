@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>วิเคราะห์ผลแพ้/ชนะ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<!-- วิเคราะห์ผลแพ้/ชนะ + คู่แข่ง (ยืนยันจากผู้ใช้ 2026-09-25) — หน้าเดียว 2 แท็บ ตามมาตรฐาน CRM
+     แยกดูทีละประเภทงาน (งานประมูล / งานขายตรง) เป็นหลัก — "ทั้งหมด" แสดง 2 ฝั่งเทียบคู่ ไม่รวมเป็นตัวเลขเดียว (ยกเว้นตารางคู่แข่งที่รวมได้)
+     sale เห็นเฉพาะงานของตัวเอง — API (api/win_loss_analysis.php) บังคับเอง -->
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="win-loss-analysis" ref="nav"></app-nav>
+
+    <div v-if="openDropdown" class="fixed inset-0 z-[39]" @click="openDropdown = null"></div>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <!-- แถบหัวแบบ sticky รวมตัวกรองไว้แถวเดียวกัน (ชื่อหน้าซ้าย / ตัวกรองขวา ผ่าน ml-auto) — ให้ตรงแพทเทิร์นเดียวกับ bid-pipeline.html, sales-pipeline.html (ปรับตามผู้ใช้ 2026-09-25 เดิมแยกกล่องต่างหากไม่ตรงหน้าอื่น)
+           navHeight ชดเชยความสูงแถบบนของ AppNav (มือถือ) กันซ้อนทับ — ค่าอ่านจาก <header> แรกในหน้า (ของ AppNav) เหมือนหน้าอื่นทุกหน้า -->
+      <header class="sticky z-40 bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap"
+        :style="{top: navHeight + 'px'}">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg>
+          วิเคราะห์ผลแพ้/ชนะ
+        </h1>
+        <div class="ml-auto flex items-center gap-1.5 flex-wrap">
+            <div class="relative shrink-0">
+              <button type="button" @click.stop="toggleDropdown('period')"
+                class="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
+                :class="period!=='year' ? dropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <span>{{ periodLabel }}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div v-if="openDropdown==='period'" @click.stop
+                class="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl ring-1 ring-slate-100 overflow-hidden z-40 py-1" style="min-width:150px">
+                <a v-for="p in periodOptions" :key="p.val" href="#" @click.prevent="selectPeriod(p.val)"
+                  class="block px-3.5 py-2.5 text-sm no-underline cursor-pointer hover:bg-slate-50"
+                  :class="period===p.val ? 'text-teal-700 font-semibold' : 'text-slate-600'">{{ p.label }}</a>
+              </div>
+            </div>
+            <!-- sale: ล็อกไว้ที่ตัวเอง (ไอคอนแม่กุญแจ) กดเลือกคนอื่นไม่ได้ — API บังคับซ้ำ -->
+            <div class="relative shrink-0">
+              <button type="button" @click.stop="toggleDropdown('sale')"
+                class="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm border-0 bg-white ring-1 transition-colors whitespace-nowrap"
+                :class="isSaleUser ? 'ring-slate-200 text-slate-500 cursor-default' : (assignedTo ? dropdownActiveClass + ' cursor-pointer' : 'ring-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer')">
+                <svg v-if="isSaleUser" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>
+                <span>{{ saleLabel }}</span>
+                <svg v-if="!isSaleUser" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div v-if="openDropdown==='sale'" @click.stop
+                class="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl ring-1 ring-slate-100 overflow-hidden z-40 py-1" style="min-width:200px">
+                <a href="#" @click.prevent="selectSale('')"
+                  class="block px-3.5 py-2.5 text-sm no-underline cursor-pointer hover:bg-slate-50"
+                  :class="!assignedTo ? 'text-teal-700 font-semibold' : 'text-slate-600'">— Sale ทุกคน —</a>
+                <a v-for="u in salesOptions" :key="u.id" href="#" @click.prevent="selectSale(String(u.id))"
+                  class="block px-3.5 py-2.5 text-sm no-underline cursor-pointer hover:bg-slate-50"
+                  :class="assignedTo===String(u.id) ? 'text-teal-700 font-semibold' : 'text-slate-600'">{{ u.full_name }}</a>
+              </div>
+            </div>
+            <button type="button" @click="exportCurrentTab"
+              class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer whitespace-nowrap">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Excel
+            </button>
+        </div>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1400px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+
+        <!-- ประเภทงาน + แท็บ — เฉพาะหน้านี้ไม่มีในหน้าอื่น จึงวางเป็นแถวเปล่าใต้แถบหัว ไม่ใส่กล่องการ์ดครอบ (ปรับตามผู้ใช้ 2026-09-25) -->
+        <div class="flex flex-col gap-3 mb-4">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm text-slate-500 mr-1">ประเภทงาน:</span>
+            <button v-for="c in channelOptions" :key="c.val" type="button" @click="setChannel(c.val)"
+              class="px-4 py-2 rounded-full text-sm font-semibold border-0 cursor-pointer transition-all"
+              :class="channel===c.val ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">{{ c.label }}</button>
+          </div>
+          <!-- แท็บเส้นใต้ (ไม่ใช่ chip) — แยกให้ต่างจากปุ่ม "ประเภทงาน" ด้านบนชัดเจน ปุ่มนั้นเป็นตัวกรอง ส่วนนี้คือสลับมุมมอง (ปรับตามผู้ใช้ 2026-09-25) -->
+          <div class="flex items-center gap-6 border-b border-slate-200">
+            <button type="button" @click="tab = 'reasons'"
+              class="flex items-center gap-1.5 pb-2.5 pt-1 text-sm bg-transparent border-0 border-b-2 -mb-px cursor-pointer transition-colors"
+              :class="tab==='reasons' ? 'border-teal-700 text-slate-800 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-600'">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              เหตุผลแพ้/ชนะ
+            </button>
+            <button type="button" @click="tab = 'competitors'"
+              class="flex items-center gap-1.5 pb-2.5 pt-1 text-sm bg-transparent border-0 border-b-2 -mb-px cursor-pointer transition-colors"
+              :class="tab==='competitors' ? 'border-teal-700 text-slate-800 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-600'">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              คู่แข่ง
+            </button>
+          </div>
+          <p v-if="isSaleUser" class="text-xs text-teal-700 m-0">แสดงเฉพาะงานของคุณ</p>
+        </div>
+
+        <div v-if="loading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+
+        <template v-else>
+          <!-- ═══ แท็บเหตุผลแพ้/ชนะ ═══ -->
+          <template v-if="tab==='reasons'">
+            <!-- ตัวเลขสรุป — "ทั้งหมด" แสดงรวมพร้อมบรรทัดแยก 2 ฝั่ง (win rate / ส่วนต่างราคา ไม่รวมเพราะเทียบกันไม่ได้) -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              <div v-for="k in summaryKpis" :key="k.label" class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3">
+                <div class="text-sm text-slate-500">{{ k.label }}</div>
+                <div class="text-2xl font-bold mt-0.5" :class="k.cls">{{ k.value }}</div>
+                <div v-if="k.sub" class="text-xs text-slate-500 mt-0.5">{{ k.sub }}</div>
+              </div>
+            </div>
+
+            <div class="grid gap-4" :class="channel==='all' ? 'lg:grid-cols-2' : 'grid-cols-1'">
+              <div v-for="ch in channelsShown" :key="ch" class="flex flex-col gap-4">
+                <div v-if="channel==='all'" class="text-base font-bold text-slate-700 px-1">{{ channelLabel(ch) }}</div>
+                <template v-if="summaries[ch]">
+                  <!-- เหตุผลที่แพ้ / ชนะ -->
+                  <div v-for="side in ['lost','won']" :key="side" class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+                    <div class="font-bold text-slate-700">{{ side==='lost' ? 'เหตุผลที่' + resultLabel(ch,'lost') : 'เหตุผลที่' + resultLabel(ch,'won') }}</div>
+                    <div class="text-xs text-slate-400 mb-3">เรียงจากมากไปน้อย · กดแถวเพื่อดูรายการงาน</div>
+                    <div v-if="!reasonList(ch, side).length" class="text-sm text-slate-400 py-2">ไม่มีข้อมูลในช่วงนี้</div>
+                    <button v-for="r in reasonList(ch, side)" :key="r.reason_id" type="button" @click="openDeals(ch, side, r)"
+                      class="w-full grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_auto] gap-3 items-center py-1.5 px-1 rounded-lg hover:bg-slate-50 bg-transparent border-0 cursor-pointer text-left">
+                      <span class="text-sm text-slate-700 truncate" :title="r.name">{{ r.name }}</span>
+                      <span class="h-4 rounded" :style="{ width: barWidth(r, reasonList(ch, side)) + '%', background: r.reason_id===0 || r.name==='อื่นๆ' ? '#cbd5e1' : (side==='lost' ? '#fca5a5' : '#86efac') }"></span>
+                      <span class="text-sm text-slate-600 whitespace-nowrap text-right">{{ r.count }} งาน · {{ moneyShort(r.value) }}</span>
+                    </button>
+                  </div>
+
+                  <!-- ส่วนต่างราคา -->
+                  <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+                    <div class="font-bold text-slate-700">ส่วนต่างราคา (งานที่{{ resultLabel(ch,'lost') }})</div>
+                    <div class="text-xs text-slate-400 mb-3">ราคาเราแพงกว่าผู้ชนะกี่ % · นับเฉพาะงานที่มีราคาผู้ชนะ ({{ summaries[ch].kpi.gap_count }} งาน) · ปรับเกณฑ์ได้ที่หน้าตั้งเกณฑ์วัดผล KPI</div>
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      <div v-for="b in gapBands(ch)" :key="b.key" class="rounded-xl bg-slate-50 px-3 py-2.5">
+                        <div class="text-xs text-slate-500">{{ b.label }}</div>
+                        <div class="text-xl font-bold text-slate-700">{{ b.count }}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- คุณภาพข้อมูล -->
+                  <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+                    <div class="font-bold text-slate-700">คุณภาพข้อมูล</div>
+                    <div class="text-xs text-slate-400 mb-2">ถ้าสัดส่วนสูง ตัวเลขด้านบนจะเชื่อถือได้น้อยลง</div>
+                    <table class="w-full text-sm">
+                      <tr v-for="q in qualityRows(ch)" :key="q.label" class="border-b border-slate-50 last:border-0">
+                        <td class="py-2 px-3 text-slate-600">{{ q.label }}</td>
+                        <td class="py-2 px-3 text-right text-slate-700 whitespace-nowrap">{{ q.count }} / {{ q.total }}</td>
+                        <td class="py-2 px-3 text-right font-semibold w-16" :class="q.pct >= 30 ? 'text-red-600' : q.pct >= 10 ? 'text-amber-600' : 'text-slate-500'">{{ q.total ? q.pct + '%' : '-' }}</td>
+                      </tr>
+                    </table>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- ═══ แท็บคู่แข่ง ═══ -->
+          <template v-else-if="comp">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3"><div class="text-sm text-slate-500">คู่แข่งที่เจอ</div><div class="text-2xl font-bold text-slate-700 mt-0.5">{{ comp.kpi.competitor_count }} ราย</div></div>
+              <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3"><div class="text-sm text-slate-500">แพ้ให้คู่แข่งที่รู้ชื่อ</div><div class="text-2xl font-bold text-slate-700 mt-0.5">{{ comp.kpi.lost_to_known }} งาน</div></div>
+              <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3">
+                <div class="text-sm text-slate-500">คู่แข่งอันดับ 1</div>
+                <div class="text-xl font-bold text-slate-700 mt-0.5 truncate">{{ comp.kpi.top?.competitor_name || '-' }}</div>
+                <div v-if="comp.kpi.top" class="text-xs text-slate-500">แพ้ให้ {{ moneyShort(comp.kpi.top.lost_value) }}</div>
+              </div>
+              <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3"><div class="text-sm text-slate-500">ผู้ชนะ "ยังไม่ทราบ"</div><div class="text-2xl font-bold mt-0.5" :class="comp.kpi.unknown_count ? 'text-amber-600' : 'text-slate-700'">{{ comp.kpi.unknown_count }} งาน</div></div>
+            </div>
+
+            <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+              <div class="font-bold text-slate-700">ตารางคู่แข่ง{{ channel==='all' ? ' — รวม 2 ฝั่ง' : ' — ' + channelLabel(channel) }}</div>
+              <div class="text-xs text-slate-400 mb-3">กดชื่อคู่แข่งเพื่อดูรายละเอียด · เรียงตามมูลค่าที่แพ้ให้</div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm min-w-[680px]">
+                  <thead>
+                    <tr class="text-left text-slate-500 border-b border-slate-100">
+                      <th class="py-2 px-3 font-semibold">คู่แข่ง</th>
+                      <template v-if="channel==='all'"><th class="py-2 px-3 font-semibold text-right">เจอ (ประมูล)</th><th class="py-2 px-3 font-semibold text-right">เจอ (ขายตรง)</th></template>
+                      <th v-else class="py-2 px-3 font-semibold text-right">เจอ</th>
+                      <th class="py-2 px-3 font-semibold text-right">เราชนะ</th>
+                      <th class="py-2 px-3 font-semibold text-right">แพ้ให้</th>
+                      <th class="py-2 px-3 font-semibold text-right">Win rate</th>
+                      <th class="py-2 px-3 font-semibold text-right">มูลค่าที่แพ้</th>
+                      <th class="py-2 px-3 font-semibold text-right">แพงกว่าเฉลี่ย</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="!comp.rows.length"><td colspan="8" class="py-6 text-center text-slate-400">ไม่มีข้อมูลคู่แข่งในช่วงนี้</td></tr>
+                    <tr v-for="r in comp.rows" :key="r.competitor_id" class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" @click="openCompetitor(r)">
+                      <td class="py-2.5 px-3 font-semibold text-teal-700">{{ r.competitor_name }} ›</td>
+                      <template v-if="channel==='all'"><td class="py-2.5 px-3 text-right">{{ r.met_ebidding }}</td><td class="py-2.5 px-3 text-right">{{ r.met_sales }}</td></template>
+                      <td v-else class="py-2.5 px-3 text-right">{{ r.met }}</td>
+                      <td class="py-2.5 px-3 text-right">{{ r.we_won }}</td>
+                      <td class="py-2.5 px-3 text-right">{{ r.lost_to }}</td>
+                      <td class="py-2.5 px-3 text-right font-semibold" :class="winRateClass(r.win_rate)">{{ r.win_rate === null ? '-' : r.win_rate + '%' }}</td>
+                      <td class="py-2.5 px-3 text-right">{{ moneyShort(r.lost_value) }}</td>
+                      <td class="py-2.5 px-3 text-right">{{ gapText(r.avg_gap_pct) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 mb-0 leading-relaxed">
+                เจอ = เป็นผู้ชนะงานที่เราแพ้ หรือถูกระบุเป็นคู่แข่งในดีล · Win rate = งานที่เราชนะ ÷ งานที่เจอรายนี้<br>
+                <span v-if="channel!=='sales'">งานประมูล: ยังรู้เฉพาะผู้ชนะ (ยังไม่มีข้อมูลผู้ยื่นซองทุกราย) · </span>ราคาคู่แข่งมีเฉพาะงานที่เราแพ้ · ข้อมูลผู้ชนะเริ่มเก็บ 25/09/2569
+              </p>
+            </div>
+          </template>
+        </template>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <div v-if="modal.type" class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto" @click.self="closeModal">
+      <!-- รายการงานตามเหตุผล -->
+      <div v-if="modal.type==='deals'" class="bg-white rounded-2xl w-full max-w-[1040px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ modal.data.reason.name }}</h3>
+            <div class="text-sm text-slate-500">{{ channelLabel(modal.data.channel) }} · {{ resultLabel(modal.data.channel, modal.data.side) }} · {{ modal.data.rows.length }} งาน</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-x-auto">
+          <table class="w-full text-sm min-w-[860px]">
+            <thead><tr class="text-left text-slate-500 border-b border-slate-100">
+              <th class="py-2 px-3 font-semibold">รหัสงาน</th><th class="py-2 px-3 font-semibold">งาน / ลูกค้า</th><th class="py-2 px-3 font-semibold">วันที่ปิด</th>
+              <th class="py-2 px-3 font-semibold text-right">มูลค่าเรา</th>
+              <template v-if="modal.data.side==='lost'"><th class="py-2 px-3 font-semibold">ผู้ชนะ</th><th class="py-2 px-3 font-semibold text-right">ราคาผู้ชนะ</th><th class="py-2 px-3 font-semibold text-right">ส่วนต่าง</th></template>
+              <th class="py-2 px-3 font-semibold">Sale</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="d in modal.data.rows" :key="d.id" class="border-b border-slate-50 align-top">
+                <td class="py-2 px-3 font-mono text-xs text-purple-700 whitespace-nowrap">{{ d.project_code }}</td>
+                <td class="py-2 px-3 text-slate-700"><div class="line-clamp-2">{{ d.title }}</div><div class="text-xs text-slate-400">{{ d.client_name }}</div><div v-if="d.note" class="text-xs text-slate-500 mt-0.5">หมายเหตุ: {{ d.note }}</div></td>
+                <td class="py-2 px-3 text-slate-600 min-w-[120px]">{{ formatDateThai(d.closed_date) }}</td>
+                <td class="py-2 px-3 text-right whitespace-nowrap">{{ moneyFull(d.value) }}</td>
+                <template v-if="modal.data.side==='lost'"><td class="py-2 px-3 whitespace-nowrap">{{ d.winner_name || '-' }}</td><td class="py-2 px-3 text-right whitespace-nowrap">{{ moneyFull(d.winning_price) }}</td><td class="py-2 px-3 text-right whitespace-nowrap">{{ gapText(d.gap_pct) }}</td></template>
+                <td class="py-2 px-3 whitespace-nowrap text-slate-600">{{ d.sale_name }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- รายละเอียดคู่แข่ง -->
+      <div v-if="modal.type==='competitor'" class="bg-white rounded-2xl w-full max-w-[820px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ modal.data.competitor.competitor_name }}</h3>
+            <div class="text-sm text-slate-500">{{ [modal.data.competitor.competitor_legal_name, modal.data.competitor.competitor_business_type].filter(Boolean).join(' · ') }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 flex flex-col gap-4">
+          <div class="grid grid-cols-3 gap-3">
+            <div class="rounded-xl bg-slate-50 px-3 py-2.5"><div class="text-xs text-slate-500">เจอ</div><div class="text-xl font-bold text-slate-700">{{ modal.data.kpi.met }} งาน</div></div>
+            <div class="rounded-xl bg-slate-50 px-3 py-2.5"><div class="text-xs text-slate-500">Win rate เมื่อเจอ</div><div class="text-xl font-bold" :class="winRateClass(modal.data.kpi.win_rate)">{{ modal.data.kpi.win_rate === null ? '-' : modal.data.kpi.win_rate + '%' }}</div></div>
+            <div class="rounded-xl bg-slate-50 px-3 py-2.5"><div class="text-xs text-slate-500">เราแพงกว่าเฉลี่ย</div><div class="text-xl font-bold text-slate-700">{{ gapText(modal.data.kpi.avg_gap_pct) }}</div></div>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-slate-700 mb-1.5">แพ้ให้เพราะอะไร</div>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-if="!modal.data.reasons.length" class="text-sm text-slate-400">ยังไม่เคยแพ้ให้รายนี้</span>
+              <span v-for="r in modal.data.reasons" :key="r.name" class="px-2.5 py-1 rounded-full text-sm bg-rose-50 text-rose-700">{{ r.name }} {{ r.count }}</span>
+            </div>
+          </div>
+          <div v-if="modal.data.groups.length">
+            <div class="text-sm font-semibold text-slate-700 mb-1.5">แพ้ให้ในกลุ่มไหน</div>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="g in modal.data.groups" :key="g.name" class="px-2.5 py-1 rounded-full text-sm bg-sky-50 text-sky-700">{{ g.name }} {{ g.count }}</span>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <div class="text-sm font-semibold text-slate-700 mb-1.5">งานที่เจอกัน</div>
+            <table class="w-full text-sm min-w-[620px]">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-100">
+                <th class="py-2 px-3 font-semibold">รหัสงาน</th><th class="py-2 px-3 font-semibold">งาน</th><th class="py-2 px-3 font-semibold">ผล</th>
+                <th class="py-2 px-3 font-semibold text-right">ราคาเรา</th><th class="py-2 px-3 font-semibold text-right">ราคาเขา</th><th class="py-2 px-3 font-semibold text-right">ส่วนต่าง</th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="d in modal.data.deals" :key="d.id" class="border-b border-slate-50 align-top">
+                  <td class="py-2 px-3 font-mono text-xs text-purple-700 whitespace-nowrap">{{ d.project_code }}</td>
+                  <td class="py-2 px-3 text-slate-700"><div class="line-clamp-2">{{ d.title }}</div><div class="text-xs text-slate-400">{{ channelLabel(d.channel) }} · {{ formatDateThai(d.closed_date) }}</div></td>
+                  <td class="py-2 px-3 whitespace-nowrap">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-bold" :class="d.result==='won' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'">{{ d.result==='won' ? 'ชนะ' : (d.lost_to_this ? 'แพ้ให้รายนี้' : 'แพ้ให้รายอื่น') }}</span>
+                  </td>
+                  <td class="py-2 px-3 text-right whitespace-nowrap">{{ moneyFull(d.our_price) }}</td>
+                  <td class="py-2 px-3 text-right whitespace-nowrap">{{ moneyFull(d.their_price) }}</td>
+                  <td class="py-2 px-3 text-right whitespace-nowrap">{{ gapText(d.gap_pct) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=44"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      modal: { type: null, data: null },
+      // ค่าเริ่มต้น "งานประมูล" — งานหลักของระบบ (ยืนยันจากผู้ใช้ 2026-09-25)
+      channel: 'ebidding',
+      channelOptions: [{ val: 'ebidding', label: 'งานประมูล' }, { val: 'sales', label: 'งานขายตรง' }, { val: 'all', label: 'ทั้งหมด (เทียบคู่)' }],
+      tab: 'reasons',
+      period: 'year',
+      periodOptions: [
+        { val: 'month', label: 'เดือนนี้' }, { val: 'quarter', label: 'ไตรมาสนี้' }, { val: 'year', label: 'ปีนี้' },
+        { val: 'last_year', label: 'ปีที่แล้ว' }, { val: 'all', label: 'ทั้งหมด' },
+      ],
+      assignedTo: '',
+      salesOptions: [],
+      openDropdown: null, // null | 'period' | 'sale'
+      summaries: { ebidding: null, sales: null },
+      comp: null,
+      navHeight: 0, // ความสูงแถบ AppNav (มือถือ) ใช้เป็น top ของ header หน้านี้ตอน sticky — เหมือน bid-pipeline.html/sales-pipeline.html
+    };
+  },
+  computed: {
+    isSaleUser() { return this.currentUser?.role === 'sale'; },
+    dropdownActiveClass() { return 'ring-teal-600 text-teal-700 font-semibold'; },
+    periodLabel() { return this.periodOptions.find(p => p.val === this.period)?.label || 'ช่วงเวลา'; },
+    saleLabel() {
+      if (!this.assignedTo) return 'Sale ทุกคน';
+      return this.salesOptions.find(u => String(u.id) === this.assignedTo)?.full_name || 'Sale';
+    },
+    channelsShown() { return this.channel === 'all' ? ['ebidding', 'sales'] : [this.channel]; },
+    // ตัวเลขสรุป — ประเภทเดียวแสดงตรงๆ / "ทั้งหมด" รวมมูลค่าได้ แต่ win rate และส่วนต่างราคาแสดงแยก 2 ฝั่ง
+    summaryKpis() {
+      const b = this.summaries.ebidding?.kpi, s = this.summaries.sales?.kpi;
+      if (this.channel === 'all') {
+        if (!b || !s) return [];
+        return [
+          { label: 'Win rate', value: '—', sub: `ประมูล ${this.pctText(b.win_rate)} · ขายตรง ${this.pctText(s.win_rate)}` },
+          { label: 'มูลค่าที่ชนะ', value: this.moneyShort(b.won_value + s.won_value), cls: 'text-emerald-700', sub: `ประมูล ${this.moneyShort(b.won_value)} · ขายตรง ${this.moneyShort(s.won_value)}` },
+          { label: 'มูลค่าที่แพ้', value: this.moneyShort(b.lost_value + s.lost_value), cls: 'text-rose-600', sub: `ประมูล ${this.moneyShort(b.lost_value)} · ขายตรง ${this.moneyShort(s.lost_value)}` },
+          { label: 'แพงกว่าผู้ชนะเฉลี่ย', value: '—', sub: `ประมูล ${this.gapText(b.avg_gap_pct)} · ขายตรง ${this.gapText(s.avg_gap_pct)}` },
+        ];
+      }
+      const k = this.summaries[this.channel]?.kpi;
+      if (!k) return [];
+      return [
+        { label: 'Win rate', value: this.pctText(k.win_rate), cls: this.winRateClass(k.win_rate), sub: `${this.resultLabel(this.channel, 'won')} ${k.won_count} · ${this.resultLabel(this.channel, 'lost')} ${k.lost_count}` },
+        { label: 'มูลค่าที่ชนะ', value: this.moneyShort(k.won_value), cls: 'text-emerald-700' },
+        { label: 'มูลค่าที่แพ้', value: this.moneyShort(k.lost_value), cls: 'text-rose-600' },
+        { label: 'แพงกว่าผู้ชนะเฉลี่ย', value: this.gapText(k.avg_gap_pct), sub: `จาก ${k.gap_count} งานที่มีราคาผู้ชนะ` },
+      ];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    const s = await apiCall('GET', 'api/win_loss_analysis.php?action=sales');
+    if (s.success) this.salesOptions = s.data;
+    if (this.isSaleUser) this.assignedTo = String(this.currentUser.id);
+    await this.loadAll();
+    // navHeight: อ่านความสูง header แรกของหน้า (ของ AppNav) มาชดเชย top ของ header หน้านี้ตอน sticky (ยืนยันจากผู้ใช้ 2026-09-25 — เดิมหน้านี้ไม่ sticky)
+    await this.$nextTick();
+    this.updateNavHeight();
+    this.navHeightObserver = new ResizeObserver(() => this.updateNavHeight());
+    this.navHeightObserver.observe(document.querySelector('header'));
+  },
+  unmounted() {
+    this.navHeightObserver?.disconnect();
+  },
+  methods: {
+    ...SharedMethods,
+
+    updateNavHeight() {
+      this.navHeight = document.querySelector('header')?.offsetHeight || 0;
+    },
+
+    channelLabel(ch) { return ch === 'sales' ? 'งานขายตรง' : 'งานประมูล'; },
+    // ชื่อผลตามประเภทงาน — งานประมูล: ชนะ/แพ้การประมูล · งานขายตรง: ปิดดีลได้/ไม่สำเร็จ
+    resultLabel(ch, side) {
+      if (ch === 'sales') return side === 'won' ? 'ปิดดีลได้' : 'ไม่สำเร็จ';
+      return side === 'won' ? 'ชนะการประมูล' : 'แพ้การประมูล';
+    },
+    pctText(v) { return v === null || v === undefined ? '-' : v + '%'; },
+    gapText(v) { return v === null || v === undefined ? '-' : (v > 0 ? '+' : '') + v + '%'; },
+    winRateClass(v) { return v === null || v === undefined ? 'text-slate-400' : v >= 60 ? 'text-emerald-600' : v >= 40 ? 'text-slate-700' : 'text-rose-600'; },
+    moneyShort(v) {
+      const n = Number(v) || 0;
+      if (n >= 1e6) return '฿' + (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return '฿' + Math.round(n / 1e3).toLocaleString('th-TH') + 'K';
+      return '฿' + Math.round(n).toLocaleString('th-TH');
+    },
+    moneyFull(v) { return v === null || v === undefined ? '-' : Number(v).toLocaleString('th-TH'); },
+
+    reasonList(ch, side) { return this.summaries[ch]?.[side === 'lost' ? 'lost_reasons' : 'won_reasons'] || []; },
+    barWidth(r, list) { const max = Math.max(...list.map(x => x.count), 1); return Math.max(4, Math.round(r.count / max * 100)); },
+    gapBands(ch) {
+      const s = this.summaries[ch]; if (!s) return [];
+      const t = s.thresholds, b = s.gap_bands;
+      return [
+        { key: 'near', label: `≤${t.price_gap_near}% เกือบชนะ`, count: b.near },
+        { key: 'mid', label: `${t.price_gap_near}–${t.price_gap_mid}%`, count: b.mid },
+        { key: 'far', label: `${t.price_gap_mid}–${t.price_gap_far}%`, count: b.far },
+        { key: 'very_far', label: `>${t.price_gap_far}% ห่างมาก`, count: b.very_far },
+        { key: 'cheaper', label: 'ถูกกว่าแต่แพ้', count: b.cheaper },
+      ];
+    },
+    qualityRows(ch) {
+      const q = this.summaries[ch]?.quality; if (!q) return [];
+      const row = (label, count, total) => ({ label, count, total, pct: total ? Math.round(count / total * 100) : 0 });
+      return [
+        row('ใช้เหตุผลที่ต้องกรอกรายละเอียด (เช่น อื่นๆ)', q.other_reason, q.decided),
+        row('ผู้ชนะ = "ยังไม่ทราบ"', q.winner_unknown, q.lost),
+        row(`${this.resultLabel(ch, 'lost')}แต่ไม่มีราคาผู้ชนะ`, q.lost_no_price, q.lost),
+        row(`${this.resultLabel(ch, 'won')}แต่ไม่มีเหตุผล`, q.won_no_reason, q.won),
+        row(`${this.resultLabel(ch, 'lost')}แต่ไม่มีเหตุผล`, q.lost_no_reason, q.lost),
+      ];
+    },
+
+    filterQuery() {
+      const q = new URLSearchParams({ period: this.period });
+      if (this.assignedTo) q.set('assigned_to', this.assignedTo);
+      return q;
+    },
+    setChannel(c) { this.channel = c; this.loadAll(); },
+    // sale กดตัวกรอง Sale ไม่ได้ (ล็อกไว้ที่ตัวเอง)
+    toggleDropdown(name) {
+      if (name === 'sale' && this.isSaleUser) return;
+      this.openDropdown = this.openDropdown === name ? null : name;
+    },
+    selectPeriod(val) { this.openDropdown = null; if (this.period === val) return; this.period = val; this.loadAll(); },
+    selectSale(val) { this.openDropdown = null; if (this.isSaleUser || this.assignedTo === val) return; this.assignedTo = val; this.loadAll(); },
+    async loadAll() {
+      this.loading = true;
+      try {
+        const base = this.filterQuery();
+        const calls = this.channelsShown.map(ch => {
+          const q = new URLSearchParams(base); q.set('action', 'summary'); q.set('channel', ch);
+          return apiCall('GET', 'api/win_loss_analysis.php?' + q);
+        });
+        const cq = new URLSearchParams(base); cq.set('action', 'competitors'); cq.set('channel', this.channel);
+        calls.push(apiCall('GET', 'api/win_loss_analysis.php?' + cq));
+        const results = await Promise.all(calls);
+        this.channelsShown.forEach((ch, i) => { if (results[i].success) this.summaries[ch] = results[i].data; });
+        const c = results[results.length - 1];
+        this.comp = c.success ? c.data : null;
+      } catch {
+        await this.showAlert('โหลดข้อมูลไม่สำเร็จ', 'error');
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async openDeals(ch, side, reason) {
+      const q = this.filterQuery();
+      q.set('action', 'deals'); q.set('channel', ch); q.set('result', side); q.set('reason_id', reason.reason_id);
+      const res = await apiCall('GET', 'api/win_loss_analysis.php?' + q);
+      if (!res.success) { await this.showAlert(res.message || 'โหลดรายการไม่สำเร็จ', 'error'); return; }
+      this.modal = { type: 'deals', data: { channel: ch, side, reason, rows: res.data } };
+    },
+    async openCompetitor(row) {
+      const q = this.filterQuery();
+      q.set('action', 'competitor_detail'); q.set('competitor_id', row.competitor_id); q.set('channel', this.channel);
+      const res = await apiCall('GET', 'api/win_loss_analysis.php?' + q);
+      if (!res.success) { await this.showAlert(res.message || 'โหลดรายละเอียดไม่สำเร็จ', 'error'); return; }
+      this.modal = { type: 'competitor', data: res.data };
+    },
+
+    // Excel ตามแท็บที่เปิดอยู่
+    exportCurrentTab() {
+      const periodLabel = this.periodOptions.find(p => p.val === this.period)?.label || '';
+      if (this.tab === 'competitors') {
+        if (!this.comp) return;
+        const headers = ['คู่แข่ง', 'เจอ (ประมูล)', 'เจอ (ขายตรง)', 'เจอรวม', 'เราชนะ', 'แพ้ให้', 'Win rate (%)', 'มูลค่าที่แพ้', 'แพงกว่าเฉลี่ย (%)'];
+        const rows = this.comp.rows.map(r => [r.competitor_name, r.met_ebidding, r.met_sales, r.met, r.we_won, r.lost_to, r.win_rate ?? '', r.lost_value, r.avg_gap_pct ?? '']);
+        this.exportExcel(`วิเคราะห์คู่แข่ง_${periodLabel}`, headers, rows);
+        return;
+      }
+      const headers = ['ประเภทงาน', 'ผล', 'เหตุผล', 'จำนวนงาน', 'มูลค่า'];
+      const rows = [];
+      this.channelsShown.forEach(ch => ['lost', 'won'].forEach(side => this.reasonList(ch, side).forEach(r =>
+        rows.push([this.channelLabel(ch), this.resultLabel(ch, side), r.name, r.count, Math.round(r.value)]))));
+      this.exportExcel(`วิเคราะห์เหตุผลแพ้ชนะ_${periodLabel}`, headers, rows);
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

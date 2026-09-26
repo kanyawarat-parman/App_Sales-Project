@@ -26,13 +26,16 @@ const PAGE_LABELS = {
   'sales-pipeline.html': 'งานขายตรง (Sales Hunt)',
   'company-calendar.html': 'ปฏิทินคัดกรองประกาศ',
   'bid_decision.html': 'ประกาศวันนี้',
-  'assignments.html': 'จัดการงาน',
+  'assignments.html': 'จัดการงานประมูล',
   'calendars.html': 'ปฏิทินการทำงาน',
   'sources.html': 'แหล่งที่มางานประมูล',
   'rotation-settings.html': 'ตั้งค่าวิธีคิดเวรงานประมูล',
   'duty-calendar.html': 'สร้างเวรรายปีงานประมูล',
   'analytics.html': 'รายงานวิเคราะห์',
+  'win-loss-analysis.html': 'วิเคราะห์ผลแพ้/ชนะ',
   'kpi-settings.html': 'ตั้งเกณฑ์วัดผล KPI',
+  'competitors.html': 'คู่แข่ง',
+  'win-loss-reasons.html': 'เหตุผลปิดงาน (ชนะ/แพ้)',
   'users.html': 'ผู้ใช้งาน',
   'import.html': 'นำเข้าข้อมูล',
   'holidays.html': 'วันหยุด',
@@ -473,7 +476,7 @@ const AppNav = {
         if (this.isSalesAdmin) {
           g.push({ href:'company-calendar.html', page:'company-calendar', label:'ปฏิทินคัดกรองประกาศ', icon:'calendar' });
           g.push({ href:'bid_decision.html', page:'bid_decision', label:'ประกาศวันนี้', icon:'bid_decision' });
-          g.push({ href:'assignments.html', page:'assignments', label:'จัดการงาน', icon:'assignments' });
+          g.push({ href:'assignments.html', page:'assignments', label:'จัดการงานประมูล', icon:'assignments' });
         }
         g.push({ href:'calendars.html', page:'calendars', label:'ปฏิทินการทำงาน', icon:'calendar' });
         g.push({ href:'sources.html', page:'sources', label:'แหล่งที่มางานประมูล', icon:'bid_decision' });
@@ -481,13 +484,19 @@ const AppNav = {
         g.push({ href:'duty-calendar.html', page:'duty-calendar', label:'สร้างเวรรายปีงานประมูล', icon:'calendar' });
       }
 
-      if (this.isManager || this.isSale || this.isAdmin) {
+      if (this.isManager || this.isSale || this.isAdmin || this.isSalesAdmin) {
         g.push({ type:'section', label:'ระบบ' });
         if (this.isManager || this.isSale) {
           g.push({ href:'analytics.html', page:'analytics', label:'รายงานวิเคราะห์', icon:'analytics' });
         }
+        // วิเคราะห์ผลแพ้/ชนะ + คู่แข่ง — ทุก role เห็น แต่ sale เห็นเฉพาะงานของตัวเอง (API บังคับ) ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-25)
+        g.push({ href:'win-loss-analysis.html', page:'win-loss-analysis', label:'วิเคราะห์ผลแพ้/ชนะ', icon:'win_loss_analysis' });
         if (this.isAdmin) {
           g.push({ href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' });
+          // รายชื่อคู่แข่ง (master) — admin เท่านั้นเป็นคนเพิ่ม/แก้ไข/ซ่อน ตามมาตรฐาน CRM, sale เลือกจากรายการในฟอร์มดีลอย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-24)
+          g.push({ href:'competitors.html', page:'competitors', label:'คู่แข่ง', icon:'competitors' });
+          // เหตุผลปิดงาน (ชนะ/แพ้) master ใช้ทั้งงานประมูลและงานขายตรง — admin เท่านั้นเป็นคนแก้รายการ (ยืนยันจากผู้ใช้ 2026-09-25)
+          g.push({ href:'win-loss-reasons.html', page:'win-loss-reasons', label:'เหตุผลปิดงาน (ชนะ/แพ้)', icon:'win_loss' });
           g.push({ href:'users.html', page:'users', label:'ผู้ใช้งาน', icon:'users' });
           g.push({ href:'import.html', page:'import', label:'นำเข้าข้อมูล', icon:'import' });
         }
@@ -565,6 +574,9 @@ const AppNav = {
         sales_pipeline: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
         accounts:       '<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>',
         analytics:      '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+        win_loss_analysis: '<path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/>',
+        win_loss:       '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',
+        competitors:    '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
         kpi:            '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
         users:          '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
         settings:       '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>',
