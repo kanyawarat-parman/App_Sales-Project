@@ -389,9 +389,11 @@ function saveDealCompetitors(PDO $db, int $itemId, ?string $projectCode, array $
 
         $db->prepare("DELETE FROM pipeline_item_competitors WHERE pipeline_item_id = ? AND competitor_id NOT IN ($in)")
            ->execute(array_merge([$itemId], $ids));
-        $ins = $db->prepare('INSERT IGNORE INTO pipeline_item_competitors (pipeline_item_id, project_code, competitor_id, created_by) VALUES (?, ?, ?, ?)');
-        foreach ($ids as $cid) $ins->execute([$itemId, $projectCode, $cid, $user['id']]);
-        $db->prepare('UPDATE pipeline_item_competitors SET project_code = ? WHERE pipeline_item_id = ?')->execute([$projectCode, $itemId]);
+        $ins = $db->prepare('INSERT IGNORE INTO pipeline_item_competitors (pipeline_item_id, project_code, competitor_id, created_by, updated_by) VALUES (?, ?, ?, ?, ?)');
+        foreach ($ids as $cid) $ins->execute([$itemId, $projectCode, $cid, $user['id'], $user['id']]);
+        // แก้เฉพาะแถวที่ project_code ไม่ตรงจริง — ไม่งั้น updated_by/updated_at ของคู่แข่งเดิมจะถูกทับทุกครั้งที่บันทึกดีล (2026-09-26)
+        $db->prepare('UPDATE pipeline_item_competitors SET project_code = ?, updated_by = ? WHERE pipeline_item_id = ? AND NOT (project_code <=> ?)')
+           ->execute([$projectCode, $user['id'], $itemId, $projectCode]);
     } else {
         $db->prepare('DELETE FROM pipeline_item_competitors WHERE pipeline_item_id = ?')->execute([$itemId]);
     }
@@ -468,17 +470,18 @@ function createItem(PDO $db, array $user, array $body): void {
     if ($sourceType === 'ebidding' && $announcementId) {
         $annCode = $db->prepare("SELECT project_code FROM project_assignments WHERE announcement_id = ? AND assigned_to = ? ORDER BY id DESC LIMIT 1");
         $annCode->execute([$announcementId, $assignTo]);
-        $projectCode = $annCode->fetchColumn() ?: nextProjectCode($db);
+        $projectCode = $annCode->fetchColumn() ?: nextProjectCode($db, 'now', (int)$user['id']);
     } else {
-        $projectCode = nextProjectCode($db);
+        $projectCode = nextProjectCode($db, 'now', (int)$user['id']);
     }
 
     $stmt = $db->prepare("
         INSERT INTO pipeline_items
             (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
              stage, deal_type_id, segment, priority, product_category, brand, fee_structure,
-             specialization, value, win_probability, expected_close, next_action, next_followup_date, notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             specialization, value, win_probability, expected_close, next_action, next_followup_date, notes,
+             created_by, updated_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ");
     $stmt->execute([
         $projectCode,
@@ -503,6 +506,9 @@ function createItem(PDO $db, array $user, array $body): void {
         $body['next_action']      ?? null,
         !empty($body['next_followup_date']) ? $body['next_followup_date'] : null,
         $body['notes']            ?? null,
+        // ผู้สร้าง/ผู้แก้ไข = user ที่ login (ไม่ใช่ assigned_to — ธุรการอาจสร้างดีลให้ sale) กฎการสร้าง Database ข้อ 1 (2026-09-26)
+        $user['id'],
+        $user['id'],
     ]);
     $id = $db->lastInsertId();
 
@@ -641,6 +647,9 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (isset($body['stage']) && $body['stage'] === 'Delivered' && empty($body['delivered_date'])) {
         $fields[] = "delivered_date = CURDATE()";
     }
+
+    // ผู้แก้ไขล่าสุด = user ที่ login (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    $fields[] = 'updated_by = ?'; $params[] = $user['id'];
 
     $params[] = $id;
     $db->prepare("UPDATE pipeline_items SET " . implode(', ', $fields) . " WHERE id = ?")->execute($params);

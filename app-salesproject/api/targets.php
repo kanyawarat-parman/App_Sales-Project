@@ -3,21 +3,11 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 
-requireAuth();
+$user = requireAuth();
 $db = (new Database())->getConnection();
 
-$db->exec("
-  CREATE TABLE IF NOT EXISTS `user_monthly_targets` (
-    `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `user_id`       INT UNSIGNED NOT NULL,
-    `year`          SMALLINT UNSIGNED NOT NULL,
-    `month`         TINYINT UNSIGNED NULL DEFAULT NULL,
-    `target_amount` DECIMAL(15,2) NOT NULL,
-    `updated_at`    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_user_year_month` (`user_id`, `year`, `month`)
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+// โครงสร้างตารางอยู่ที่ sql/add_user_monthly_targets.sql — เดิมสร้างตารางเองตรงนี้ (CREATE TABLE IF NOT EXISTS)
+// เอาออก 2026-09-26 (ยืนยันจากผู้ใช้): โค้ดหน้าเว็บไม่สร้าง/แก้โครงสร้าง DB เอง และโครงสร้างเดิมตรงนี้ขาดช่อง audit
 
 $action = $_GET['action'] ?? 'list';
 
@@ -29,8 +19,8 @@ switch ($_SERVER['REQUEST_METHOD']) {
     case 'POST':
         requireRole(['admin', 'manager']);
         switch ($action) {
-            case 'save':       saveOne($db);   break;
-            case 'save_batch': saveBatch($db); break;
+            case 'save':       saveOne($db, $user);   break;
+            case 'save_batch': saveBatch($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -68,18 +58,18 @@ function listTargets(PDO $db, int $year): void {
     jsonResponse(true, ['year' => $year, 'users' => $users]);
 }
 
-function saveOne(PDO $db): void {
+function saveOne(PDO $db, array $user): void {
     $body   = getJsonBody();
     $uid    = (int)($body['user_id'] ?? 0);
     $year   = (int)($body['year'] ?? date('Y'));
     $month  = (isset($body['month']) && $body['month'] !== null && $body['month'] !== '') ? (int)$body['month'] : null;
     $amount = (isset($body['target_amount']) && $body['target_amount'] !== '') ? (float)$body['target_amount'] : null;
     if (!$uid || !$year) jsonResponse(false, null, 'Invalid parameters', 400);
-    upsertOrDelete($db, $uid, $year, $month, $amount);
+    upsertOrDelete($db, $uid, $year, $month, $amount, (int)$user['id']);
     jsonResponse(true, null, 'บันทึกสำเร็จ');
 }
 
-function saveBatch(PDO $db): void {
+function saveBatch(PDO $db, array $user): void {
     $body  = getJsonBody();
     $items = $body['targets'] ?? [];
     if (!is_array($items)) jsonResponse(false, null, 'Invalid data', 400);
@@ -89,12 +79,13 @@ function saveBatch(PDO $db): void {
         $month  = (isset($item['month']) && $item['month'] !== null && $item['month'] !== '') ? (int)$item['month'] : null;
         $amount = (isset($item['target_amount']) && $item['target_amount'] !== '') ? (float)$item['target_amount'] : null;
         if (!$uid || !$year) continue;
-        upsertOrDelete($db, $uid, $year, $month, $amount);
+        upsertOrDelete($db, $uid, $year, $month, $amount, (int)$user['id']);
     }
     jsonResponse(true, null, 'บันทึกสำเร็จ');
 }
 
-function upsertOrDelete(PDO $db, int $uid, int $year, ?int $month, ?float $amount): void {
+// $userId = ผู้ที่ login (admin/manager) บันทึกเป็นผู้สร้าง/ผู้แก้ไข (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+function upsertOrDelete(PDO $db, int $uid, int $year, ?int $month, ?float $amount, int $userId): void {
     if (!$amount) {
         if ($month !== null) {
             $db->prepare("DELETE FROM user_monthly_targets WHERE user_id=? AND year=? AND month=?")->execute([$uid, $year, $month]);
@@ -103,9 +94,13 @@ function upsertOrDelete(PDO $db, int $uid, int $year, ?int $month, ?float $amoun
         }
     } else {
         $db->prepare("
-            INSERT INTO user_monthly_targets (user_id, year, month, target_amount)
-            VALUES (?,?,?,?)
-            ON DUPLICATE KEY UPDATE target_amount = VALUES(target_amount)
-        ")->execute([$uid, $year, $month, $amount]);
+            INSERT INTO user_monthly_targets (user_id, year, month, target_amount, created_by, updated_by)
+            VALUES (?,?,?,?,?,?)
+            ON DUPLICATE KEY UPDATE
+                -- เปลี่ยนผู้แก้ไขเฉพาะเมื่อยอดเปลี่ยนจริง — บันทึกทั้งตาราง (save_batch) ส่งทุกช่องมา ช่องที่ไม่ได้แก้ต้องไม่ถูกทับ
+                -- ต้องอยู่ก่อน target_amount เพราะ MySQL ทำทีละช่องจากซ้ายไปขวา
+                updated_by    = IF(target_amount <=> VALUES(target_amount), updated_by, VALUES(updated_by)),
+                target_amount = VALUES(target_amount)
+        ")->execute([$uid, $year, $month, $amount, $userId, $userId]);
     }
 }

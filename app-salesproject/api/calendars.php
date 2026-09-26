@@ -16,8 +16,8 @@ switch ($method) {
         break;
     case 'POST':
         switch ($action) {
-            case 'create': requireRole(['admin','salesadmin']); createCalendar($db); break;
-            case 'update': requireRole(['admin','salesadmin']); updateCalendar($db); break;
+            case 'create': requireRole(['admin','salesadmin']); createCalendar($db, $user); break;
+            case 'update': requireRole(['admin','salesadmin']); updateCalendar($db, $user); break;
             case 'delete': requireRole(['admin','salesadmin']); deleteCalendar($db); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
@@ -49,7 +49,7 @@ function listCalendars(PDO $db): void {
 }
 
 /** สร้างปฏิทินใหม่ — เผื่อมีแหล่งข้อมูล/กิจกรรมใหม่ในอนาคตที่วันทำงานไม่เหมือนปฏิทินที่มีอยู่ (เช่น xxx-import) */
-function createCalendar(PDO $db): void {
+function createCalendar(PDO $db, array $user): void {
     $body     = getJsonBody();
     $code     = strtoupper(trim($body['code'] ?? ''));
     $name     = trim($body['name'] ?? '');
@@ -65,8 +65,9 @@ function createCalendar(PDO $db): void {
     $chk->execute([$code]);
     if ($chk->fetch()) jsonResponse(false, null, 'มีรหัสปฏิทินนี้อยู่แล้ว', 409);
 
-    $db->prepare('INSERT INTO calendars (code, name, work_days) VALUES (?, ?, ?)')
-       ->execute([$code, $name, implode(',', $workDays)]);
+    // ผู้สร้าง/ผู้แก้ไข = ผู้ที่ login (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    $db->prepare('INSERT INTO calendars (code, name, work_days, created_by, updated_by) VALUES (?, ?, ?, ?, ?)')
+       ->execute([$code, $name, implode(',', $workDays), $user['id'], $user['id']]);
     jsonResponse(true, null, 'สร้างปฏิทินเรียบร้อย');
 }
 
@@ -102,14 +103,14 @@ function deleteCalendar(PDO $db): void {
 
 /** แก้ไขปฏิทินที่มีอยู่ — code และ work_days คงที่เสมอหลังสร้างแล้ว (code ใช้อ้างอิงหลายจุดในระบบ, work_days
     เปลี่ยนย้อนหลังจะกระทบ SLA/ปฏิทินเวรที่คำนวณไปแล้ว) แก้ได้แค่ชื่อแสดงผลเท่านั้น */
-function updateCalendar(PDO $db): void {
+function updateCalendar(PDO $db, array $user): void {
     $body = getJsonBody();
     $code = trim($body['code'] ?? '');
     $name = trim($body['name'] ?? '');
     if (!$code || $name === '') jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
 
-    $stmt = $db->prepare('UPDATE calendars SET name = ? WHERE code = ?');
-    $stmt->execute([$name, $code]);
+    $stmt = $db->prepare('UPDATE calendars SET name = ?, updated_by = ? WHERE code = ?');
+    $stmt->execute([$name, $user['id'], $code]);
     if ($stmt->rowCount() === 0) {
         // ไม่มีแถวเปลี่ยนแปลง อาจเพราะค่าเดิมเหมือนกันอยู่แล้ว (ไม่ใช่ error) — เช็คว่ามี code นี้จริงก่อนตัดสิน
         $chk = $db->prepare('SELECT 1 FROM calendars WHERE code = ?');

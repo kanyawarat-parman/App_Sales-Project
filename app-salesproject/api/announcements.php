@@ -246,8 +246,8 @@ function updateUnitName(PDO $db, array $user): void {
     // ผูก/สร้าง account ใหม่ตามชื่อ+ประเภทที่แก้ไขจริง (ไม่เดาจากชื่อเดิมที่อาจเป็นแค่ placeholder ตอนนำเข้าข้อมูลเก่า)
     $accountId = findOrCreateAccount($db, $accountType, $unitName, (int)$user['id']);
 
-    $upd = $db->prepare("UPDATE announcements SET unit_name = ?, account_id = ?, updated_at = NOW() WHERE id = ?");
-    $upd->execute([$unitName, $accountId, $announcementId]);
+    $upd = $db->prepare("UPDATE announcements SET unit_name = ?, account_id = ?, updated_by = ?, updated_at = NOW() WHERE id = ?");
+    $upd->execute([$unitName, $accountId, $user['id'], $announcementId]);
     jsonResponse(true, null, 'บันทึกชื่อหน่วยงานสำเร็จ');
 }
 
@@ -275,11 +275,11 @@ function importData(PDO $db, array $user): void {
     $sql = "INSERT INTO announcements
         (project_no, filter_status, keyword_match, project_name, unit_name,
          announce_date, close_date, price_median, items, spec, can_bid, reason,
-         docs_required, need_sample, sample_detail, conditions, url, source_type)
+         docs_required, need_sample, sample_detail, conditions, url, source_type, created_by, updated_by)
         VALUES
         (:project_no, :filter_status, :keyword_match, :project_name, :unit_name,
          :announce_date, :close_date, :price_median, :items, :spec, :can_bid, :reason,
-         :docs_required, :need_sample, :sample_detail, :conditions, :url, :source_type)
+         :docs_required, :need_sample, :sample_detail, :conditions, :url, :source_type, :created_by, :updated_by)
         ON DUPLICATE KEY UPDATE
             filter_status = VALUES(filter_status), keyword_match = VALUES(keyword_match),
             project_name  = VALUES(project_name),  unit_name     = VALUES(unit_name),
@@ -289,7 +289,9 @@ function importData(PDO $db, array $user): void {
             reason        = VALUES(reason),         docs_required = VALUES(docs_required),
             need_sample   = VALUES(need_sample),    sample_detail = VALUES(sample_detail),
             conditions    = VALUES(conditions),     url           = VALUES(url),
-            source_type   = VALUES(source_type),   updated_at    = NOW()";
+            source_type   = VALUES(source_type),   updated_at    = NOW(),
+            updated_by    = VALUES(updated_by)";
+    // ประกาศใหม่: ผู้นำเข้า = ผู้สร้าง / ประกาศเดิมที่นำเข้าทับ: ผู้นำเข้า = ผู้แก้ไขล่าสุด (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
 
     $stmt     = $db->prepare($sql);
     $inserted = 0;
@@ -319,6 +321,8 @@ function importData(PDO $db, array $user): void {
                 ':conditions'    => $item['conditions']    ?? null,
                 ':url'           => $item['url']           ?? null,
                 ':source_type'   => $itemSource,
+                ':created_by'    => $user['id'],
+                ':updated_by'    => $user['id'],
             ]);
             if ($db->lastInsertId()) $inserted++;
             else $updated++;
@@ -374,9 +378,9 @@ function decideBid(PDO $db, array $user): void {
     $reason = $body['decision_reason'] ?? null;
     $stmt = $db->prepare("
         UPDATE announcements
-        SET bid_decision = ?, decision_reason = ?, decided_by = ?, decided_at = NOW()
+        SET bid_decision = ?, decision_reason = ?, decided_by = ?, decided_at = NOW(), updated_by = ?
         WHERE id = ?
     ");
-    $stmt->execute([$decision, $reason, $user['id'], $id]);
+    $stmt->execute([$decision, $reason, $user['id'], $user['id'], $id]);
     jsonResponse(true, null, 'บันทึกเรียบร้อย');
 }

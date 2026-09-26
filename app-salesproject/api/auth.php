@@ -40,7 +40,8 @@ function login(): void {
         jsonResponse(false, null, 'username หรือ password ไม่ถูกต้อง', 401);
     }
 
-    $db->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')->execute([$user['id']]);
+    // เวลา login เป็นข้อมูลระบบ ไม่ใช่การแก้ข้อมูลผู้ใช้ — คง updated_at เดิม ไม่บันทึก updated_by (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    $db->prepare('UPDATE users SET last_login = NOW(), updated_at = updated_at WHERE id = ?')->execute([$user['id']]);
     unset($user['password']);
 
     $_SESSION['user']          = $user;
@@ -64,7 +65,8 @@ function getMe(): void {
     $page    = $referer ? basename((string)parse_url($referer, PHP_URL_PATH)) : null;
 
     $db = (new Database())->getConnection();
-    $db->prepare('UPDATE users SET current_page = ?, last_active_at = NOW() WHERE id = ?')
+    // ข้อมูลระบบ (เปิดหน้าไหนอยู่) — คง updated_at เดิม ไม่งั้นเวลาแก้ไขผู้ใช้ล่าสุดเปลี่ยนทุกครั้งที่เปิดหน้า (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    $db->prepare('UPDATE users SET current_page = ?, last_active_at = NOW(), updated_at = updated_at WHERE id = ?')
        ->execute([$page, $user['id']]);
 
     jsonResponse(true, $user);

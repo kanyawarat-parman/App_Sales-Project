@@ -71,9 +71,12 @@ function addCalendarHoliday(PDO $db, array $user): void {
         jsonResponse(false, null, 'กรุณาระบุปฏิทิน วันที่ และชื่อวันหยุดให้ถูกต้อง', 400);
     }
 
-    $db->prepare('INSERT INTO calendar_holidays (calendar_id, holiday_date, name, created_by) VALUES (?, ?, ?, ?)
-                   ON DUPLICATE KEY UPDATE name = VALUES(name)')
-       ->execute([$calendarId, $date, $name, $user['id']]);
+    // วันหยุดเดิมที่มีอยู่แล้ว: เปลี่ยนผู้แก้ไขเฉพาะเมื่อชื่อเปลี่ยนจริง — updated_by ต้องอยู่ก่อน name เพราะ MySQL ทำจากซ้ายไปขวา (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    $db->prepare('INSERT INTO calendar_holidays (calendar_id, holiday_date, name, created_by, updated_by) VALUES (?, ?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE
+                       updated_by = IF(name <=> VALUES(name), updated_by, VALUES(updated_by)),
+                       name       = VALUES(name)')
+       ->execute([$calendarId, $date, $name, $user['id'], $user['id']]);
     clearAutoDutyForHoliday($db, $calendarId, $date);
     jsonResponse(true, null, 'เพิ่มวันหยุดเรียบร้อย');
 }
@@ -89,8 +92,11 @@ function bulkAddCalendarHolidays(PDO $db, array $user): void {
         jsonResponse(false, null, 'ไม่มีรายการวันหยุดให้เพิ่ม', 400);
     }
 
-    $stmt = $db->prepare('INSERT INTO calendar_holidays (calendar_id, holiday_date, name, created_by) VALUES (?, ?, ?, ?)
-                           ON DUPLICATE KEY UPDATE name = VALUES(name)');
+    // เพิ่มชุดเดิมซ้ำ: วันที่ชื่อเท่าเดิมไม่ถูกเปลี่ยนผู้แก้ไข (แบบเดียวกับ addCalendarHoliday)
+    $stmt = $db->prepare('INSERT INTO calendar_holidays (calendar_id, holiday_date, name, created_by, updated_by) VALUES (?, ?, ?, ?, ?)
+                           ON DUPLICATE KEY UPDATE
+                               updated_by = IF(name <=> VALUES(name), updated_by, VALUES(updated_by)),
+                               name       = VALUES(name)');
     $added   = 0;
     $skipped = [];
 
@@ -101,7 +107,7 @@ function bulkAddCalendarHolidays(PDO $db, array $user): void {
             $skipped[] = $item['raw'] ?? "{$date} {$name}";
             continue;
         }
-        $stmt->execute([$calendarId, $date, $name, $user['id']]);
+        $stmt->execute([$calendarId, $date, $name, $user['id'], $user['id']]);
         clearAutoDutyForHoliday($db, $calendarId, $date);
         $added++;
     }

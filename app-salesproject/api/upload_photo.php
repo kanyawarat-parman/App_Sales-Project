@@ -54,6 +54,7 @@ if (!move_uploaded_file($file['tmp_name'], $filepath)) {
 $photoUrl = 'uploads/avatars/' . $filename;
 
 $db = (new Database())->getConnection();
-$db->prepare('UPDATE users SET photo_url = ? WHERE id = ?')->execute([$photoUrl, $userId]);
+// updated_by = ผู้ที่อัปโหลด (admin/ธุรการ) ไม่ใช่เจ้าของรูป (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+$db->prepare('UPDATE users SET photo_url = ?, updated_by = ? WHERE id = ?')->execute([$photoUrl, $authUser['id'], $userId]);
 
 jsonResponse(true, ['photo_url' => $photoUrl], 'อัพโหลดสำเร็จ');

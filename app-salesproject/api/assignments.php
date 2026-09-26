@@ -54,11 +54,14 @@ function deleteAssignment(PDO $db, array $user): void {
     jsonResponse(true, null, 'ยกเลิก assignment สำเร็จ');
 }
 
+// ระบบคำนวณเอง ไม่ใช่ผู้ใช้แก้ — ไม่บันทึก updated_by และคง updated_at เดิมไว้ (updated_at = updated_at)
+// กันเวลาแก้ไขล่าสุดถูกทับทุกครั้งที่มีคนเปิดหน้ารายการ (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
 function refreshSlaStatuses(PDO $db): void {
     $db->exec("
         UPDATE project_assignments pa
         JOIN sla_config sc ON sc.priority = pa.priority
-        SET pa.sla_status = CASE
+        SET pa.updated_at = pa.updated_at,
+            pa.sla_status = CASE
             WHEN pa.sla_deadline < NOW()
                 THEN 'เกิน'
             WHEN pa.sla_deadline < DATE_ADD(NOW(), INTERVAL sc.alert_before_hours HOUR)
@@ -75,7 +78,7 @@ function refreshSlaStatuses(PDO $db): void {
         UPDATE pipeline_items pi
         JOIN project_assignments pa
             ON pa.announcement_id = pi.announcement_id AND pa.assigned_to = pi.assigned_to
-        SET pi.sla_status = pa.sla_status
+        SET pi.updated_at = pi.updated_at, pi.sla_status = pa.sla_status
         WHERE pi.source_type = 'ebidding'
           AND pa.status NOT IN ('ชนะการประมูล','ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก')
     ");
@@ -208,14 +211,14 @@ function createAssignment(PDO $db, array $user): void {
 
     // รหัสงานกลาง (project_code): ออก ณ จุดที่ salesadmin มอบหมายงานนี้ — เป็น "จุดยืนยันว่าจะทำจริง" (commitment point)
     // ไม่ออกตั้งแต่ตอน import announcement ดิบจาก e-GP เพราะส่วนใหญ่ยังไม่ผ่านกรอง/ไม่ได้เข้าประมูลจริง
-    $projectCode = nextProjectCode($db);
+    $projectCode = nextProjectCode($db, 'now', (int)$user['id']);
 
     $ins = $db->prepare("
         INSERT INTO project_assignments
-            (project_code, announcement_id, assigned_to, assigned_by, priority, secretary_notes, sla_deadline, sla_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'ปกติ')
+            (project_code, announcement_id, assigned_to, assigned_by, priority, secretary_notes, sla_deadline, sla_status, created_by, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'ปกติ', ?, ?)
     ");
-    $ins->execute([$projectCode, $announcementId, $assignedTo, $user['id'], $priority, $notes, $slaDeadline]);
+    $ins->execute([$projectCode, $announcementId, $assignedTo, $user['id'], $priority, $notes, $slaDeadline, $user['id'], $user['id']]);
     $assignmentId = (int)$db->lastInsertId();
 
     // บันทึก history
@@ -235,7 +238,7 @@ function createAssignment(PDO $db, array $user): void {
     if ($ann && empty($ann['account_id'])) {
         $accountId = findOrCreateAccount($db, 'government', $ann['unit_name'] ?? '', (int)$user['id']);
         if ($accountId) {
-            $db->prepare('UPDATE announcements SET account_id = ? WHERE id = ?')->execute([$accountId, $announcementId]);
+            $db->prepare('UPDATE announcements SET account_id = ?, updated_by = ? WHERE id = ?')->execute([$accountId, $user['id'], $announcementId]);
             $ann['account_id'] = $accountId;
         }
     }
@@ -245,8 +248,9 @@ function createAssignment(PDO $db, array $user): void {
         $projShort = mb_strlen($ann['project_name']) > 60
             ? mb_substr($ann['project_name'], 0, 60) . '...'
             : $ann['project_name'];
-        $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id) VALUES (?, 'new_assignment', 'งานประมูลใหม่', ?, 'assignment', ?)")
-           ->execute([$assignedTo, "มอบหมายโครงการ: {$projShort}", $assignmentId]);
+        // created_by = ผู้ที่มอบหมาย (ผู้ทำให้เกิดการแจ้งเตือน) — user_id คือผู้รับ (2026-09-26)
+        $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by) VALUES (?, 'new_assignment', 'งานประมูลใหม่', ?, 'assignment', ?, ?, ?)")
+           ->execute([$assignedTo, "มอบหมายโครงการ: {$projShort}", $assignmentId, $user['id'], $user['id']]);
     }
 
     // Auto-create pipeline_item เพื่อบันทึกไว้ตามหลักการออกแบบ (ข้อมูลยังต้องมีครบใน DB เสมอ) — pipeline_items.php's
@@ -262,8 +266,8 @@ function createAssignment(PDO $db, array $user): void {
         $db->prepare("
             INSERT INTO pipeline_items
                 (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to, assigned_by,
-                 stage, priority, value, win_probability, sla_deadline, sla_status, secretary_notes)
-            VALUES (?, 'ebidding', ?, ?, ?, ?, ?, ?, 'รอดำเนินการ', ?, ?, 0.10, ?, 'ปกติ', ?)
+                 stage, priority, value, win_probability, sla_deadline, sla_status, secretary_notes, created_by, updated_by)
+            VALUES (?, 'ebidding', ?, ?, ?, ?, ?, ?, 'รอดำเนินการ', ?, ?, 0.10, ?, 'ปกติ', ?, ?, ?)
         ")->execute([
             $projectCode,
             $announcementId,
@@ -276,6 +280,8 @@ function createAssignment(PDO $db, array $user): void {
             $ann['price_median'] ?? null,
             $slaDeadline,
             $notes,
+            $user['id'],
+            $user['id'],
         ]);
         $pipelineItemId = (int)$db->lastInsertId();
 
@@ -313,7 +319,8 @@ function createAssignment(PDO $db, array $user): void {
              . "กรุณาเข้าระบบเพื่อดูรายละเอียด";
 
         if (sendLineMessage($saleUser['line_user_id'], $msg)) {
-            $db->prepare('UPDATE project_assignments SET line_notified_at = NOW() WHERE id = ?')
+            // เวลาส่งแจ้งเตือนเป็นข้อมูลระบบ ไม่ใช่การแก้งาน — คง updated_at เดิม (2026-09-26)
+            $db->prepare('UPDATE project_assignments SET line_notified_at = NOW(), updated_at = updated_at WHERE id = ?')
                ->execute([$assignmentId]);
         }
     }
@@ -322,7 +329,7 @@ function createAssignment(PDO $db, array $user): void {
         $subject   = 'งานใหม่มอบหมายให้คุณ: ' . mb_substr($ann['project_name'] ?? '', 0, 60);
         $htmlBody  = buildAssignmentEmailHtml($ann, $saleUser['full_name'], $priority, $notes);
         if (sendEmail($saleUser['email'], $saleUser['full_name'], $subject, $htmlBody)) {
-            $db->prepare('UPDATE project_assignments SET email_notified_at = NOW() WHERE id = ?')
+            $db->prepare('UPDATE project_assignments SET email_notified_at = NOW(), updated_at = updated_at WHERE id = ?')
                ->execute([$assignmentId]);
         }
     }
@@ -512,6 +519,10 @@ function updateAssignment(PDO $db, array $user): void {
 
     if (empty($fields)) jsonResponse(false, null, 'ไม่มีข้อมูลให้อัพเดต', 400);
 
+    // ผู้แก้ไขล่าสุด = user ที่ login (กฎการสร้าง Database ข้อ 1 — 2026-09-26) ใส่ทั้งตัวงานและ mirror
+    $fields[] = 'updated_by = ?'; $params[] = $user['id'];
+    $piFields[] = 'updated_by = ?'; $piParams[] = $user['id'];
+
     $params[] = $id;
     $db->prepare('UPDATE project_assignments SET ' . implode(', ', $fields) . ' WHERE id = ?')
        ->execute($params);
@@ -574,19 +585,19 @@ function updateAssignment(PDO $db, array $user): void {
                 if (!$accountId && $annRow['source_type'] !== 'legacy_quotation') {
                     $accountId = findOrCreateAccount($db, 'government', $client, (int)$user['id']);
                     if ($accountId) {
-                        $db->prepare('UPDATE announcements SET account_id = ? WHERE id = ?')->execute([$accountId, $current['announcement_id']]);
+                        $db->prepare('UPDATE announcements SET account_id = ?, updated_by = ? WHERE id = ?')->execute([$accountId, $user['id'], $current['announcement_id']]);
                     }
                 }
                 // งานฝั่ง ebidding ไม่ออก project_code ใหม่ — ใช้รหัสเดียวกับ project_assignments ที่ผูกอยู่แล้ว
-                $projectCode = $current['project_code'] ?? nextProjectCode($db);
+                $projectCode = $current['project_code'] ?? nextProjectCode($db, 'now', (int)$user['id']);
                 $db->prepare("
                     INSERT INTO pipeline_items
                         (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
-                         stage, priority, value, win_probability, order_date)
-                    VALUES (?, 'ebidding', ?, ?, ?, ?, ?, 'Deal Signed', 'High', ?, 0.90, CURDATE())
+                         stage, priority, value, win_probability, order_date, created_by, updated_by)
+                    VALUES (?, 'ebidding', ?, ?, ?, ?, ?, 'Deal Signed', 'High', ?, 0.90, CURDATE(), ?, ?)
                 ")->execute([
                     $projectCode, $current['announcement_id'], $title, $client, $accountId,
-                    $current['assigned_to'], $value
+                    $current['assigned_to'], $value, $user['id'], $user['id']
                 ]);
                 // Phase 5b: mirror เพิ่งถูกสร้างใหม่ตรงนี้ (ไม่เคยมีมาก่อน) — บันทึกประวัติแรกให้ด้วย
                 $newPiId = (int)$db->lastInsertId();
@@ -622,12 +633,12 @@ function acceptAssignment(PDO $db, array $user): void {
     $newNotes   = $canBid === 'ไม่ได้' ? $reason : ($current['sale_notes'] ?? '');
     $histNote   = $canBid === 'ไม่ได้' ? "ไม่เข้าประมูล: {$reason}" : 'รับงาน/ศึกษา TOR';
 
-    $db->prepare("UPDATE project_assignments SET status = ?, sale_notes = ? WHERE id = ?")
-       ->execute([$newStatus, $newNotes, $id]);
+    $db->prepare("UPDATE project_assignments SET status = ?, sale_notes = ?, updated_by = ? WHERE id = ?")
+       ->execute([$newStatus, $newNotes, $user['id'], $id]);
 
     // sync ไปที่ pipeline_items mirror ด้วย (แก้บั๊กพร้อมกันรอบนี้ — ดู comment ด้านบนฟังก์ชัน)
-    $db->prepare("UPDATE pipeline_items SET stage = ?, notes = ? WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'")
-       ->execute([$newStatus, $newNotes, $current['announcement_id'], $current['assigned_to']]);
+    $db->prepare("UPDATE pipeline_items SET stage = ?, notes = ?, updated_by = ? WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'")
+       ->execute([$newStatus, $newNotes, $user['id'], $current['announcement_id'], $current['assigned_to']]);
 
     $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note) VALUES (?, ?, ?, 'รอดำเนินการ', ?, ?)")
        ->execute([$id, $current['project_code'], $user['id'], $newStatus, $histNote]);
@@ -872,15 +883,15 @@ function reassignAssignment(PDO $db, array $user): void {
     $oldSaleStmt->execute([$current['assigned_to']]);
     $oldName = $oldSaleStmt->fetchColumn() ?: '-';
 
-    $db->prepare('UPDATE project_assignments SET assigned_to = ? WHERE id = ?')
-       ->execute([$newAssignedTo, $id]);
+    $db->prepare('UPDATE project_assignments SET assigned_to = ?, updated_by = ? WHERE id = ?')
+       ->execute([$newAssignedTo, $user['id'], $id]);
 
     $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note) VALUES (?, ?, ?, ?, ?, ?)")
        ->execute([$id, $current['project_code'], $user['id'], $current['status'], $current['status'], "มอบหมายใหม่จาก {$oldName} ไป {$newSale['full_name']}"]);
 
     // sync pipeline_items mirror ให้ assigned_to ตรงกัน (สร้างไว้อัตโนมัติตอน createAssignment/ชนะประมูล)
-    $db->prepare('UPDATE pipeline_items SET assigned_to = ? WHERE announcement_id = ? AND assigned_to = ?')
-       ->execute([$newAssignedTo, $current['announcement_id'], $current['assigned_to']]);
+    $db->prepare('UPDATE pipeline_items SET assigned_to = ?, updated_by = ? WHERE announcement_id = ? AND assigned_to = ?')
+       ->execute([$newAssignedTo, $user['id'], $current['announcement_id'], $current['assigned_to']]);
 
     // Phase 5b: sync ประวัติไปที่ pipeline_item_history ด้วย (หา id ใหม่หลัง assigned_to ถูกอัพเดตแล้วด้านบน)
     $piIdStmt = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'");
@@ -895,8 +906,8 @@ function reassignAssignment(PDO $db, array $user): void {
     $ann->execute([$current['announcement_id']]);
     $projName = $ann->fetchColumn() ?: 'งานประมูล';
 
-    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id) VALUES (?, 'new_assignment', 'มอบหมายงานให้คุณ (เปลี่ยนผู้รับผิดชอบ)', ?, 'assignment', ?)")
-       ->execute([$newAssignedTo, $projName, $id]);
+    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by) VALUES (?, 'new_assignment', 'มอบหมายงานให้คุณ (เปลี่ยนผู้รับผิดชอบ)', ?, 'assignment', ?, ?, ?)")
+       ->execute([$newAssignedTo, $projName, $id, $user['id'], $user['id']]);
 
     jsonResponse(true, null, 'มอบหมายใหม่สำเร็จ');
 }
@@ -916,8 +927,8 @@ function nudgeAssignment(PDO $db, array $user): void {
     $row = $stmt->fetch();
     if (!$row) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
 
-    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id) VALUES (?, 'message', 'ข้อความจากธุรการ', ?, 'assignment', ?)")
-       ->execute([$row['assigned_to'], $text, $row['id']]);
+    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by) VALUES (?, 'message', 'ข้อความจากธุรการ', ?, 'assignment', ?, ?, ?)")
+       ->execute([$row['assigned_to'], $text, $row['id'], $user['id'], $user['id']]);
 
     jsonResponse(true, null, 'ส่งข้อความสำเร็จ');
 }

@@ -57,13 +57,14 @@ function markRead(PDO $db, array $user): void {
     $body = getJsonBody();
     $id   = (int)($body['id'] ?? 0);
     if (!$id) jsonResponse(false, null, 'ไม่ระบุ id', 400);
-    $db->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?")
-       ->execute([$id, $user['id']]);
+    // updated_by / updated_at = ผู้กดอ่าน/เวลาที่อ่าน — แก้เฉพาะที่ยังไม่อ่าน ไม่เขียนทับเวลาอ่านครั้งแรก (2026-09-26)
+    $db->prepare("UPDATE notifications SET is_read = 1, updated_by = ? WHERE id = ? AND user_id = ? AND is_read = 0")
+       ->execute([$user['id'], $id, $user['id']]);
     jsonResponse(true);
 }
 
 function markAllRead(PDO $db, array $user): void {
-    $db->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?")
-       ->execute([$user['id']]);
+    $db->prepare("UPDATE notifications SET is_read = 1, updated_by = ? WHERE user_id = ? AND is_read = 0")
+       ->execute([$user['id'], $user['id']]);
     jsonResponse(true);
 }

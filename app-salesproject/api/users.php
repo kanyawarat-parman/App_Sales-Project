@@ -19,9 +19,9 @@ switch ($method) {
         break;
     case 'POST':
         switch ($action) {
-            case 'create': requireRole(['admin']); createUser($db); break;
-            case 'update': requireRole(['admin']); updateUser($db); break;
-            case 'set_target': requireRole(['admin','manager']); setTarget($db); break;
+            case 'create': requireRole(['admin']); createUser($db, $user); break;
+            case 'update': requireRole(['admin']); updateUser($db, $user); break;
+            case 'set_target': requireRole(['admin','manager']); setTarget($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -60,7 +60,8 @@ function getSales(PDO $db): void {
     jsonResponse(true, $stmt->fetchAll());
 }
 
-function createUser(PDO $db): void {
+// $user = ผู้ที่ login (admin) — บันทึกเป็นผู้สร้าง/ผู้แก้ไข ไม่ใช่เจ้าของบัญชีที่ถูกสร้าง (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+function createUser(PDO $db, array $user): void {
     $body = getJsonBody();
     foreach (['username', 'password', 'full_name', 'role'] as $f) {
         if (empty($body[$f])) jsonResponse(false, null, "กรุณากรอก: $f", 400);
@@ -70,7 +71,7 @@ function createUser(PDO $db): void {
         jsonResponse(false, null, 'กรุณากรอก Sale ID สำหรับ role sale', 400);
     }
     try {
-        $db->prepare("INSERT INTO users (username, password, full_name, role, line_user_id, phone, email, notify_channel, notify_enabled, avatar_color, sale_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+        $db->prepare("INSERT INTO users (username, password, full_name, role, line_user_id, phone, email, notify_channel, notify_enabled, avatar_color, sale_id, created_by, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
            ->execute([
                $body['username'],
                password_hash($body['password'], PASSWORD_DEFAULT),
@@ -83,6 +84,8 @@ function createUser(PDO $db): void {
                isset($body['notify_enabled']) ? (int)$body['notify_enabled'] : 1,
                $body['avatar_color']    ?? '#3B82F6',
                $body['role'] === 'sale' ? $body['sale_id'] : null,
+               $user['id'],
+               $user['id'],
            ]);
         jsonResponse(true, ['id' => (int)$db->lastInsertId()], 'สร้างผู้ใช้สำเร็จ');
     } catch (PDOException $e) {
@@ -91,17 +94,17 @@ function createUser(PDO $db): void {
     }
 }
 
-function setTarget(PDO $db): void {
+function setTarget(PDO $db, array $user): void {
     $body = getJsonBody();
     $id   = (int)($body['id'] ?? 0);
     if (!$id) jsonResponse(false, null, 'Invalid ID', 400);
     $target = (isset($body['monthly_target']) && $body['monthly_target'] !== '')
         ? (float)$body['monthly_target'] : null;
-    $db->prepare('UPDATE users SET monthly_target = ? WHERE id = ?')->execute([$target, $id]);
+    $db->prepare('UPDATE users SET monthly_target = ?, updated_by = ? WHERE id = ?')->execute([$target, $user['id'], $id]);
     jsonResponse(true, null, 'บันทึกเป้าหมายสำเร็จ');
 }
 
-function updateUser(PDO $db): void {
+function updateUser(PDO $db, array $user): void {
     $body = getJsonBody();
     $id   = (int)($body['id'] ?? 0);
     if (!$id) jsonResponse(false, null, 'Invalid ID', 400);
@@ -134,6 +137,8 @@ function updateUser(PDO $db): void {
     if (!empty($body['avatar_color'])) { $fields[] = 'avatar_color = ?'; $params[] = $body['avatar_color']; }
 
     if (empty($fields)) jsonResponse(false, null, 'ไม่มีข้อมูลให้อัพเดต', 400);
+
+    $fields[] = 'updated_by = ?'; $params[] = $user['id'];
 
     $params[] = $id;
     $db->prepare('UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);

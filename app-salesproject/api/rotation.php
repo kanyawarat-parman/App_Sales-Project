@@ -13,7 +13,7 @@ switch ($_GET['action'] ?? '') {
     case 'month':         getMonth($db);             break;
     case 'config':        getConfig($db);            break;
     case 'save':          saveConfig($db, $user);    break;
-    case 'generate_year': requireRole(['admin','salesadmin']); generateYear($db);        break;
+    case 'generate_year': requireRole(['admin','salesadmin']); generateYear($db, $user); break;
     case 'set_day':       requireRole(['admin','salesadmin']); setDay($db, $user);       break;
     default: jsonResponse(false, null, 'Unknown action', 400);
 }
@@ -78,7 +78,7 @@ function getMonth(PDO $db): void {
 /** สร้างเวรทั้งปีด้วย algorithm เดิม (round-robin/workload) บันทึกลง duty_calendar เฉพาะ source_type ที่ระบุ
     ข้ามวันที่ is_manual=1 ไม่ทับเวรที่แก้/สลับมือไว้
     หมายเหตุ: วิธี workload อ้างอิงภาระงาน ณ ตอนนี้ ใช้กับวันในอนาคตได้แค่ประมาณการ (ไม่ต่างจาก round-robin จริง) */
-function generateYear(PDO $db): void {
+function generateYear(PDO $db, array $user): void {
     $body       = getJsonBody();
     $year       = (int)($body['year'] ?? 0);
     $sourceType = trim($body['source_type'] ?? '') ?: 'egp';
@@ -92,8 +92,12 @@ function generateYear(PDO $db): void {
     $n   = count($ids);
 
     $stmt = $db->prepare("
-        INSERT INTO duty_calendar (duty_date, source_type, user_id, is_manual) VALUES (?, ?, ?, 0)
-        ON DUPLICATE KEY UPDATE user_id = IF(is_manual = 0, VALUES(user_id), user_id)
+        INSERT INTO duty_calendar (duty_date, source_type, user_id, is_manual, created_by, updated_by) VALUES (?, ?, ?, 0, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            -- เปลี่ยนผู้แก้ไขเฉพาะวันที่คนเข้าเวรเปลี่ยนจริง (วันที่แก้มือไว้ is_manual=1 ไม่ถูกทับอยู่แล้ว)
+            -- updated_by ต้องอยู่ก่อน user_id เพราะ MySQL ทำจากซ้ายไปขวา (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+            updated_by = IF(is_manual = 0 AND NOT (user_id <=> VALUES(user_id)), VALUES(updated_by), updated_by),
+            user_id    = IF(is_manual = 0, VALUES(user_id), user_id)
     ");
 
     $cur   = new DateTime("{$year}-01-01");
@@ -106,7 +110,7 @@ function generateYear(PDO $db): void {
             $idx = workdayIndex($startDate, $dateStr, $workDays, $holidays);
             if ($idx >= 0) {
                 $baseSlot = $idx % $n;
-                $stmt->execute([$dateStr, $sourceType, $ids[$baseSlot]]);
+                $stmt->execute([$dateStr, $sourceType, $ids[$baseSlot], $user['id'], $user['id']]);
                 $count++;
             }
         }
@@ -127,10 +131,10 @@ function setDay(PDO $db, array $user): void {
     $note   = trim($body['note'] ?? '');
 
     $stmt = $db->prepare("
-        INSERT INTO duty_calendar (duty_date, source_type, user_id, is_manual, note, updated_by) VALUES (?, ?, ?, 1, ?, ?)
+        INSERT INTO duty_calendar (duty_date, source_type, user_id, is_manual, note, created_by, updated_by) VALUES (?, ?, ?, 1, ?, ?, ?)
         ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), is_manual = 1, note = VALUES(note), updated_by = VALUES(updated_by)
     ");
-    $stmt->execute([$date, $sourceType, $userId, $note !== '' ? $note : null, $user['id']]);
+    $stmt->execute([$date, $sourceType, $userId, $note !== '' ? $note : null, $user['id'], $user['id']]);
     jsonResponse(true, null, 'บันทึกเรียบร้อย');
 }
 
@@ -176,12 +180,14 @@ function saveConfig(PDO $db, array $user): void {
     // ตั้งค่าเวรแยกเป็นชุดต่อ source_type (rotation_configs) — แต่ละแหล่งงานมีวิธีคิด/ลำดับคน/วันเริ่มนับเป็นของตัวเอง ไม่ปนกัน
     // ปฏิทินอ้างอิงไม่ได้เก็บที่นี่แล้ว (ย้ายไปรวมที่ announcement_sources.calendar_code — แก้ผ่าน api/sources.php แทน)
     $stmt = $db->prepare("
-        INSERT INTO rotation_configs (source_type, method, workload_cap, start_date, user_ids)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO rotation_configs (source_type, method, workload_cap, start_date, user_ids, created_by, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE method = VALUES(method),
-                                workload_cap = VALUES(workload_cap), start_date = VALUES(start_date), user_ids = VALUES(user_ids)
+                                workload_cap = VALUES(workload_cap), start_date = VALUES(start_date), user_ids = VALUES(user_ids),
+                                updated_by = VALUES(updated_by)
     ");
-    $stmt->execute([$sourceType, $method, $cap, $startDate, implode(',', array_map('intval', $userIds))]);
+    // ผู้สร้าง/ผู้แก้ไข = ผู้ที่ login (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    $stmt->execute([$sourceType, $method, $cap, $startDate, implode(',', array_map('intval', $userIds)), $user['id'], $user['id']]);
 
     jsonResponse(true, null, 'บันทึกเรียบร้อย');
 }

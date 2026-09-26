@@ -22,15 +22,15 @@ switch ($method) {
         switch ($action) {
             case 'update_publish_calendar':
                 requireRole(['admin', 'salesadmin']);
-                updatePublishCalendar($db);
+                updatePublishCalendar($db, $user);
                 break;
             case 'create':
                 requireRole(['admin', 'salesadmin']);
-                createSource($db);
+                createSource($db, $user);
                 break;
             case 'update':
                 requireRole(['admin', 'salesadmin']);
-                updateSource($db);
+                updateSource($db, $user);
                 break;
             case 'delete':
                 requireRole(['admin', 'salesadmin']);
@@ -56,14 +56,14 @@ function listSources(PDO $db): void {
 }
 
 /** ตั้งค่าปฏิทินที่ใช้เช็ควันประกาศของแหล่งงานหนึ่ง (rotation-settings.html) — แก้ตรงนี้แทนแก้โค้ด */
-function updatePublishCalendar(PDO $db): void {
+function updatePublishCalendar(PDO $db, array $user): void {
     $body        = json_decode(file_get_contents('php://input'), true) ?? [];
     $sourceType  = trim($body['source_type'] ?? '');
     $calendarCode = trim($body['calendar_code'] ?? '') ?: null;
     if (!$sourceType) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
 
-    $stmt = $db->prepare('UPDATE announcement_sources SET calendar_code = ? WHERE source_type = ?');
-    $stmt->execute([$calendarCode, $sourceType]);
+    $stmt = $db->prepare('UPDATE announcement_sources SET calendar_code = ?, updated_by = ? WHERE source_type = ?');
+    $stmt->execute([$calendarCode, $user['id'], $sourceType]);
     if ($stmt->rowCount() === 0) {
         $chk = $db->prepare('SELECT 1 FROM announcement_sources WHERE source_type = ?');
         $chk->execute([$sourceType]);
@@ -83,7 +83,7 @@ function listAllSources(PDO $db): void {
 
 /** สร้างแหล่งที่มางานประมูลใหม่ — เผื่อมีแหล่งข้อมูลใหม่ในอนาคตนอกจาก e-GP/เว็บซื้อข้อมูล (source_type เป็น VARCHAR ไม่ผูก ENUM แล้ว
     รองรับเพิ่มได้จากหน้านี้โดยตรง ไม่ต้องแก้ schema) */
-function createSource(PDO $db): void {
+function createSource(PDO $db, array $user): void {
     $body       = getJsonBody();
     $sourceType = strtolower(trim($body['source_type'] ?? ''));
     $label      = trim($body['label'] ?? '');
@@ -98,13 +98,14 @@ function createSource(PDO $db): void {
     $chk->execute([$sourceType]);
     if ($chk->fetch()) jsonResponse(false, null, 'มีรหัสแหล่งงานนี้อยู่แล้ว', 409);
 
-    $db->prepare('INSERT INTO announcement_sources (source_type, label, calendar_code, is_active) VALUES (?, ?, ?, 1)')
-       ->execute([$sourceType, $label, $calendarCode]);
+    // ผู้สร้าง/ผู้แก้ไข = ผู้ที่ login (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    $db->prepare('INSERT INTO announcement_sources (source_type, label, calendar_code, is_active, created_by, updated_by) VALUES (?, ?, ?, 1, ?, ?)')
+       ->execute([$sourceType, $label, $calendarCode, $user['id'], $user['id']]);
     jsonResponse(true, null, 'สร้างแหล่งงานเรียบร้อย');
 }
 
 /** แก้ไขแหล่งงานที่มีอยู่ — source_type คงที่เสมอหลังสร้างแล้ว (ผูกกับ announcements.source_type อยู่) แก้ได้แค่ label/calendar_code/is_active */
-function updateSource(PDO $db): void {
+function updateSource(PDO $db, array $user): void {
     $body       = getJsonBody();
     $sourceType = trim($body['source_type'] ?? '');
     $label      = trim($body['label'] ?? '');
@@ -113,8 +114,8 @@ function updateSource(PDO $db): void {
 
     if (!$sourceType || $label === '') jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
 
-    $stmt = $db->prepare('UPDATE announcement_sources SET label = ?, calendar_code = ?, is_active = ? WHERE source_type = ?');
-    $stmt->execute([$label, $calendarCode, $isActive, $sourceType]);
+    $stmt = $db->prepare('UPDATE announcement_sources SET label = ?, calendar_code = ?, is_active = ?, updated_by = ? WHERE source_type = ?');
+    $stmt->execute([$label, $calendarCode, $isActive, $user['id'], $sourceType]);
     if ($stmt->rowCount() === 0) {
         $chk = $db->prepare('SELECT 1 FROM announcement_sources WHERE source_type = ?');
         $chk->execute([$sourceType]);
