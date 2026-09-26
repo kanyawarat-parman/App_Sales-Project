@@ -233,7 +233,7 @@ function createAssignment(PDO $db, array $user): void {
 
     // ผูก account อัตโนมัติ (ถ้ายังไม่เคยผูกไว้จากการมอบหมายครั้งก่อนหน้า)
     if ($ann && empty($ann['account_id'])) {
-        $accountId = findOrCreateAccount($db, 'government', $ann['unit_name'] ?? '');
+        $accountId = findOrCreateAccount($db, 'government', $ann['unit_name'] ?? '', (int)$user['id']);
         if ($accountId) {
             $db->prepare('UPDATE announcements SET account_id = ? WHERE id = ?')->execute([$accountId, $announcementId]);
             $ann['account_id'] = $accountId;
@@ -356,11 +356,12 @@ function validateLostResult(PDO $db, array $body): void {
         }
     }
     if ($winnerId) {
-        $c = $db->prepare('SELECT competitor_name, is_special FROM competitors WHERE competitor_id = ?');
+        $c = $db->prepare('SELECT competitor_code FROM competitors WHERE competitor_id = ?');
         $c->execute([$winnerId]);
         $winner = $c->fetch();
         if (!$winner) jsonResponse(false, null, 'ไม่พบผู้ชนะในรายชื่อคู่แข่ง', 400);
-        if ((int)$winner['is_special'] === 1 && $winner['competitor_name'] === 'ไม่มีคู่แข่ง') {
+        // เช็คจากรหัสตายตัว CP-NONE แทนชื่อภาษาไทย — admin แก้ชื่อตัวเลือกพิเศษได้โดยกติกาไม่พัง (2026-09-26)
+        if ($winner['competitor_code'] === 'CP-NONE') {
             jsonResponse(false, null, 'เลือก "ไม่มีคู่แข่ง" เป็นผู้ชนะไม่ได้ — ถ้าไม่รู้ให้เลือก "ยังไม่ทราบ"', 400);
         }
     }
@@ -571,7 +572,7 @@ function updateAssignment(PDO $db, array $user): void {
                 // ปล่อย account_id เป็น NULL ไว้ก่อน รอ sale แก้ไขชื่อให้ถูกผ่าน api/announcements.php's update_unit_name (มีให้เลือกประเภทด้วย) เอง
                 $accountId = $annRow['account_id'] ?? null;
                 if (!$accountId && $annRow['source_type'] !== 'legacy_quotation') {
-                    $accountId = findOrCreateAccount($db, 'government', $client);
+                    $accountId = findOrCreateAccount($db, 'government', $client, (int)$user['id']);
                     if ($accountId) {
                         $db->prepare('UPDATE announcements SET account_id = ? WHERE id = ?')->execute([$accountId, $current['announcement_id']]);
                     }

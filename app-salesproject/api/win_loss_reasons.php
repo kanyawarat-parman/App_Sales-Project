@@ -5,6 +5,7 @@
 // ไม่มีการลบ ใช้ซ่อน (is_active=0) แทน เพราะงานเดิมบันทึกข้อความเหตุผลไว้แล้ว
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/code_helper.php';
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -35,7 +36,7 @@ switch ($method) {
 //   งานประมูลนับจาก project_assignments + งานขายตรงนับจาก pipeline_items (source_type ไม่ใช่ ebidding กันนับ mirror ซ้ำ)
 function listWinLossReasons(PDO $db): void {
     $rows = $db->query("
-        SELECT r.win_loss_reason_id, r.win_loss_type, r.applies_to, r.win_loss_reason_name, r.requires_winner, r.requires_note, r.sort_order, r.is_active,
+        SELECT r.win_loss_reason_id, r.win_loss_reason_code, r.win_loss_type, r.applies_to, r.win_loss_reason_name, r.requires_winner, r.requires_note, r.sort_order, r.is_active,
                r.updated_at, uu.full_name AS updated_by_name,
                (SELECT COUNT(*) FROM project_assignments pa
                 WHERE pa.win_loss_reason_id = r.win_loss_reason_id
@@ -74,9 +75,11 @@ function createWinLossReason(PDO $db, array $user): void {
     $dup = $db->prepare('SELECT 1 FROM win_loss_reasons WHERE win_loss_type = ? AND win_loss_reason_name = ?');
     $dup->execute([$type, $name]);
     if ($dup->fetchColumn()) jsonResponse(false, null, "มีเหตุผล \"{$name}\" อยู่แล้ว", 409);
-    $db->prepare('INSERT INTO win_loss_reasons (win_loss_type, applies_to, win_loss_reason_name, requires_winner, requires_note, sort_order, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-       ->execute([$type, $appliesTo, $name, $requiresWinner, $requiresNote, $sort, $user['id'], $user['id']]);
-    jsonResponse(true, ['win_loss_reason_id' => (int)$db->lastInsertId()], 'เพิ่มเหตุผลแล้ว');
+    // รหัสเหตุผลระบบออกให้เอง ไม่เปลี่ยน (แก้ไขไม่รับรหัสจากหน้าเว็บ) — กฎการสร้าง Database ข้อ 2 (2026-09-26)
+    $code = nextWinLossReasonCode($db, (int)$user['id']);
+    $db->prepare('INSERT INTO win_loss_reasons (win_loss_reason_code, win_loss_type, applies_to, win_loss_reason_name, requires_winner, requires_note, sort_order, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+       ->execute([$code, $type, $appliesTo, $name, $requiresWinner, $requiresNote, $sort, $user['id'], $user['id']]);
+    jsonResponse(true, ['win_loss_reason_id' => (int)$db->lastInsertId(), 'win_loss_reason_code' => $code], 'เพิ่มเหตุผลแล้ว');
 }
 
 // แก้ข้อความเหตุผล: งานเก็บเป็นรหัสแล้ว (2026-09-25) งานเก่าจึงแสดงชื่อใหม่ตามทันที

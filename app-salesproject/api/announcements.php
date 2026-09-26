@@ -244,7 +244,7 @@ function updateUnitName(PDO $db, array $user): void {
     }
 
     // ผูก/สร้าง account ใหม่ตามชื่อ+ประเภทที่แก้ไขจริง (ไม่เดาจากชื่อเดิมที่อาจเป็นแค่ placeholder ตอนนำเข้าข้อมูลเก่า)
-    $accountId = findOrCreateAccount($db, $accountType, $unitName);
+    $accountId = findOrCreateAccount($db, $accountType, $unitName, (int)$user['id']);
 
     $upd = $db->prepare("UPDATE announcements SET unit_name = ?, account_id = ?, updated_at = NOW() WHERE id = ?");
     $upd->execute([$unitName, $accountId, $announcementId]);

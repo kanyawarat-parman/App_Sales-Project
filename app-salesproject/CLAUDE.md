@@ -436,6 +436,31 @@ CREATE TABLE project_code_counters (
 - **ห้ามลบ/แก้ไขอะไรที่เกี่ยวกับ Database โดยไม่ได้รับอนุญาตชัดเจนจากผู้ใช้ก่อนทุกครั้ง**
 - **ทุกครั้งที่สร้างตารางใหม่ (CREATE TABLE) ต้องใส่ `COMMENT` ภาษาไทยกำกับทุกคอลัมน์เสมอ** (ยืนยันจากผู้ใช้ 2026-08-26) — อธิบายสั้นๆ ว่าคอลัมน์นั้นเก็บอะไร/อ้างอิงตารางไหน เช่น `changed_by INT UNSIGNED NOT NULL COMMENT 'ผู้เปลี่ยนสถานะ (FK -> users.id)'` ดูตัวอย่างเต็มได้ที่ `sql/add_comments_all_tables.php` (สคริปต์ที่ backfill comment ให้ทุกตารางที่มีอยู่แล้วในระบบ) — ถ้าเพิ่มคอลัมน์ใหม่ในตารางเดิม (ALTER TABLE ADD COLUMN) ก็ใส่ COMMENT ด้วยเช่นกัน ไม่ใช่แค่ตอนสร้างตารางใหม่เท่านั้น
 
+### กฎการสร้าง Database (ยืนยันจากผู้ใช้ 2026-09-26)
+1. **ทุกตารางต้องมี 4 ช่อง audit เสมอ:** `created_by` (ผู้สร้าง), `created_at` (วันเวลาที่สร้าง), `updated_by` (ผู้แก้ไข), `updated_at` (วันเวลาที่แก้ไข) — ไม่มีข้อยกเว้น รวมตาราง log/ระบบด้วย
+   - `created_by` / `updated_by` เป็น `INT UNSIGNED NULL` + FK -> `users.id`
+   - `created_at` เป็น `TIMESTAMP DEFAULT CURRENT_TIMESTAMP`, `updated_at` เป็น `TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`
+   - โค้ดที่ INSERT/UPDATE ต้องบันทึก `created_by` / `updated_by` = ผู้ใช้ที่ login อยู่ทุกครั้ง
+   - ข้อมูลตั้งต้น (seed) ตอนสร้างตารางใส่ `created_by` / `updated_by` = admin โดยหา id จาก username (`SET @admin_id := (SELECT id FROM users WHERE username = 'admin' LIMIT 1);`) ไม่ใส่เลขตายตัว
+   - สถานะ: เพิ่มครบทุกตารางแล้วผ่าน `sql/add_audit_columns_all_tables.sql` (2026-09-26) แต่โค้ดส่วนใหญ่ยังไม่บันทึก `created_by` / `updated_by` — ทยอยแก้เป็นรอบ
+2. **ต้องมี 2 อย่างคู่กัน: `id` สำหรับเชื่อมตาราง + code สำหรับคนอ้างถึง** — `id` (auto increment) เป็นเลขภายในของแต่ละตาราง ใช้ทำ FK/JOIN แต่ไม่ตรงกันข้ามตาราง/ข้ามเครื่อง dev กับ host (ตัวอย่างจริง: ตัวเลือก "ไม่มีคู่แข่ง" มี `competitor_id` = 14 บน dev แต่ 11 บน host) ส่วน code เป็นรหัสที่คนอ่านเข้าใจ ไม่เปลี่ยน ใช้อ้างอิง/ค้นหา/เชื่อมข้อมูลข้ามระบบได้ (บทเรียนจากการรวม `project_assignments` กับ `pipeline_items` ที่ `id` คนละชุดกัน ต้องเปลี่ยนมาใช้ `project_code` เชื่อมแทน)
+   - **ตารางไหนต้องมี code:** ตารางที่ "คนอ้างถึงแถวนั้น" ในการทำงาน (พูด/พิมพ์/ค้นหา/แสดงบนหน้าจอหรือเอกสาร/ส่งข้ามระบบ) — ส่วนตาราง log/ประวัติ/ตารางเชื่อม/ตารางเทคนิค ใช้ `id` พอ ให้อ้างผ่าน code ของตารางหลักที่ผูกอยู่ (เช่น `pipeline_item_history` อ้างผ่าน `project_code`)
+   - **มี code แล้ว:** `project_assignments`/`pipeline_items` (`project_code`), `announcements` (`project_no` จาก e-GP), `users` (`username`), `accounts` (`account_code`), `competitors` (`competitor_code`), `win_loss_reasons` (`win_loss_reason_code` — ช่องแยกจาก `win_loss_reason_id` เพราะ id เป็น FK อยู่แล้ว 4 ตาราง), `calendars` (`code`), `deal_types` (`deal_type_id`), `legacy_quotations` (`quotation_id`), ตารางตั้งค่าใช้ key เป็นตัวระบุ — ไม่ต้องมี: `contacts` (คนเรียกด้วยชื่อ) และตาราง log/ประวัติ/ตารางเชื่อมทั้งหมด
+
+### กฎการสร้าง code (ยืนยันจากผู้ใช้ 2026-09-26)
+- **ชื่อช่อง:** `<entity>_code` สำหรับข้อมูลธุรกิจ (เช่น `account_code`, `competitor_code`) — master table ใช้ `<entity>_id` เป็นรหัสข้อความได้ตามแบบ `deal_types.deal_type_id`
+- **รูปแบบ:** `PREFIX-000000` — prefix 2 ตัวอักษรภาษาอังกฤษพิมพ์ใหญ่ + ขีด + เลขรัน **6 หลักเติม 0 ข้างหน้า** ต่อเนื่องไม่รีเซ็ต ใช้ 6 หลักเหมือนกันทุกประเภทให้ทั้งระบบเป็นกติกาเดียว (ไม่มีมาตรฐานสากลเรื่องจำนวนหลัก หลักคือความยาวคงที่ เผื่อจำนวนเหลือเฟือ และเหมือนกันทั้งระบบ)
+  - prefix ที่ใช้แล้ว: `AC` = ลูกค้า CRM (`accounts`), `CP` = คู่แข่ง (`competitors`), `WL` = เหตุผลปิดงาน (`win_loss_reasons`) — ก่อนตั้ง prefix ใหม่ให้เช็คไม่ซ้ำกับรายการนี้ และเพิ่มลงรายการนี้ด้วย
+  - ข้อยกเว้น: `project_code` (`PJ-YYMMDD-NNN`) ใช้รูปแบบตามวันที่ รีเซ็ตทุกวัน ออกโดย `includes/project_code_helper.php` แยกต่างหาก (มีมาก่อนกฎนี้)
+- **ตัวออกรหัส:** ใช้ `nextCode($db, $codeType, $codeTypeName, 6, $userId)` ใน `includes/code_helper.php` ซึ่งนับเลขในตาราง `code_counters` (1 แถวต่อ prefix) — ห้ามคำนวณจาก `MAX(...)+1` หรือจาก `id` เพราะผู้ใช้ 2 คนกดพร้อมกันจะได้เลขซ้ำ (ตัวนี้ใช้ `LAST_INSERT_ID(expr)` เพิ่ม+อ่านเลขในคำสั่งเดียว) — ประเภทรหัสใหม่ให้เพิ่มฟังก์ชันสั้นๆ แบบ `nextAccountCode()` / `nextCompetitorCode()`
+- **ช่องในฐานข้อมูล:** `VARCHAR(20) NOT NULL` + `UNIQUE` + COMMENT ภาษาไทย วางต่อจากช่อง `id`
+- **ไม่เปลี่ยนค่า:** API ไม่รับ code จากหน้าเว็บตอนแก้ไข — ระบบออกให้ตอนสร้างครั้งเดียว
+- **ทุกจุดที่สร้างข้อมูลต้องออก code:** รวมจุดที่ระบบสร้างอัตโนมัติด้วย (เช่น `findOrCreateAccount()` ใน `includes/account_helper.php` สร้างหน่วยงานตอนมอบหมายงานประมูล)
+- **ค่าระบบ/ตัวเลือกพิเศษ:** ใช้รหัสตายตัวที่อ่านแล้วรู้ความหมาย ไม่ใช้เลขรัน (เช่น `CP-NONE` = ไม่มีคู่แข่ง, `CP-UNKNOWN` = ยังไม่ทราบ) และ**โค้ดต้องเช็คจากรหัสนี้ ห้ามเช็คจากชื่อภาษาไทย** เพราะ admin แก้ชื่อได้ กติกาจะพังเงียบๆ
+- **เพิ่ม code ให้ตารางที่มีข้อมูลอยู่แล้ว:** ทำใน SQL ไฟล์เดียว 3 ขั้น — (1) เพิ่มช่องเป็น NULL ก่อน (2) เติมรหัสให้ข้อมูลเดิมเรียงตาม `created_at, id` (3) เปลี่ยนเป็น NOT NULL + UNIQUE แล้วตั้ง `code_counters.last_number` = จำนวนที่ออกไป — ท้ายไฟล์ใส่ query ตรวจ (ไม่มีรหัสว่าง / เลขล่าสุดเท่ากับจำนวนแถว) — ตัวอย่าง: `sql/add_account_code_erp.sql`, `sql/add_competitor_code.sql` — รหัสของข้อมูลเก่าบน dev กับ host อาจไม่ตรงกันเพราะรายการต่างกัน **host คือตัวจริง**
+- **รหัสจากระบบภายนอก (เช่น ERP) ห้ามใช้เป็น code หลัก:** เก็บแยกเป็นช่อง/ตาราง "External ID" ตามแนวทาง Salesforce — ถ้า 1 รายการมีได้หลายรหัสภายนอก ใช้ตารางจับคู่แบบ 1 ต่อ N (ตัวอย่าง: `account_erp_codes` เก็บรหัสลูกค้า ERP จาก `taiyo.RD01CUST`, `erp_customer_code` UNIQUE กัน 1 รหัส ERP ผูกหลายลูกค้า)
+- **ช่อง `*_by` ของ audit ยังเก็บ `users.id`** ไม่ใช่ username — เป็นตัวเชื่อม (FK) ส่วนที่คนอ่านคือชื่อที่ JOIN มาแสดง
+
 ## Workflow
 1. อ่านไฟล์ที่เกี่ยวข้องก่อนเสมอ (รวมถึง query DB จริงถ้าเกี่ยวกับ schema/ค่า enum)
 2. อธิบายแผนการแก้ไขแบบสั้นๆ รอผู้ใช้ยืนยันก่อนลงมือ โดยเฉพาะถ้ากระทบหลายไฟล์ หรือแตะ config ระดับเครื่อง (php.ini, Apache/IIS)

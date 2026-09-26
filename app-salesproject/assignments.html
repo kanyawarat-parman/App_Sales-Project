@@ -658,7 +658,7 @@ createApp({
     // เฉพาะเหตุผลของงานประมูล (applies_to = ebidding / both)
     lostReasonOptions() { return this.winLossReasons.filter(r => r.win_loss_type === 'lost' && r.applies_to !== 'sales' && Number(r.is_active) === 1); },
     wonReasonOptions()  { return this.winLossReasons.filter(r => r.win_loss_type === 'won'  && r.applies_to !== 'sales' && Number(r.is_active) === 1); },
-    winnerOptions() { return this.competitors.filter(c => Number(c.is_active) === 1 && !(Number(c.is_special) === 1 && c.competitor_name === 'ไม่มีคู่แข่ง')); },
+    winnerOptions() { return this.competitors.filter(c => Number(c.is_active) === 1 && c.competitor_code !== 'CP-NONE'); },
     // ยังไม่เลือกเหตุผล → ถือว่าบังคับไว้ก่อน (แสดง *) จะไม่บังคับก็ต่อเมื่อเลือกเหตุผลที่ไม่มีผู้ชนะจริง เช่น ลูกค้ายกเลิก
     statusRequiresWinner() {
       if (!this.statusForm.win_loss_reason_id) return true;

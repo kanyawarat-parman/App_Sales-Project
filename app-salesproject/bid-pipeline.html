@@ -1352,7 +1352,7 @@ createApp({
     },
     // ตัวเลือกผู้ชนะ: คู่แข่งที่ใช้งานอยู่ + "ยังไม่ทราบ" — ไม่รวม "ไม่มีคู่แข่ง" เพราะแพ้ = มีผู้ชนะแน่นอน (API เช็คซ้ำ)
     winnerOptions() {
-      return this.competitors.filter(c => Number(c.is_active) === 1 && !(Number(c.is_special) === 1 && c.competitor_name === 'ไม่มีคู่แข่ง'));
+      return this.competitors.filter(c => Number(c.is_active) === 1 && c.competitor_code !== 'CP-NONE');
     },
 
     parsedItems() {

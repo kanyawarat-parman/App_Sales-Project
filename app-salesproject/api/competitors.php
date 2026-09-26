@@ -5,6 +5,7 @@
 // ดึงรายชื่อ (list) เปิดให้ทุก role เพราะฟอร์มดีลต้องใช้ — ลบได้เฉพาะรายที่ยังไม่มีดีลเลือกไว้ ถ้ามีดีลใช้อยู่ต้อง "ซ่อน" (is_active=0) แทน กันประวัติดีลหาย
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/code_helper.php';
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -37,7 +38,7 @@ switch ($method) {
 // deal_count = จำนวนดีลที่ระบุคู่แข่งรายนี้ (หน้า competitors.html ใช้ดูว่าเจอใครบ่อย) + ชื่อผู้สร้าง/ผู้แก้ไข (NULL = ระบบ)
 function listCompetitors(PDO $db): void {
     $rows = $db->query('
-        SELECT c.competitor_id, c.competitor_name, c.competitor_legal_name, c.competitor_address, c.competitor_business_type,
+        SELECT c.competitor_id, c.competitor_code, c.competitor_name, c.competitor_legal_name, c.competitor_address, c.competitor_business_type,
                c.competitor_description, c.is_active, c.is_special,
                c.created_at, cu.full_name AS created_by_name,
                c.updated_at, uu.full_name AS updated_by_name,
@@ -57,7 +58,7 @@ function checkDuplicateCompetitor(PDO $db): void {
     if ($q === '') jsonResponse(true, []);
     $compact = str_replace(' ', '', $q);
     $stmt = $db->prepare("
-        SELECT competitor_id, competitor_name FROM competitors
+        SELECT competitor_id, competitor_code, competitor_name FROM competitors
         WHERE REPLACE(competitor_name, ' ', '') LIKE CONCAT('%', ?, '%')
            OR ? LIKE CONCAT('%', REPLACE(competitor_name, ' ', ''), '%')
         ORDER BY competitor_name LIMIT 10
@@ -88,11 +89,13 @@ function createCompetitor(PDO $db, array $user): void {
         jsonResponse(false, null, "มีคู่แข่งชื่อ \"{$row['competitor_name']}\" อยู่แล้ว{$hint}", 409);
     }
 
+    // รหัสคู่แข่งระบบออกให้เอง ไม่เปลี่ยน — กฎการสร้าง Database ข้อ 2 (2026-09-26)
+    $competitorCode = nextCompetitorCode($db, (int)$user['id']);
     $db->prepare('
-        INSERT INTO competitors (competitor_name, competitor_legal_name, competitor_address, competitor_business_type, competitor_description, created_by, updated_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ')->execute(array_merge([$name], competitorDetailFields($body), [$user['id'], $user['id']]));
-    jsonResponse(true, ['competitor_id' => (int)$db->lastInsertId(), 'competitor_name' => $name], 'เพิ่มคู่แข่งใหม่แล้ว');
+        INSERT INTO competitors (competitor_code, competitor_name, competitor_legal_name, competitor_address, competitor_business_type, competitor_description, created_by, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ')->execute(array_merge([$competitorCode, $name], competitorDetailFields($body), [$user['id'], $user['id']]));
+    jsonResponse(true, ['competitor_id' => (int)$db->lastInsertId(), 'competitor_code' => $competitorCode, 'competitor_name' => $name], 'เพิ่มคู่แข่งใหม่แล้ว');
 }
 
 // แก้ชื่อ/รายละเอียด — ดีลที่เลือกรายนี้ไว้เห็นชื่อใหม่ทันที เพราะอ้างอิงด้วย competitor_id ไม่ใช่ชื่อ

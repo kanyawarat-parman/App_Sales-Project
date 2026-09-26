@@ -112,7 +112,11 @@
       v-if="modal.type" @click.self="closeModal">
       <div v-if="modal.type==='competitor'" class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden my-8">
         <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
-          <h3 class="font-bold text-lg text-slate-800 m-0">{{ compForm.competitor_id ? 'แก้ไขคู่แข่ง' : 'เพิ่มคู่แข่ง' }}</h3>
+          <div>
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ compForm.competitor_id ? 'แก้ไขคู่แข่ง' : 'เพิ่มคู่แข่ง' }}</h3>
+            <span v-if="compForm.competitor_code" class="inline-block mt-1 font-mono text-xs text-teal-700 bg-teal-50 rounded px-1.5 py-0.5">{{ compForm.competitor_code }}</span>
+            <span v-else class="block mt-1 text-xs text-slate-400">รหัสคู่แข่งออกให้อัตโนมัติหลังบันทึก</span>
+          </div>
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
         </div>
         <div class="p-5 flex flex-col gap-4">
@@ -229,7 +233,7 @@ createApp({
         data: this.competitorList,
         destroy: true,
         autoWidth: false,
-        order: [[3, 'desc'], [0, 'asc']], // เจอบ่อยสุดขึ้นก่อน แล้วเรียงตามชื่อ
+        order: [[4, 'desc'], [1, 'asc']], // เจอบ่อยสุดขึ้นก่อน แล้วเรียงตามชื่อ (คอลัมน์ 0 = รหัส)
         language: {
           search: 'ค้นหา:',
           lengthMenu: 'แสดง _MENU_ รายการ',
@@ -240,6 +244,11 @@ createApp({
           paginate: { previous: 'ก่อนหน้า', next: 'ถัดไป' },
         },
         columns: [
+          // รหัสคู่แข่ง (กฎการสร้าง Database ข้อ 2 — 2026-09-26) ค้นหาด้วยรหัสได้ผ่านช่องค้นหาของ DataTables
+          {
+            data: 'competitor_code', title: 'รหัส',
+            render: (d, type) => type === 'display' ? `<span class="font-mono text-xs text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 whitespace-nowrap">${self.esc(d)}</span>` : d,
+          },
           // ชื่อทางการเป็นบรรทัดเล็กใต้ชื่อสั้น — อยู่ใน render ของคอลัมน์นี้ ช่องค้นหาของ DataTables จึงค้นได้ทั้ง 2 ชื่อ
           {
             data: 'competitor_name', title: 'ชื่อคู่แข่ง',
@@ -296,9 +305,10 @@ createApp({
     },
 
     exportCompetitors() {
-      const headers = ['ชื่อคู่แข่ง', 'ชื่อบริษัททางการ', 'ที่อยู่สำนักงานใหญ่', 'ประเภทธุรกิจ', 'หมายเหตุ', 'ดีลที่เจอ', 'สถานะ', 'แก้ไขล่าสุดโดย', 'แก้ไขล่าสุดเมื่อ'];
+      const headers = ['รหัส', 'ชื่อคู่แข่ง', 'ชื่อบริษัททางการ', 'ที่อยู่สำนักงานใหญ่', 'ประเภทธุรกิจ', 'หมายเหตุ', 'ดีลที่เจอ', 'สถานะ', 'แก้ไขล่าสุดโดย', 'แก้ไขล่าสุดเมื่อ'];
       // export ตามลำดับ/ตัวกรองที่ DataTables แสดงอยู่ตอนนี้ (search:'applied') — เหมือน sources.html
       const rows = $('#compTable').DataTable().rows({ search: 'applied' }).data().toArray().map(c => [
+        c.competitor_code,
         c.competitor_name,
         c.competitor_legal_name || '',
         c.competitor_address || '',

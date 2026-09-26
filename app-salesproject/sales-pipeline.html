@@ -616,11 +616,12 @@
               <div v-else class="relative">
                 <input v-model="spAccountQuery" @input="searchSpAccounts" @focus="spAccountDropdownOpen = !!spAccountQuery.trim()"
                   class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"
-                  placeholder="พิมพ์ค้นหาชื่อหน่วยงาน/บริษัท">
+                  placeholder="พิมพ์ค้นหาชื่อ / รหัสลูกค้า / รหัส ERP">
                 <div v-if="spAccountDropdownOpen" class="absolute left-0 right-0 top-[44px] bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-56 overflow-y-auto">
                   <div v-for="a in spAccountResults" :key="a.id" @click="selectSpAccount(a)"
                     class="px-3.5 py-2.5 cursor-pointer hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50">
                     <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="a.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ a.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
+                    <span v-if="a.account_code" class="font-mono text-[11px] text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 shrink-0">{{ a.account_code }}</span>
                     <span class="text-sm">{{ a.name }}</span>
                   </div>
                   <div @click="openSpAccountCreatePanel" class="px-3.5 py-2.5 cursor-pointer hover:bg-teal-50 text-teal-700 text-sm font-medium flex items-center gap-1.5">
@@ -1500,7 +1501,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     },
     // ตัวเลือกผู้ชนะ: แบ่ง 2 กลุ่ม — คู่แข่งที่ระบุไว้ในดีลนี้ (ขึ้นก่อน) / คู่แข่งอื่น (รวม "ยังไม่ทราบ") — ไม่รวม "ไม่มีคู่แข่ง"
     spWinnerOptions() {
-      const usable = this.competitors.filter(c => Number(c.is_active) === 1 && !(Number(c.is_special) === 1 && c.competitor_name === 'ไม่มีคู่แข่ง'));
+      const usable = this.competitors.filter(c => Number(c.is_active) === 1 && c.competitor_code !== 'CP-NONE');
       const inDealIds = this.spWinLossForm.deal_competitor_ids;
       return {
         inDeal: usable.filter(c => inDealIds.includes(Number(c.competitor_id)) && Number(c.is_special) !== 1),

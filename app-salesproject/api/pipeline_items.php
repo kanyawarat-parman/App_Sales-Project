@@ -506,7 +506,7 @@ function createItem(PDO $db, array $user, array $body): void {
     ]);
     $id = $db->lastInsertId();
 
-    upsertDealContact($db, $accountId, $contactName, $contactPhone, $contactPosition);
+    upsertDealContact($db, $accountId, $contactName, $contactPhone, $contactPosition, (int)$user['id']);
     if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, (int)$id, $projectCode, $user, $body['competitor_ids']);
 
     $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, ?, 'สร้างดีลใหม่')")
@@ -517,13 +517,14 @@ function createItem(PDO $db, array $user, array $body): void {
 
 // ผูกผู้ติดต่อเข้ากับ account ที่ระบุ — ใช้เบอร์โทรเช็คก่อนว่ามีคนนี้อยู่แล้วหรือยัง (เช่น sale เพิ่มดีลที่ 2 ให้บริษัทเดิม คุยกับคนเดิม) กันสร้างซ้ำ
 // ใช้ร่วมกันทั้งตอนสร้างดีลใหม่ (createItem, บังคับกรอก) และแก้ไขดีลเก่า (updateItem, ไม่บังคับ — เรียกเฉพาะเมื่อมีข้อมูลส่งมา)
-function upsertDealContact(PDO $db, ?int $accountId, string $contactName, string $contactPhone, string $contactPosition): void {
+// $userId = ผู้ใช้ที่ login — บันทึกเป็นผู้สร้าง/ผู้แก้ไขของผู้ติดต่อที่สร้างใหม่ (ยืนยันจากผู้ใช้ 2026-09-26)
+function upsertDealContact(PDO $db, ?int $accountId, string $contactName, string $contactPhone, string $contactPosition, ?int $userId = null): void {
     if (!$accountId || !$contactName || !$contactPhone) return;
     $existingContact = $db->prepare('SELECT id FROM contacts WHERE account_id = ? AND phone = ?');
     $existingContact->execute([$accountId, $contactPhone]);
     if (!$existingContact->fetch()) {
-        $db->prepare('INSERT INTO contacts (account_id, full_name, phone, position) VALUES (?, ?, ?, ?)')
-           ->execute([$accountId, $contactName, $contactPhone, $contactPosition ?: null]);
+        $db->prepare('INSERT INTO contacts (account_id, full_name, phone, position, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)')
+           ->execute([$accountId, $contactName, $contactPhone, $contactPosition ?: null, $userId, $userId]);
     }
 }
 
@@ -543,11 +544,12 @@ function validateSalesLost(PDO $db, array $body): void {
 
     $winnerId = !empty($body['winner_competitor_id']) ? (int)$body['winner_competitor_id'] : 0;
     if (!$winnerId) jsonError(400, 'กรุณาเลือกผู้ชนะ (ถ้าไม่รู้หรือไม่มีผู้ชนะ ให้เลือก "ยังไม่ทราบ")');
-    $c = $db->prepare('SELECT competitor_name, is_special FROM competitors WHERE competitor_id = ?');
+    $c = $db->prepare('SELECT competitor_code FROM competitors WHERE competitor_id = ?');
     $c->execute([$winnerId]);
     $winner = $c->fetch();
     if (!$winner) jsonError(400, 'ไม่พบผู้ชนะในรายชื่อคู่แข่ง');
-    if ((int)$winner['is_special'] === 1 && $winner['competitor_name'] === 'ไม่มีคู่แข่ง') {
+    // เช็คจากรหัสตายตัว CP-NONE แทนชื่อภาษาไทย — admin แก้ชื่อตัวเลือกพิเศษได้โดยกติกาไม่พัง (2026-09-26)
+    if ($winner['competitor_code'] === 'CP-NONE') {
         jsonError(400, 'เลือก "ไม่มีคู่แข่ง" เป็นผู้ชนะไม่ได้ — ถ้าไม่รู้ให้เลือก "ยังไม่ทราบ"');
     }
     if ((int)$r['requires_winner'] === 1) {
@@ -645,7 +647,7 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
 
     // ผู้ติดต่อไม่บังคับตอนแก้ไข (ต่างจากตอนสร้างดีลใหม่) — บันทึกเฉพาะเมื่อ user กรอกชื่อ+เบอร์มาจริง
     $updatedAccountId = array_key_exists('account_id', $body) ? (int)($body['account_id'] ?: 0) : (int)($row['account_id'] ?? 0);
-    upsertDealContact($db, $updatedAccountId ?: null, trim($body['contact_name'] ?? ''), trim($body['contact_phone'] ?? ''), trim($body['contact_position'] ?? ''));
+    upsertDealContact($db, $updatedAccountId ?: null, trim($body['contact_name'] ?? ''), trim($body['contact_phone'] ?? ''), trim($body['contact_position'] ?? ''), (int)$user['id']);
     // แก้คู่แข่งเฉพาะเมื่อส่ง competitor_ids มา (ปุ่มเลื่อนขั้น/ปิดดีลที่ส่งแค่ stage จะไม่ล้างคู่แข่งทิ้ง)
     if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, $id, $row['project_code'], $user, $body['competitor_ids']);
 

@@ -139,8 +139,9 @@ function specialCompetitors(PDO $db): array {
     $rows = $db->query('SELECT competitor_id, competitor_name FROM competitors WHERE is_special = 1')->fetchAll(PDO::FETCH_KEY_PAIR);
     return $rows ?: [];
 }
+// ผู้ชนะ "ยังไม่ทราบ" — หาจากรหัสตายตัว CP-UNKNOWN แทนชื่อภาษาไทย (2026-09-26)
 function unknownWinnerId(PDO $db): ?int {
-    $id = array_search('ยังไม่ทราบ', specialCompetitors($db), true);
+    $id = $db->query("SELECT competitor_id FROM competitors WHERE competitor_code = 'CP-UNKNOWN'")->fetchColumn();
     return $id === false ? null : (int)$id;
 }
 
@@ -240,6 +241,7 @@ function getCompetitors(PDO $db, array $user): void {
     $unknown = unknownWinnerId($db);
     $picMap  = dealCompetitorMap($db, array_map(fn($d) => (int)$d['id'], $deals));
     $names   = $db->query('SELECT competitor_id, competitor_name FROM competitors')->fetchAll(PDO::FETCH_KEY_PAIR);
+    $codes   = $db->query('SELECT competitor_id, competitor_code FROM competitors')->fetchAll(PDO::FETCH_KEY_PAIR);
 
     $stats = []; $unknownCount = 0; $unknownValue = 0.0; $lostToKnown = 0;
     foreach ($deals as $d) {
@@ -248,7 +250,7 @@ function getCompetitors(PDO $db, array $user): void {
         }
         foreach (encounteredCompetitors($d, $picMap, $special) as $cid) {
             if (!isset($stats[$cid])) {
-                $stats[$cid] = ['competitor_id' => $cid, 'competitor_name' => $names[$cid] ?? '-',
+                $stats[$cid] = ['competitor_id' => $cid, 'competitor_code' => $codes[$cid] ?? '', 'competitor_name' => $names[$cid] ?? '-',
                                 'met' => 0, 'met_ebidding' => 0, 'met_sales' => 0,
                                 'we_won' => 0, 'lost_to' => 0, 'lost_value' => 0.0, 'gaps' => []];
             }
@@ -294,7 +296,7 @@ function getCompetitors(PDO $db, array $user): void {
 function getCompetitorDetail(PDO $db, array $user): void {
     $cid = (int)($_GET['competitor_id'] ?? 0);
     if (!$cid) jsonResponse(false, null, 'ไม่พบคู่แข่ง', 400);
-    $c = $db->prepare('SELECT competitor_id, competitor_name, competitor_legal_name, competitor_business_type FROM competitors WHERE competitor_id = ?');
+    $c = $db->prepare('SELECT competitor_id, competitor_code, competitor_name, competitor_legal_name, competitor_business_type FROM competitors WHERE competitor_id = ?');
     $c->execute([$cid]);
     $competitor = $c->fetch();
     if (!$competitor) jsonResponse(false, null, 'ไม่พบคู่แข่ง', 404);
