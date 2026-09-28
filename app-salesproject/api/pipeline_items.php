@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/project_code_helper.php';
 require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
+require_once __DIR__ . '/../includes/phone_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -32,6 +33,7 @@ try {
             'stats'  => getStats($db, $user),
             'one'    => getOne($db, $user, (int)($_GET['id'] ?? 0)),
             'deal_types' => getDealTypes($db),
+            'contact_roles' => getContactRoles($db),
             default  => jsonError(400, 'action ไม่ถูกต้อง'),
         };
     } elseif ($method === 'POST') {
@@ -359,6 +361,15 @@ function getOne(PDO $db, array $user, int $id): void {
         $row['contact'] = $c->fetch() ?: null;
     }
 
+    // ผู้ติดต่อในดีล (pipeline_item_contacts) + ผู้ติดต่อทั้งหมดของลูกค้า ให้ฟอร์มติ๊กเลือก (Opportunity Contact Roles — 2026-09-28)
+    $row['deal_contacts'] = dealContacts($db, $id);
+    $row['account_contacts'] = [];
+    if ($row['account_id']) {
+        $ac = $db->prepare('SELECT id, full_name, phone, position, is_primary FROM contacts WHERE account_id = ? ORDER BY is_primary DESC, full_name');
+        $ac->execute([$row['account_id']]);
+        $row['account_contacts'] = $ac->fetchAll();
+    }
+
     // คู่แข่งในดีลนี้ (ตารางเชื่อม pipeline_item_competitors) — แสดงในฟอร์มและหัว modal แก้ไขรายละเอียดงาน
     $comp = $db->prepare("
         SELECT c.competitor_id, c.competitor_name
@@ -446,13 +457,10 @@ function createItem(PDO $db, array $user, array $body): void {
     // บังคับผูกหน่วยงาน/บริษัท (account) + ผู้ติดต่อ (ชื่อ+เบอร์โทร) ตอนสร้างดีลใหม่ฝั่งขายตรงเท่านั้น (ยืนยันจากผู้ใช้ 2026-09-22)
     // ไม่บังคับฝั่ง ebidding (mirror งานประมูลที่ auto สร้างจาก api/assignments.php) เพราะตอนนั้นยังไม่มีใครติดต่อหน่วยงานจริงเลย
     $accountId      = !empty($body['account_id']) ? (int)$body['account_id'] : null;
-    $contactName    = trim($body['contact_name']     ?? '');
-    $contactPhone   = trim($body['contact_phone']    ?? '');
-    $contactPosition = trim($body['contact_position'] ?? '');
     if ($sourceType !== 'ebidding') {
         if (!$accountId)    jsonError(400, 'กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท');
-        if (!$contactName)  jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');
-        if (!$contactPhone) jsonError(400, 'กรุณากรอกเบอร์โทรผู้ติดต่อ');
+        // ผู้ติดต่อในดีลอย่างน้อย 1 คน (เลือกคนเดิมของลูกค้า หรือเพิ่มคนใหม่) — แทนการบังคับกรอกชื่อ+เบอร์ช่องเดียวแบบเดิม (2026-09-28)
+        if (!dealContactsFromBody($body)) jsonError(400, 'กรุณาเลือกหรือเพิ่มผู้ติดต่อในดีลอย่างน้อย 1 คน');
         // บังคับเลือกประเภทดีลเอง ไม่ใช้ค่า default 'normal' — กันงานวาง Spec ถูกบันทึกเป็นซื้อทันทีเพราะเผลอไม่ได้เลือก (ยืนยันจากผู้ใช้ 2026-09-23)
         if (empty($body['deal_type_id'])) jsonError(400, 'กรุณาเลือกประเภทดีล');
         // เช่นเดียวกัน: ไม่เติม priority='Medium' / win_probability=20% ให้เองสำหรับดีลขายตรง (ยืนยันจากผู้ใช้ 2026-09-23)
@@ -513,7 +521,7 @@ function createItem(PDO $db, array $user, array $body): void {
     ]);
     $id = $db->lastInsertId();
 
-    upsertDealContact($db, $accountId, $contactName, $contactPhone, $contactPosition, (int)$user['id']);
+    if ($accountId && dealContactsFromBody($body)) saveDealContacts($db, (int)$id, $projectCode, $accountId, $user, dealContactsFromBody($body));
     if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, (int)$id, $projectCode, $user, $body['competitor_ids']);
 
     $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, ?, 'สร้างดีลใหม่')")
@@ -525,13 +533,95 @@ function createItem(PDO $db, array $user, array $body): void {
 // ผูกผู้ติดต่อเข้ากับ account ที่ระบุ — ใช้เบอร์โทรเช็คก่อนว่ามีคนนี้อยู่แล้วหรือยัง (เช่น sale เพิ่มดีลที่ 2 ให้บริษัทเดิม คุยกับคนเดิม) กันสร้างซ้ำ
 // ใช้ร่วมกันทั้งตอนสร้างดีลใหม่ (createItem, บังคับกรอก) และแก้ไขดีลเก่า (updateItem, ไม่บังคับ — เรียกเฉพาะเมื่อมีข้อมูลส่งมา)
 // $userId = ผู้ใช้ที่ login — บันทึกเป็นผู้สร้าง/ผู้แก้ไขของผู้ติดต่อที่สร้างใหม่ (ยืนยันจากผู้ใช้ 2026-09-26)
-function upsertDealContact(PDO $db, ?int $accountId, string $contactName, string $contactPhone, string $contactPosition, ?int $userId = null): void {
-    if (!$accountId || !$contactName || !$contactPhone) return;
-    $existingContact = $db->prepare('SELECT id FROM contacts WHERE account_id = ? AND phone = ?');
+function upsertDealContact(PDO $db, ?int $accountId, string $contactName, string $contactPhone, string $contactPosition, ?int $userId = null): ?int {
+    if (!$accountId || !$contactName || !$contactPhone) return null;
+    // เบอร์ตัวเลขล้วน + เทียบกับข้อมูลเก่าแบบตัดขีดออก (080-151-6361 = 0801516361 เป็นคนเดิม) — includes/phone_helper.php (2026-09-28)
+    $contactPhone = normalizePhone($contactPhone, 'เบอร์โทรผู้ติดต่อ');
+    $existingContact = $db->prepare('SELECT id FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
     $existingContact->execute([$accountId, $contactPhone]);
-    if (!$existingContact->fetch()) {
-        $db->prepare('INSERT INTO contacts (account_id, full_name, phone, position, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)')
-           ->execute([$accountId, $contactName, $contactPhone, $contactPosition ?: null, $userId, $userId]);
+    $existingId = $existingContact->fetchColumn();
+    if ($existingId) return (int)$existingId;
+    $db->prepare('INSERT INTO contacts (account_id, full_name, phone, position, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)')
+       ->execute([$accountId, $contactName, $contactPhone, $contactPosition ?: null, $userId, $userId]);
+    return (int)$db->lastInsertId();
+}
+
+// ─── ผู้ติดต่อในดีล (Opportunity Contact Roles — ยืนยันจากผู้ใช้ 2026-09-28) ───
+// ผู้ติดต่อยังอยู่ที่ลูกค้า (contacts) / ดีลเลือกว่าใครเกี่ยวข้อง + บทบาท (contact_roles) + คนหลัก 1 คน — ตาราง pipeline_item_contacts
+
+// master บทบาท — ส่งทุกแถวรวมที่ซ่อน (ดีลเก่าที่ใช้บทบาทนั้นยังแสดงชื่อได้) ฟอร์มกรองเฉพาะที่ใช้งานเอง
+function getContactRoles(PDO $db): void {
+    $rows = $db->query("SELECT contact_role_id, contact_role_name, contact_role_description, sort_order, is_active FROM contact_roles ORDER BY sort_order, contact_role_name")->fetchAll();
+    echo json_encode(['success' => true, 'items' => $rows], JSON_UNESCAPED_UNICODE);
+}
+
+function dealContacts(PDO $db, int $itemId): array {
+    $stmt = $db->prepare("
+        SELECT pic.contact_id, pic.contact_role_id, r.contact_role_name, pic.is_primary,
+               c.full_name, c.phone, c.position
+        FROM pipeline_item_contacts pic
+        JOIN contacts c ON c.id = pic.contact_id
+        LEFT JOIN contact_roles r ON r.contact_role_id = pic.contact_role_id
+        WHERE pic.pipeline_item_id = ?
+        ORDER BY pic.is_primary DESC, c.full_name
+    ");
+    $stmt->execute([$itemId]);
+    return $stmt->fetchAll();
+}
+
+// อ่านรายการผู้ติดต่อในดีลจาก body: deal_contacts = [{contact_id | new_contact:{full_name,phone,position}, contact_role_id, is_primary}]
+// รองรับรูปแบบเดิม (contact_name / contact_phone / contact_position) = เพิ่มผู้ติดต่อ 1 คนเป็นคนหลัก
+function dealContactsFromBody(array $body): array {
+    if (isset($body['deal_contacts']) && is_array($body['deal_contacts'])) return array_values(array_filter($body['deal_contacts'], 'is_array'));
+    $name = trim($body['contact_name'] ?? ''); $phone = trim($body['contact_phone'] ?? '');
+    if ($name === '' && $phone === '') return [];
+    return [['new_contact' => ['full_name' => $name, 'phone' => $phone, 'position' => trim($body['contact_position'] ?? '')], 'contact_role_id' => null, 'is_primary' => true]];
+}
+
+// บันทึกผู้ติดต่อในดีลแบบ "แทนที่ทั้งชุด" (แบบเดียวกับ saveDealCompetitors) — คนที่อยู่เดิมไม่ถูกลบแล้วใส่ใหม่ created_by/created_at เดิมยังอยู่
+// ผู้ติดต่อเดิมต้องเป็นของลูกค้าเดียวกับดีล / คนใหม่ต้องมีชื่อ+เบอร์ (เบอร์ตรงกับคนเดิมของลูกค้า = ใช้คนเดิม ไม่สร้างซ้ำ)
+// คนหลักมีได้ 1 คน — ไม่ได้เลือก ให้คนแรกเป็นคนหลัก
+function saveDealContacts(PDO $db, int $itemId, ?string $projectCode, int $accountId, array $user, array $list): void {
+    $activeRoles = $db->query("SELECT contact_role_id FROM contact_roles")->fetchAll(PDO::FETCH_COLUMN);
+    $chk = $db->prepare('SELECT 1 FROM contacts WHERE id = ? AND account_id = ?');
+    $rows = [];
+    foreach ($list as $item) {
+        if (!empty($item['contact_id'])) {
+            $cid = (int)$item['contact_id'];
+            $chk->execute([$cid, $accountId]);
+            if (!$chk->fetchColumn()) jsonError(400, 'ผู้ติดต่อที่เลือกไม่ได้อยู่ในหน่วยงาน/บริษัทนี้');
+        } else {
+            $nc = $item['new_contact'] ?? [];
+            $name = trim($nc['full_name'] ?? ''); $phone = trim($nc['phone'] ?? '');
+            if ($name === '')  jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');
+            if ($phone === '') jsonError(400, 'กรุณากรอกเบอร์โทรผู้ติดต่อ');
+            $cid = upsertDealContact($db, $accountId, $name, $phone, trim($nc['position'] ?? ''), (int)$user['id']);
+        }
+        $role = ($item['contact_role_id'] ?? '') !== '' ? (string)$item['contact_role_id'] : null;
+        if ($role !== null && !in_array($role, $activeRoles, true)) jsonError(400, 'บทบาทผู้ติดต่อไม่ถูกต้อง');
+        $rows[$cid] = ['role' => $role, 'primary' => !empty($item['is_primary']) ? 1 : 0];   // เลือกคนเดิมซ้ำ = ใช้ค่าล่าสุด
+    }
+    // คนหลัก 1 คนเสมอ
+    $primaries = array_keys(array_filter($rows, fn($r) => $r['primary'] === 1));
+    foreach ($rows as $cid => &$r) $r['primary'] = 0;
+    unset($r);
+    if ($rows) $rows[$primaries[0] ?? array_key_first($rows)]['primary'] = 1;
+
+    $ids = array_keys($rows);
+    if ($ids) {
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $db->prepare("DELETE FROM pipeline_item_contacts WHERE pipeline_item_id = ? AND contact_id NOT IN ($in)")->execute(array_merge([$itemId], $ids));
+    } else {
+        $db->prepare('DELETE FROM pipeline_item_contacts WHERE pipeline_item_id = ?')->execute([$itemId]);
+    }
+    // แถวเดิมที่ค่าเหมือนเดิมไม่ถูกเปลี่ยนผู้แก้ไข (updated_by ต้องอยู่ก่อนช่องที่แก้ — MySQL ทำจากซ้ายไปขวา)
+    $up = $db->prepare("INSERT INTO pipeline_item_contacts (pipeline_item_id, contact_id, project_code, contact_role_id, is_primary, created_by, updated_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE
+                            updated_by = IF(contact_role_id <=> VALUES(contact_role_id) AND is_primary <=> VALUES(is_primary) AND project_code <=> VALUES(project_code), updated_by, VALUES(updated_by)),
+                            contact_role_id = VALUES(contact_role_id), is_primary = VALUES(is_primary), project_code = VALUES(project_code)");
+    foreach ($rows as $cid => $r) {
+        $up->execute([$itemId, $cid, $projectCode, $r['role'], $r['primary'], $user['id'], $user['id']]);
     }
 }
 
@@ -638,7 +728,8 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
             $fields[] = 'winning_price = NULL';
         }
     }
-    if (empty($fields)) jsonError(400, 'ไม่มีข้อมูลที่จะอัปเดต');
+    // แก้เฉพาะผู้ติดต่อในดีลก็ได้ (ไม่มีช่องอื่นเปลี่ยน) — นับเป็นการแก้ดีล บันทึกผู้แก้ไข (2026-09-28)
+    if (empty($fields) && !array_key_exists('deal_contacts', $body)) jsonError(400, 'ไม่มีข้อมูลที่จะอัปเดต');
 
     // Auto set order_date when Deal Signed
     if (isset($body['stage']) && $body['stage'] === 'Deal Signed' && empty($body['order_date'])) {
@@ -655,9 +746,15 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     $params[] = $id;
     $db->prepare("UPDATE pipeline_items SET " . implode(', ', $fields) . " WHERE id = ?")->execute($params);
 
-    // ผู้ติดต่อไม่บังคับตอนแก้ไข (ต่างจากตอนสร้างดีลใหม่) — บันทึกเฉพาะเมื่อ user กรอกชื่อ+เบอร์มาจริง
+    // ผู้ติดต่อในดีล: บันทึกเฉพาะเมื่อฟอร์มส่งมา (ปุ่มเลื่อนขั้น/ปิดดีลที่ส่งแค่ stage ไม่แตะ) — ตอนแก้ไขไม่บังคับ เพราะดีลเก่ายังไม่มี (2026-09-28)
     $updatedAccountId = array_key_exists('account_id', $body) ? (int)($body['account_id'] ?: 0) : (int)($row['account_id'] ?? 0);
-    upsertDealContact($db, $updatedAccountId ?: null, trim($body['contact_name'] ?? ''), trim($body['contact_phone'] ?? ''), trim($body['contact_position'] ?? ''), (int)$user['id']);
+    if ($updatedAccountId && (array_key_exists('deal_contacts', $body) || trim($body['contact_name'] ?? '') !== '')) {
+        saveDealContacts($db, $id, $row['project_code'], $updatedAccountId, $user, dealContactsFromBody($body));
+    } elseif ($updatedAccountId !== (int)($row['account_id'] ?? 0)) {
+        // เปลี่ยนลูกค้าแต่ไม่ได้ส่งผู้ติดต่อมา → ผู้ติดต่อของลูกค้าเดิมไม่เกี่ยวกับดีลนี้แล้ว
+        $db->prepare('DELETE pic FROM pipeline_item_contacts pic JOIN contacts c ON c.id = pic.contact_id WHERE pic.pipeline_item_id = ? AND NOT (c.account_id <=> ?)')
+           ->execute([$id, $updatedAccountId ?: null]);
+    }
     // แก้คู่แข่งเฉพาะเมื่อส่ง competitor_ids มา (ปุ่มเลื่อนขั้น/ปิดดีลที่ส่งแค่ stage จะไม่ล้างคู่แข่งทิ้ง)
     if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, $id, $row['project_code'], $user, $body['competitor_ids']);
 

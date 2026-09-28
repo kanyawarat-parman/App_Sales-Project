@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/code_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
+require_once __DIR__ . '/../includes/phone_helper.php';
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -90,18 +91,27 @@ function createAccount(PDO $db, array $user): void {
     // ผู้สร้าง/ผู้แก้ไข = ผู้ใช้ที่ login (อ่านจาก session ฝั่ง API ไม่รับจากหน้าเว็บ) — กฎการสร้าง Database ข้อ 1 (ยืนยันจากผู้ใช้ 2026-09-26)
     // รหัสลูกค้า CRM ระบบออกให้เอง — กฎข้อ 2 / เลขภาษีไม่บังคับ (ลูกค้าใหม่ที่ยังเป็นผู้สนใจมักยังไม่มี)
     $taxId = normalizeTaxId($body['tax_id'] ?? '');
+    // เบอร์โทร (2026-09-28): เดิมฟอร์มหน้าลูกค้าส่งเบอร์/ที่อยู่/บันทึกมาด้วยแต่ไม่ได้บันทึก — บันทึกให้ครบแล้ว (ฟอร์มสร้างเร็วในหน้าดีลไม่ส่งมา = ว่าง)
+    $phone    = normalizePhone($body['phone'] ?? '', 'เบอร์สำนักงาน');
+    $phoneExt = normalizePhoneExt($body['phone_ext'] ?? '', 'เบอร์ต่อ');
+    $mobile   = normalizePhone($body['mobile'] ?? '', 'เบอร์มือถือ');
     $accountCode = nextAccountCode($db, (int)$user['id']);
-    $stmt = $db->prepare('INSERT INTO accounts (account_code, account_type, name, tax_id, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$accountCode, $type, $name, $taxId, $user['id'], $user['id']]);
+    $stmt = $db->prepare('INSERT INTO accounts (account_code, account_type, name, tax_id, phone, phone_ext, mobile, address, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt->execute([$accountCode, $type, $name, $taxId, $phone, $phoneExt, $mobile,
+                    trim($body['address'] ?? '') ?: null, trim($body['note'] ?? '') ?: null, $user['id'], $user['id']]);
     jsonResponse(true, ['id' => (int)$db->lastInsertId(), 'account_code' => $accountCode, 'name' => $name, 'account_type' => $type], 'สร้างหน่วยงาน/บริษัทสำเร็จ');
 }
 
 // รายชื่อหน่วยงาน/บริษัททั้งหมด สำหรับหน้า accounts.html — พร้อมจำนวน contact และจำนวนดีลที่ผูกไว้ (ใช้ตัดสินใจว่าหน่วยงานนี้มีความเคลื่อนไหวมากแค่ไหน)
 // deal_count = pipeline_items ที่ผูกไว้ + project_assignments (ผ่าน announcements.account_id) ที่ยังไม่มี pipeline_items mirror
 // (กันนับซ้ำงานที่มีทั้งคู่ และกันนับตก งานเก่าที่ import ตรงๆ ไม่เคยผ่าน flow ที่สร้าง mirror อัตโนมัติ — ยืนยันจากผู้ใช้ 2026-09-22)
+// phone_needs_fix = เบอร์ของลูกค้าหรือผู้ติดต่อคนใดยังไม่ใช่รูปแบบใหม่ (ข้อมูลเก่าก่อน 2026-09-28) — ใช้กับตัวกรอง "เบอร์ต้องแก้ไข"
 function listAccounts(PDO $db): void {
+    $needsFix = phoneNeedsFixSql('a.phone') . ' OR ' . phoneNeedsFixSql('a.mobile')
+              . ' OR EXISTS (SELECT 1 FROM contacts cf WHERE cf.account_id = a.id AND (' . phoneNeedsFixSql('cf.phone') . ' OR ' . phoneNeedsFixSql('cf.office_phone') . '))';
     $stmt = $db->query("
-        SELECT a.id, a.account_code, a.account_type, a.name, a.tax_id, a.phone, a.address, a.note, a.created_at,
+        SELECT a.id, a.account_code, a.account_type, a.name, a.tax_id, a.phone, a.phone_ext, a.mobile, a.address, a.note, a.created_at,
+               IF($needsFix, 1, 0) AS phone_needs_fix,
                (SELECT GROUP_CONCAT(e.erp_customer_code ORDER BY e.is_primary DESC, e.erp_customer_code SEPARATOR ', ')
                   FROM account_erp_codes e WHERE e.account_id = a.id) AS erp_codes,
                (SELECT COUNT(*) FROM contacts c WHERE c.account_id = a.id) AS contact_count,
@@ -126,7 +136,18 @@ function getAccountDetail(PDO $db, int $id): void {
     $account = $stmt->fetch();
     if (!$account) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
 
-    $contacts = $db->prepare('SELECT * FROM contacts WHERE account_id = ? ORDER BY is_primary DESC, full_name');
+    // deals_text = ดีลที่ผู้ติดต่อคนนี้อยู่ + บทบาท (ผู้ติดต่อในดีล pipeline_item_contacts — 2026-09-28) แสดงใต้ชื่อในหน้าลูกค้า
+    $contacts = $db->prepare("
+        SELECT c.*,
+               (SELECT GROUP_CONCAT(CONCAT(pi.title, ' (', COALESCE(r.contact_role_name, 'ไม่ระบุบทบาท'), IF(pic.is_primary = 1, ', คนหลัก', ''), ')')
+                                    ORDER BY pi.created_at DESC SEPARATOR ' / ')
+                  FROM pipeline_item_contacts pic
+                  JOIN pipeline_items pi ON pi.id = pic.pipeline_item_id
+                  LEFT JOIN contact_roles r ON r.contact_role_id = pic.contact_role_id
+                 WHERE pic.contact_id = c.id) AS deals_text,
+               IF(" . phoneNeedsFixSql('c.phone') . " OR " . phoneNeedsFixSql('c.office_phone') . ", 1, 0) AS phone_needs_fix
+        FROM contacts c WHERE c.account_id = ? ORDER BY c.is_primary DESC, c.full_name
+    ");
     $contacts->execute([$id]);
     $account['contacts'] = $contacts->fetchAll();
 
@@ -168,8 +189,16 @@ function updateAccount(PDO $db, array $user): void {
 
     // account_code ไม่รับจากหน้าเว็บ — รหัสไม่เปลี่ยนหลังออกแล้ว
     $taxId = normalizeTaxId($body['tax_id'] ?? '');
-    $db->prepare('UPDATE accounts SET account_type = ?, name = ?, tax_id = ?, phone = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
-       ->execute([$type, $name, $taxId, $body['phone'] ?: null, $body['address'] ?: null, $body['note'] ?: null, $user['id'], $id]);
+    // เบอร์: ตรวจรูปแบบเฉพาะช่องที่แก้ — เบอร์เก่าที่ยังไม่ได้แก้ไม่ขวางการบันทึกช่องอื่น (includes/phone_helper.php)
+    $old = $db->prepare('SELECT phone, mobile FROM accounts WHERE id = ?');
+    $old->execute([$id]);
+    $oldRow = $old->fetch();
+    if (!$oldRow) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
+    $phone    = phoneForUpdate($body['phone'] ?? '', $oldRow['phone'], 'เบอร์สำนักงาน');
+    $phoneExt = normalizePhoneExt($body['phone_ext'] ?? '', 'เบอร์ต่อ');
+    $mobile   = phoneForUpdate($body['mobile'] ?? '', $oldRow['mobile'], 'เบอร์มือถือ');
+    $db->prepare('UPDATE accounts SET account_type = ?, name = ?, tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
+       ->execute([$type, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, ($body['note'] ?? '') ?: null, $user['id'], $id]);
     jsonResponse(true, null, 'บันทึกสำเร็จ');
 }
 

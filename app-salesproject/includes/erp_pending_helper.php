@@ -43,7 +43,7 @@ function notifyErpPendingIfNeeded(PDO $db, int $pipelineItemId, array $user): vo
 
     $acc = ERP_DEAL_ACCOUNT_SQL;
     $stmt = $db->prepare("
-        SELECT pi.id, pi.title, pi.stage, {$acc} AS account_id, a.account_code, a.name AS account_name,
+        SELECT pi.id, pi.title, pi.stage, pi.source_type, {$acc} AS account_id, a.account_code, a.name AS account_name,
                (SELECT COUNT(*) FROM account_erp_codes e WHERE e.account_id = {$acc}) AS erp_count
         FROM pipeline_items pi
         LEFT JOIN announcements ann ON ann.id = pi.announcement_id
@@ -59,10 +59,12 @@ function notifyErpPendingIfNeeded(PDO $db, int $pipelineItemId, array $user): vo
     $sent->execute([$pipelineItemId]);
     if ($sent->fetchColumn()) return;
 
+    // งานประมูล = "ชนะประมูลแล้ว" / ดีลขายตรง = "ปิดดีลแล้ว" (ยืนยันจากผู้ใช้ 2026-09-28)
+    $wonText = $deal['source_type'] === 'ebidding' ? 'ชนะประมูลแล้ว' : 'ปิดดีลแล้ว';
     $title = mb_strlen($deal['title']) > 60 ? mb_substr($deal['title'], 0, 60) . '...' : $deal['title'];
     $body  = $deal['account_id']
-        ? "{$deal['account_code']} {$deal['account_name']} — {$title} ปิดดีลแล้ว ต้องเปิดหน้าบัญชีก่อนออก SO"
-        : "{$title} ปิดดีลแล้ว แต่ดีลยังไม่ได้ผูกลูกค้า";
+        ? "{$deal['account_code']} {$deal['account_name']} — {$title} {$wonText} ต้องเปิดหน้าบัญชีก่อนออก SO"
+        : "{$title} {$wonText} แต่ยังไม่ได้ผูกลูกค้า";
 
     $recipients = $db->query("SELECT id FROM users WHERE role = 'salesadmin' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
     $ins = $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by)
