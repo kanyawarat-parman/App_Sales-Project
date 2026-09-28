@@ -9,6 +9,7 @@ require_once __DIR__ . '/../includes/calendar_helper.php';
 require_once __DIR__ . '/../includes/project_code_helper.php';
 require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
+require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../api/line.php';
 
 $user   = requireAuth();
@@ -603,7 +604,13 @@ function updateAssignment(PDO $db, array $user): void {
                 $newPiId = (int)$db->lastInsertId();
                 $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, 'Deal Signed', 'สร้างจากการชนะประมูล (ยังไม่เคยมี mirror มาก่อน)')")
                    ->execute([$newPiId, $projectCode, $user['id']]);
+                $piId = $newPiId;
             }
+        }
+
+        // ชนะแล้วแต่ลูกค้ายังไม่มีหน้าบัญชี ERP → แจ้งธุรการขาย (ครั้งเดียวต่อดีล — ยืนยันจากผู้ใช้ 2026-09-28)
+        if ($piId && in_array($body['status'], ERP_PENDING_WON_STAGES, true)) {
+            notifyErpPendingIfNeeded($db, (int)$piId, $user);
         }
     }
 

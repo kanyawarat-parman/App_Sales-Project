@@ -30,6 +30,85 @@
 
       <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
         <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+          <!-- แท็บ: ลูกค้าทั้งหมด / รอเปิดหน้าบัญชี ERP (ยืนยันจากผู้ใช้ 2026-09-28) — เปิดตรงจากแจ้งเตือนด้วย ?tab=erp_pending -->
+          <div class="flex gap-6 px-5 pt-3 border-b border-slate-100 text-[15px]">
+            <button type="button" @click="setTab('all')"
+              class="pb-2.5 bg-transparent border-0 border-b-2 cursor-pointer font-semibold"
+              :class="activeTab==='all' ? 'border-teal-700 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'">
+              ลูกค้าทั้งหมด
+            </button>
+            <button type="button" @click="setTab('erp_pending')"
+              class="pb-2.5 bg-transparent border-0 border-b-2 cursor-pointer font-semibold inline-flex items-center gap-1.5"
+              :class="activeTab==='erp_pending' ? 'border-amber-500 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'">
+              รอเปิดหน้าบัญชี
+              <span v-if="erpPending.length" class="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">{{ erpPending.length }}</span>
+            </button>
+          </div>
+
+          <!-- แท็บรอเปิดหน้าบัญชี: ดีลที่ชนะ/ปิดดีลแล้ว แต่ลูกค้ายังไม่มีรหัส ERP — คำนวณจากข้อมูลจริง ผูกรหัสแล้วหายเอง (includes/erp_pending_helper.php) -->
+          <div v-if="activeTab==='erp_pending'">
+            <div class="px-5 py-3 text-sm text-slate-500 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+              <span>
+                ก่อนออก SO ต้องมีหน้าบัญชีลูกค้าใน ERP — แจ้งบัญชีเปิดหน้าบัญชี แล้วผูกรหัส ERP ให้ลูกค้า รายการจะหายไปเอง
+                <span v-if="isSale"> · แสดงเฉพาะดีลของคุณ</span>
+              </span>
+              <button v-if="erpPending.length" @click="exportErpPending" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer whitespace-nowrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Excel
+              </button>
+            </div>
+            <div v-if="erpPendingLoading" class="flex flex-col items-center justify-center py-12 text-slate-400">
+              <div class="spinner w-8 h-8 mx-auto"></div>
+            </div>
+            <div v-else-if="!erpPending.length" class="flex flex-col items-center justify-center py-14 text-slate-400">
+              <p class="text-sm">ไม่มีลูกค้าที่รอเปิดหน้าบัญชี</p>
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm">
+                <thead>
+                  <tr class="bg-slate-50">
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ลูกค้า</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ดีล/งานที่ชนะ</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">Sale</th>
+                    <th class="px-4 py-3 text-right text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">มูลค่า</th>
+                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">รอมาแล้ว</th>
+                    <th class="px-4 py-3 border-b-2 border-slate-200"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="d in erpPending" :key="d.pipeline_item_id" class="border-b border-slate-100 hover:bg-slate-50/50">
+                    <td class="px-4 py-3">
+                      <template v-if="d.account_id">
+                        <span class="font-mono text-xs text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 whitespace-nowrap">{{ d.account_code }}</span>
+                        <div class="font-medium text-slate-800 mt-1">{{ d.account_name }}</div>
+                      </template>
+                      <span v-else class="font-semibold text-amber-700">ยังไม่ผูกลูกค้า</span>
+                    </td>
+                    <td class="px-4 py-3">
+                      <div class="text-slate-800">{{ d.title }}</div>
+                      <div class="text-xs text-slate-500 mt-0.5">{{ d.project_code }} · {{ d.source_type==='ebidding' ? 'ชนะประมูล' : 'ปิดดีล' }} {{ formatDateThai(d.won_at) }}</div>
+                    </td>
+                    <td class="px-4 py-3 text-slate-600">{{ d.sale_name }}</td>
+                    <td class="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{{ d.value ? Number(d.value).toLocaleString('th-TH', { maximumFractionDigits: 0 }) : '-' }}</td>
+                    <td class="px-4 py-3 text-center whitespace-nowrap font-bold" :class="d.days_waiting > 7 ? 'text-red-600' : 'text-slate-700'">{{ d.days_waiting }} วัน</td>
+                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                      <button v-if="d.account_id" @click="openPendingAccount(d)"
+                        class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold border-0 cursor-pointer"
+                        :class="canEditErp ? 'bg-teal-700 hover:bg-teal-800 text-white' : 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50'">
+                        {{ canEditErp ? 'ผูกรหัส ERP' : 'ดูลูกค้า' }}
+                      </button>
+                      <a v-else :href="d.source_type==='ebidding' ? 'bid-pipeline.html' : 'sales-pipeline.html'"
+                        class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 no-underline">
+                        ไปผูกลูกค้าในดีล
+                      </a>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <template v-if="activeTab==='all'">
           <div class="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 flex-wrap">
             <span class="font-bold text-slate-700 flex items-center gap-1.5">
               <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
@@ -38,6 +117,10 @@
             <div class="flex items-center gap-2">
               <input v-model="searchQuery" placeholder="ค้นหาชื่อ / รหัสลูกค้า / รหัส ERP..."
                 class="border border-slate-200 rounded-xl px-3.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <button v-if="filteredAccounts.length" @click="exportAccounts" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer whitespace-nowrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Excel
+              </button>
               <button @click="openAccountModal(null)"
                 class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer whitespace-nowrap">
                 + เพิ่มหน่วยงาน
@@ -91,6 +174,7 @@
               </table>
             </div>
           </div>
+          </template>
         </div>
       </main>
     </div>
@@ -152,7 +236,7 @@
           <template v-if="accountForm.id">
             <!-- รหัสลูกค้าใน ERP (ฐานข้อมูล taiyo ตาราง RD01CUST) — 1 ลูกค้ามีได้หลายรหัส (แยกสาขา/แยกบริษัทในเครือ)
                  เพิ่ม/แก้/ลบได้เฉพาะ admin / ธุรการขาย เพราะต้องตรงกับฝ่ายบัญชี — sale ดูได้อย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-26) -->
-            <div class="border-t border-slate-100 pt-4 mb-4">
+            <div ref="erpSection" class="border-t border-slate-100 pt-4 mb-4">
               <div class="flex items-center justify-between mb-2">
                 <div class="text-xs font-bold uppercase tracking-wider text-slate-400">รหัสลูกค้าใน ERP</div>
                 <button v-if="canEditErp && !erpForm.show" @click="openErpForm(null)" class="text-xs font-semibold text-teal-700 bg-transparent border-0 cursor-pointer">+ เพิ่มรหัส ERP</button>
@@ -250,6 +334,9 @@ createApp({
       ],
       showContactForm: false,
       contactForm: { full_name: '', phone: '', position: '' },
+      activeTab: 'all',
+      erpPending: [],
+      erpPendingLoading: false,
     };
   },
   computed: {
@@ -267,6 +354,7 @@ createApp({
     },
     // เพิ่ม/แก้/ลบรหัส ERP: admin / ธุรการขาย (API บังคับซ้ำ)
     canEditErp() { return ['admin', 'salesadmin'].includes(this.currentUser?.role); },
+    isSale() { return this.currentUser?.role === 'sale'; },
   },
   async mounted() {
     try {
@@ -275,7 +363,8 @@ createApp({
       this.currentUser = res.data;
     } catch { window.location.href = 'login.html'; return; }
     this.authReady = true;
-    await this.loadAccounts();
+    if (new URLSearchParams(window.location.search).get('tab') === 'erp_pending') this.activeTab = 'erp_pending';
+    await Promise.all([this.loadAccounts(), this.loadErpPending()]);
   },
   methods: {
     ...SharedMethods,
@@ -285,6 +374,67 @@ createApp({
       const res = await apiCall('GET', 'api/accounts.php?action=list');
       if (res.success) this.accounts = res.data;
       this.loading = false;
+    },
+
+    setTab(tab) {
+      this.activeTab = tab;
+      if (tab === 'erp_pending') this.loadErpPending();
+    },
+
+    async loadErpPending() {
+      this.erpPendingLoading = true;
+      const res = await apiCall('GET', 'api/accounts.php?action=erp_pending');
+      if (res.success) this.erpPending = res.data;
+      this.erpPendingLoading = false;
+    },
+
+    // Export ตามที่แสดงบนหน้าจอ (ผลค้นหาปัจจุบัน) — ใช้ exportExcel() กลางใน shared/app.js (2026-09-28)
+    exportAccounts() {
+      const headers = ['รหัสลูกค้า', 'ชื่อ', 'ประเภท', 'เลขประจำตัวผู้เสียภาษี', 'รหัส ERP', 'เบอร์โทร', 'ที่อยู่', 'จำนวนผู้ติดต่อ', 'จำนวนดีล'];
+      const rows = this.filteredAccounts.map(a => [
+        a.account_code,
+        a.name,
+        a.account_type === 'government' ? 'ราชการ' : 'เอกชน',
+        a.tax_id || '',
+        a.erp_codes || '',
+        a.phone || '',
+        a.address || '',
+        Number(a.contact_count),
+        Number(a.deal_count),
+      ]);
+      this.exportExcel(`ลูกค้า_${this.todayIso()}`, headers, rows);
+    },
+
+    // sale ได้เฉพาะดีลของตัวเอง (API กรองให้แล้ว เหมือนที่แสดงบนหน้าจอ)
+    exportErpPending() {
+      const headers = ['รหัสลูกค้า', 'ชื่อลูกค้า', 'รหัสงาน', 'ชื่อดีล/งาน', 'ประเภท', 'วันที่ชนะ', 'รอมาแล้ว (วัน)', 'มูลค่า', 'Sale'];
+      const rows = this.erpPending.map(d => [
+        d.account_code || '',
+        d.account_id ? d.account_name : 'ยังไม่ผูกลูกค้า',
+        d.project_code,
+        d.title,
+        d.source_type === 'ebidding' ? 'ชนะประมูล' : 'ปิดดีล',
+        this.formatDateThai(d.won_at),
+        Number(d.days_waiting),
+        d.value ? Number(d.value) : '',
+        d.sale_name,
+      ]);
+      this.exportExcel(`ลูกค้ารอเปิดหน้าบัญชี_${this.todayIso()}`, headers, rows);
+    },
+
+    todayIso() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+
+    // จากแท็บรอเปิดหน้าบัญชี: เปิดรายละเอียดลูกค้า — ธุรการ/admin เปิดฟอร์มเพิ่มรหัส ERP ให้ทันที
+    async openPendingAccount(d) {
+      const account = this.accounts.find(a => Number(a.id) === Number(d.account_id));
+      if (!account) { await this.showAlert('ไม่พบข้อมูลลูกค้า', 'error'); return; }
+      await this.openAccountModal(account);
+      if (this.canEditErp) this.openErpForm(null);
+      // เลื่อนหน้าต่างไปที่ส่วนรหัส ERP ทันที ไม่ต้องเลื่อนหาเอง
+      this.$nextTick(() => this.$refs.erpSection?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     },
 
     async openAccountModal(a) {
@@ -350,7 +500,7 @@ createApp({
       if (!res.success) { await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error'); return; }
       this.erpForm.show = false;
       await this.loadAccountDetail(this.accountForm.id);
-      await this.loadAccounts();
+      await Promise.all([this.loadAccounts(), this.loadErpPending()]);
     },
 
     async removeErpCode(e) {
@@ -359,7 +509,7 @@ createApp({
       const res = await apiCall('POST', 'api/accounts.php?action=erp_code_delete', { account_erp_code_id: e.account_erp_code_id });
       if (!res.success) { await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error'); return; }
       await this.loadAccountDetail(this.accountForm.id);
-      await this.loadAccounts();
+      await Promise.all([this.loadAccounts(), this.loadErpPending()]);
     },
 
     async submitContact() {

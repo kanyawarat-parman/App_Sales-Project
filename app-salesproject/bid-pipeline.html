@@ -882,6 +882,8 @@
           <div class="text-sm font-semibold text-slate-800 mb-4 px-3 py-2.5 bg-slate-50 rounded-xl ring-1 ring-slate-200 line-clamp-2">
             {{ modal.data?.project_name }}
           </div>
+          <!-- ลูกค้ายังไม่มีหน้าบัญชี ERP → เตือน ไม่บล็อก (ยืนยันจากผู้ใช้ 2026-09-28) — component อยู่ใน shared/app.js -->
+          <app-erp-warning v-if="winLossForm.newStatus==='ชนะการประมูล'" :project-code="winLossForm.project_code"></app-erp-warning>
           <!-- กล่องพื้นเทาอ่อนเป็นกลาง มีหัวกล่องกำกับ — สีเขียว/แดงใช้แค่ป้ายหัว modal กับปุ่มยืนยัน (ปรับตามผู้ใช้ 2026-09-25) -->
           <div class="mb-4 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
             <div class="text-xs font-bold text-slate-500 mb-2">เหตุผล</div>
@@ -1190,7 +1192,7 @@ const PREV_MAP = {
 };
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning },
   data() {
     return {
       authReady: false,

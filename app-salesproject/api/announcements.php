@@ -272,31 +272,32 @@ function importData(PDO $db, array $user): void {
     $allowedSources = $db->query('SELECT source_type FROM announcement_sources WHERE is_active = 1')->fetchAll(PDO::FETCH_COLUMN);
     $bodySource = in_array($body['source_type'] ?? '', $allowedSources) ? $body['source_type'] : 'egp';
 
-    $sql = "INSERT INTO announcements
-        (project_no, filter_status, keyword_match, project_name, unit_name,
-         announce_date, close_date, price_median, items, spec, can_bid, reason,
-         docs_required, need_sample, sample_detail, conditions, url, source_type, created_by, updated_by)
-        VALUES
-        (:project_no, :filter_status, :keyword_match, :project_name, :unit_name,
-         :announce_date, :close_date, :price_median, :items, :spec, :can_bid, :reason,
-         :docs_required, :need_sample, :sample_detail, :conditions, :url, :source_type, :created_by, :updated_by)
-        ON DUPLICATE KEY UPDATE
-            filter_status = VALUES(filter_status), keyword_match = VALUES(keyword_match),
-            project_name  = VALUES(project_name),  unit_name     = VALUES(unit_name),
-            announce_date = VALUES(announce_date),  close_date    = VALUES(close_date),
-            price_median  = VALUES(price_median),   items         = VALUES(items),
-            spec          = VALUES(spec),           can_bid       = VALUES(can_bid),
-            reason        = VALUES(reason),         docs_required = VALUES(docs_required),
-            need_sample   = VALUES(need_sample),    sample_detail = VALUES(sample_detail),
-            conditions    = VALUES(conditions),     url           = VALUES(url),
-            source_type   = VALUES(source_type),   updated_at    = NOW(),
-            updated_by    = VALUES(updated_by)";
-    // ประกาศใหม่: ผู้นำเข้า = ผู้สร้าง / ประกาศเดิมที่นำเข้าทับ: ผู้นำเข้า = ผู้แก้ไขล่าสุด (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+    // ช่องข้อมูลประกาศที่นำเข้าทับได้ (ไม่รวม project_no ที่เป็นตัวจับคู่ และช่อง audit)
+    $dataColumns = ['filter_status', 'keyword_match', 'project_name', 'unit_name',
+                    'announce_date', 'close_date', 'price_median', 'items', 'spec', 'can_bid', 'reason',
+                    'docs_required', 'need_sample', 'sample_detail', 'conditions', 'url', 'source_type'];
 
-    $stmt     = $db->prepare($sql);
-    $inserted = 0;
-    $updated  = 0;
-    $errors   = [];
+    // ประกาศเดิมที่นำเข้าทับ: เปลี่ยนผู้แก้ไข/เวลาแก้ไขเฉพาะเมื่อมีช่องใดช่องหนึ่งเปลี่ยนจริง (ยืนยันจากผู้ใช้ 2026-09-26)
+    // นำเข้าไฟล์เดิมซ้ำ → แถวไม่ถูกแตะเลย นับเป็น "ไม่เปลี่ยนแปลง" — หลักเดียวกับเป้าหมาย/KPI/วันหยุด/เวร
+    // updated_by/updated_at ต้องอยู่ก่อนช่องข้อมูล เพราะ MySQL ทำจากซ้ายไปขวา (ถ้าอยู่หลัง จะเทียบกับค่าใหม่ที่เพิ่งเขียนไปแล้ว)
+    // <=> เทียบแบบรองรับ NULL (NULL <=> NULL = จริง)
+    $sameData = implode(' AND ', array_map(fn($c) => "`{$c}` <=> VALUES(`{$c}`)", $dataColumns));
+    $setData  = implode(', ', array_map(fn($c) => "`{$c}` = VALUES(`{$c}`)", $dataColumns));
+
+    $insertColumns = array_merge(['project_no'], $dataColumns, ['created_by', 'updated_by']);
+    $sql = "INSERT INTO announcements (" . implode(', ', $insertColumns) . ")
+        VALUES (" . implode(', ', array_map(fn($c) => ":{$c}", $insertColumns)) . ")
+        ON DUPLICATE KEY UPDATE
+            updated_by = IF({$sameData}, updated_by, VALUES(updated_by)),
+            updated_at = IF({$sameData}, updated_at, NOW()),
+            {$setData}";
+    // ประกาศใหม่: ผู้นำเข้า = ผู้สร้าง / ประกาศเดิมที่ข้อมูลเปลี่ยน: ผู้นำเข้า = ผู้แก้ไขล่าสุด (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
+
+    $stmt      = $db->prepare($sql);
+    $inserted  = 0;
+    $updated   = 0;
+    $unchanged = 0;
+    $errors    = [];
 
     foreach ($items as $item) {
         $itemSource = in_array($item['source_type'] ?? '', $allowedSources) ? $item['source_type'] : $bodySource;
@@ -324,18 +325,31 @@ function importData(PDO $db, array $user): void {
                 ':created_by'    => $user['id'],
                 ':updated_by'    => $user['id'],
             ]);
-            if ($db->lastInsertId()) $inserted++;
-            else $updated++;
+            // นับจากจำนวนแถวที่ MySQL แจ้งกลับของ INSERT ... ON DUPLICATE KEY UPDATE: 1 = เพิ่มใหม่, 2 = อัพเดต, 0 = มีอยู่แล้วข้อมูลเหมือนเดิม
+            // (แก้ 2026-09-26: เดิมใช้ lastInsertId() ซึ่งจำค่าของรายการก่อนหน้าไว้ ประกาศเดิมที่นำเข้าซ้ำจึงถูกนับเป็น "เพิ่มใหม่")
+            $affected = $stmt->rowCount();
+            if ($affected === 1)     $inserted++;
+            elseif ($affected === 0) $unchanged++;
+            else                     $updated++;
         } catch (PDOException $e) {
             $errors[] = ($item['project_no'] ?? '?') . ': ' . $e->getMessage();
         }
     }
 
+    // รายการที่ไม่สำเร็จต้องบอกผู้ใช้ด้วย (เดิมไม่แสดงในข้อความ ผู้ใช้เห็นแค่ "สำเร็จ" ทั้งที่อาจมีรายการตกหล่น)
+    $message = "นำเข้าสำเร็จ: เพิ่มใหม่ {$inserted} รายการ, อัพเดต {$updated} รายการ, ไม่เปลี่ยนแปลง {$unchanged} รายการ";
+    if ($errors) {
+        $failedNos = array_map(fn($e) => explode(':', $e, 2)[0], $errors);
+        $message  .= ', ไม่สำเร็จ ' . count($errors) . ' รายการ (เลขที่โครงการ: ' . implode(', ', array_slice($failedNos, 0, 5))
+                   . (count($failedNos) > 5 ? ' และอื่นๆ' : '') . ')';
+    }
+
     jsonResponse(true, [
-        'inserted' => $inserted,
-        'updated'  => $updated,
-        'errors'   => $errors,
-    ], "นำเข้าสำเร็จ: เพิ่มใหม่ {$inserted} รายการ, อัพเดต {$updated} รายการ");
+        'inserted'  => $inserted,
+        'updated'   => $updated,
+        'unchanged' => $unchanged,
+        'errors'    => $errors,
+    ], $message);
 }
 
 function getSummary(PDO $db): void {

@@ -525,6 +525,8 @@
             </div>
             <!-- ชนะก็บังคับเหตุผลทุกครั้ง รวมงานที่ชนะอยู่แล้วแต่ยังไม่มีเหตุผล (ยืนยันจากผู้ใช้ 2026-09-25) — API เช็คซ้ำ -->
             <!-- กล่องพื้นเทาอ่อนเป็นกลาง + ป้าย ✓/✕ บอกผล แทนการทาพื้นเขียว/ชมพู — แบบเดียวกับ bid-pipeline.html (ปรับตามผู้ใช้ 2026-09-25) -->
+            <!-- ลูกค้ายังไม่มีหน้าบัญชี ERP → เตือน ไม่บล็อก (ยืนยันจากผู้ใช้ 2026-09-28) — component อยู่ใน shared/app.js -->
+            <app-erp-warning v-if="statusForm.status==='ชนะการประมูล'" :project-code="statusForm.project_code" class="!mb-0"></app-erp-warning>
             <div v-if="statusForm.status==='ชนะการประมูล'" class="flex flex-col gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
               <div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">✓ ชนะ</span> <span class="text-xs font-bold text-slate-500 ml-1">เหตุผล</span></div>
               <div class="flex flex-col gap-1">
@@ -604,7 +606,7 @@
 const { createApp } = Vue;
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning },
   data() {
     return {
       authReady: false,

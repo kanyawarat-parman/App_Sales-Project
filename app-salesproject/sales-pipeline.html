@@ -1018,6 +1018,8 @@
         </div>
         <div class="flex-1 overflow-y-auto p-5">
           <div class="text-base font-semibold text-slate-800 mb-4 px-3 py-3 bg-slate-50 rounded-lg">{{ spWinLossForm.title }}</div>
+          <!-- ลูกค้ายังไม่มีหน้าบัญชี ERP → เตือน ไม่บล็อก (ยืนยันจากผู้ใช้ 2026-09-28) — component อยู่ใน shared/app.js -->
+          <app-erp-warning v-if="spWinLossForm.stage==='Deal Signed'" :project-code="modal.data?.project_code"></app-erp-warning>
           <!-- โครงเดียวกับหน้าต่างแพ้/ชนะของงานประมูล (bid-pipeline.html): เหตุผลเป็น dropdown จาก master win_loss_reasons (applies_to = sales/both)
                + รายละเอียดต่อจากเหตุผล (บังคับเมื่อ "อื่นๆ") / Lost ต้องระบุผู้ชนะทุกครั้ง + ราคาตามเหตุผล (ยืนยันจากผู้ใช้ 2026-09-25) — API เช็คซ้ำ -->
           <div class="mb-4 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
@@ -1282,7 +1284,7 @@
 const { createApp } = Vue;
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning },
   data() {
     return {
       authReady: false,

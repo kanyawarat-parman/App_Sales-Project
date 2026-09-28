@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/project_code_helper.php';
 require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
+require_once __DIR__ . '/../includes/erp_pending_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -676,6 +677,9 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
            ->execute([$id, $row['project_code'], $user['id'], $row['stage'], $body['stage'],
                       $snap['win_loss_reason_id'], $snap['win_loss_note'], $snap['winner_competitor_id'], $snap['winning_price'], $snap['value']]);
+
+        // ปิดดีลแล้วแต่ลูกค้ายังไม่มีหน้าบัญชี ERP → แจ้งธุรการขาย (ครั้งเดียวต่อดีล — ยืนยันจากผู้ใช้ 2026-09-28)
+        notifyErpPendingIfNeeded($db, $id, $user);
     }
 
     echo json_encode(['success' => true, 'message' => 'อัปเดตสำเร็จ'], JSON_UNESCAPED_UNICODE);

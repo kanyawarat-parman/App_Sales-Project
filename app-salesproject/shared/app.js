@@ -532,10 +532,13 @@ const AppNav = {
       return parts.length >= 2 ? parts[0][0] + parts[1][0] : parts[0].substring(0, 2);
     },
     async markNotifRead(n) {
-      if (n.is_read) return;
-      await apiCall('POST', 'api/notifications.php?action=read', { id: n.id });
-      n.is_read = true;
-      this.notifUnread = Math.max(0, this.notifUnread - 1);
+      if (!n.is_read) {
+        await apiCall('POST', 'api/notifications.php?action=read', { id: n.id });
+        n.is_read = true;
+        this.notifUnread = Math.max(0, this.notifUnread - 1);
+      }
+      // แจ้งเตือนลูกค้ารอเปิดหน้าบัญชี ERP → เปิดแท็บ "รอเปิดหน้าบัญชี" ในหน้าลูกค้า (2026-09-28)
+      if (n.ref_type === 'erp_pending') window.location.href = 'accounts.html?tab=erp_pending';
     },
     async markAllRead() {
       await apiCall('POST', 'api/notifications.php?action=read_all');
@@ -796,6 +799,41 @@ const AppTabBar = {
     {{ tab.label }}
   </button>
 </nav>
+  `,
+};
+
+/* ── AppErpWarning Vue Component ── (ยืนยันจากผู้ใช้ 2026-09-28)
+   กล่องเตือนในหน้าต่างปิดดีล/ชนะ เมื่อลูกค้าของดีลยังไม่มีหน้าบัญชี ERP (ไม่มีรหัสใน account_erp_codes)
+   กฎธุรกิจ Taiyo: ออก SO ต้องมีหน้าบัญชีลูกค้าใน ERP — เตือนอย่างเดียว ไม่บล็อกการบันทึก
+   หลังบันทึก ดีลจะขึ้นในแท็บ "รอเปิดหน้าบัญชี" (accounts.html) และแจ้งธุรการขาย (includes/erp_pending_helper.php)
+   ใช้: <app-erp-warning :project-code="..."></app-erp-warning> — โหลดสถานะเองจาก api/accounts.php?action=erp_status
+   ใช้ใน sales-pipeline.html, bid-pipeline.html, assignments.html (ลงทะเบียนใน components:{}) */
+const AppErpWarning = {
+  props: ['projectCode'],
+  data() { return { status: null }; },
+  watch: {
+    projectCode: { immediate: true, handler() { this.load(); } },
+  },
+  methods: {
+    async load() {
+      this.status = null;
+      if (!this.projectCode) return;
+      const res = await apiCall('GET', 'api/accounts.php?action=erp_status&project_code=' + encodeURIComponent(this.projectCode));
+      if (res.success) this.status = res.data;
+    },
+  },
+  template: `
+<div v-if="status && !status.has_erp" class="mb-4 p-3.5 rounded-xl bg-amber-50 ring-1 ring-amber-300 flex gap-2.5 items-start">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 shrink-0 mt-0.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="text-sm text-amber-900 leading-relaxed">
+    <template v-if="status.account_id">
+      <div class="font-bold">ลูกค้ารายนี้ยังไม่มีหน้าบัญชีใน ERP</div>
+      <div class="text-amber-800">{{ status.account_code }} {{ status.account_name }}</div>
+    </template>
+    <div v-else class="font-bold">ดีลนี้ยังไม่ได้ผูกลูกค้า</div>
+    <div>ก่อนออก SO ต้องแจ้งบัญชีเปิดหน้าบัญชีก่อน บันทึกผลได้ตามปกติ — ระบบจะใส่ไว้ในรายการ "รอเปิดหน้าบัญชี" และแจ้งธุรการขายให้</div>
+  </div>
+</div>
   `,
 };
 

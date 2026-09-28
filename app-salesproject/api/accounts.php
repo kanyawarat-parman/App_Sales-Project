@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/code_helper.php';
+require_once __DIR__ . '/../includes/erp_pending_helper.php';
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -15,6 +16,9 @@ switch ($method) {
             case 'check_duplicate': checkDuplicateAccount($db); break;
             case 'list':             listAccounts($db); break;
             case 'detail':           getAccountDetail($db, (int)($_GET['id'] ?? 0)); break;
+            // ลูกค้ารอเปิดหน้าบัญชี ERP (2026-09-28) — ดู includes/erp_pending_helper.php
+            case 'erp_status':       getDealErpStatus($db); break;
+            case 'erp_pending':      jsonResponse(true, listErpPending($db, $user)); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -30,6 +34,16 @@ switch ($method) {
         break;
     default:
         jsonResponse(false, null, 'Method not allowed', 405);
+}
+
+// สถานะหน้าบัญชี ERP ของลูกค้าในดีล — หน้าต่างปิดดีล/ชนะ ใช้ขึ้นกล่องเตือน "ลูกค้ายังไม่มีหน้าบัญชี" (ไม่บล็อกการบันทึก)
+function getDealErpStatus(PDO $db): void {
+    $projectCode = trim($_GET['project_code'] ?? '');
+    if ($projectCode === '') jsonResponse(false, null, 'กรุณาระบุ project_code', 400);
+    $status = dealErpStatusByProjectCode($db, $projectCode);
+    if (!$status) jsonResponse(false, null, 'ไม่พบดีล', 404);
+    $status['has_erp'] = $status['account_id'] && (int)$status['erp_count'] > 0;
+    jsonResponse(true, $status);
 }
 
 // ค้นหาหน่วยงาน/บริษัทด้วยชื่อ (autocomplete) — ใช้ตอนสร้างดีลขายตรงใหม่ (sales-pipeline.html)

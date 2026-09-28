@@ -120,7 +120,6 @@ app-salesproject/
 │   ├── kpi_settings.php
 │   ├── line.php
 │   ├── notifications.php
-│   ├── pipeline.php
 │   ├── pipeline_items.php
 │   ├── reports.php
 │   ├── rotation.php              # ตั้งค่า/คำนวณเวร แยกตาม source_type (rotation-settings.html, duty-calendar.html)
@@ -440,8 +439,19 @@ CREATE TABLE project_code_counters (
 1. **ทุกตารางต้องมี 4 ช่อง audit เสมอ:** `created_by` (ผู้สร้าง), `created_at` (วันเวลาที่สร้าง), `updated_by` (ผู้แก้ไข), `updated_at` (วันเวลาที่แก้ไข)
    - **ข้อยกเว้น (ยืนยันจากผู้ใช้ 2026-09-26):** ตาราง log ที่ **ต้องเข้าครบทั้ง 3 เงื่อนไข** — (1) บันทึกครั้งเดียว (2) ไม่มีการแก้ไขแถวเลยแม้แต่ช่องเดียว (3) มีช่อง "ผู้ทำ" และ "เวลา" ของตัวเองอยู่แล้ว — ไม่ต้องมี 4 ช่องนี้ (ช่องจะซ้ำและว่างตลอด) — ปัจจุบัน: `quotation_import_log` (`imported_by`/`imported_at`), `assignment_history` / `pipeline_item_history` (`changed_by`/`changed_at`), `announcement_view_logs` (`user_id`/`viewed_at`) — ลบออกด้วย `sql/drop_log_tables_audit.sql`
      - **ไม่เข้าข้อยกเว้น:** ตารางที่มีการแก้แม้แต่ช่องเดียว (เช่น `notifications` แก้ `is_read` ตอนกดอ่าน) และตารางที่ช่องผู้ใช้เป็น "ผู้รับ" ไม่ใช่ "ผู้ทำ" (เช่น `notifications.user_id` = ผู้รับการแจ้งเตือน ส่วน `created_by` = ผู้ที่ทำให้เกิดการแจ้งเตือน, NULL = ระบบสร้างเอง)
+     - **ข้อยกเว้นสำเนาจากระบบเก่า (ยืนยันจากผู้ใช้ 2026-09-26):** `legacy_quotations` (ใบเสนอราคา 703 ใบจาก SalesManagement.Quotation) — ช่อง `created_by` / `updated_by` เป็น**ชื่อผู้ใช้ระบบเก่า** (VARCHAR เช่น `choenatrada`) และ `created_at` / `updated_at` เป็น**เวลาจริงตอนสร้าง/แก้ใบในระบบเก่า** (DATETIME ไม่มี default) คัดลอกมาตามต้นทาง ไม่ใช่ audit ของระบบนี้
+       - ห้ามตั้ง `ON UPDATE CURRENT_TIMESTAMP` / `DEFAULT CURRENT_TIMESTAMP` และห้ามแปลงเป็น FK ไป `users.id` — ประวัติจากระบบเก่าจะถูกทับ/หาย
+       - ตารางนี้อ่านอย่างเดียว (ใช้ดูรายละเอียดใบเสนอราคาของงานย้อนหลังผ่าน `api/quotation_import.php` action `detail`) ไม่มีโค้ดเขียนลงแล้วตั้งแต่ 2026-09-18 — query ตรวจช่องเวลาที่ default ไม่ครบจะเจอ 2 ช่องของตารางนี้เสมอ ถือว่าปกติ
+       - ถ้าวันหน้าต้อง sync ข้อมูลจากระบบเก่าอีก ให้เก็บค่าตามต้นทางเหมือนเดิม และใช้ `synced_at` เป็นเวลาที่ระบบนี้ดึงข้อมูล
    - `created_by` / `updated_by` เป็น `INT UNSIGNED NULL` + FK -> `users.id`
+   - **ข้อมูลเดิมก่อนมีช่อง audit (ก่อน 2026-09-26):** หลักคือห้ามเดาค่า audit — ไม่มีหลักฐานให้ปล่อยว่าง (NULL = ข้อมูลเดิม/ระบบสร้างเอง) เติมได้เฉพาะเมื่อมีหลักฐานในระบบ
+     - **ข้อยกเว้น (ผู้ใช้ตัดสินใจ 2026-09-28):** `accounts` / `contacts` / `users` เติม `created_by` = admin ให้แถวที่ว่าง (`sql/backfill_created_by_admin.sql`) — **`created_by` = admin ของแถวที่ `created_at` ก่อน 2026-09-26 ในตารางเหล่านี้ หมายถึง "ข้อมูลเดิมก่อนมีระบบบันทึกผู้สร้าง" ไม่ใช่ว่า admin สร้างเองจริง** — `updated_by` ไม่เติม (ว่างจนกว่าจะมีคนแก้)
+     - **เติมจากหลักฐาน (2026-09-28, `sql/backfill_created_by_evidence.sql`):** งานประมูล + mirror `created_by` = `assigned_by` (`created_at` ที่ว่าง = `assigned_at`), ดีลขายตรงที่สร้างในระบบนี้ `created_by` = `changed_by` ของประวัติแถวแรก
+     - **ดีลขายตรงย้อนหลังที่นำเข้าจากใบเสนอราคาระบบเก่า (2026-09-28, `sql/backfill_created_by_import_log.sql`):** `created_by` = `quotation_import_log.imported_by` (ผู้สั่งนำเข้า = ผู้สร้างแถวในระบบนี้จริง) — `created_at` คงเป็นวันที่ของใบเสนอราคาเดิม (ไม่ใช่วันที่นำเข้า) เพราะรายงานใช้วันนี้ — ผู้สร้างใบในระบบเก่าดูได้จากรายละเอียดใบเสนอราคา (`legacy_quotations.created_by`)
+     - หลังเติมทั้ง 2 ไฟล์ `pipeline_items` มีผู้สร้างครบทุกแถว
    - `created_at` เป็น `TIMESTAMP DEFAULT CURRENT_TIMESTAMP`, `updated_at` เป็น `TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`
+     - ⚠️ SQL แบบ "เช็คก่อนเพิ่ม" ต้องเช็ค default ของช่องที่**มีอยู่แล้ว**ด้วย ไม่ใช่แค่ช่องที่เพิ่งสร้าง — บทเรียน 2026-09-26: host มีช่องที่สร้างเองไว้ก่อน (DEFAULT NULL) `add_audit_columns_all_tables.sql` เลยข้ามขั้นตั้ง default ไป 20 ช่อง แถวใหม่ไม่มีเวลาสร้าง/แก้แล้วเวลาไม่เปลี่ยน — แก้ด้วย `sql/fix_timestamp_defaults_umt_fk.sql` (ยกเว้น `legacy_quotations` ที่เวลามาจากระบบเก่า)
+     - เช็คบน host ด้วย query ที่ระบุชื่อฐานข้อมูลตรงๆ (`TABLE_SCHEMA = 'appsalesproject_db'`) — phpMyAdmin บน host อาจค้างอยู่ที่ `information_schema` ทำให้ `DATABASE()` ผิดฐานข้อมูลและได้ผลว่างหลอกๆ
    - โค้ดที่ INSERT/UPDATE ต้องบันทึก `created_by` / `updated_by` = ผู้ใช้ที่ login อยู่ทุกครั้ง
    - ข้อมูลตั้งต้น (seed) ตอนสร้างตารางใส่ `created_by` / `updated_by` = admin โดยหา id จาก username (`SET @admin_id := (SELECT id FROM users WHERE username = 'admin' LIMIT 1);`) ไม่ใส่เลขตายตัว
    - สถานะ: เพิ่มครบทุกตารางแล้วผ่าน `sql/add_audit_columns_all_tables.sql` (2026-09-26) — โค้ดบันทึก `created_by` / `updated_by` แล้ว: งานประมูล/งานขายตรง/คู่แข่งในดีล (รอบ 1), ประกาศ/ผู้ใช้/เป้าหมาย/KPI/รูปผู้ใช้ (รอบ 2), ปฏิทิน/วันหยุด/แหล่งประกาศ/เวร/ตัวนับเลข PJ (รอบ 3) — ครบทุกจุดที่ผู้ใช้เป็นคนกดแล้ว
@@ -468,6 +478,11 @@ CREATE TABLE project_code_counters (
 - **ค่าระบบ/ตัวเลือกพิเศษ:** ใช้รหัสตายตัวที่อ่านแล้วรู้ความหมาย ไม่ใช้เลขรัน (เช่น `CP-NONE` = ไม่มีคู่แข่ง, `CP-UNKNOWN` = ยังไม่ทราบ) และ**โค้ดต้องเช็คจากรหัสนี้ ห้ามเช็คจากชื่อภาษาไทย** เพราะ admin แก้ชื่อได้ กติกาจะพังเงียบๆ
 - **เพิ่ม code ให้ตารางที่มีข้อมูลอยู่แล้ว:** ทำใน SQL ไฟล์เดียว 3 ขั้น — (1) เพิ่มช่องเป็น NULL ก่อน (2) เติมรหัสให้ข้อมูลเดิมเรียงตาม `created_at, id` (3) เปลี่ยนเป็น NOT NULL + UNIQUE แล้วตั้ง `code_counters.last_number` = จำนวนที่ออกไป — ท้ายไฟล์ใส่ query ตรวจ (ไม่มีรหัสว่าง / เลขล่าสุดเท่ากับจำนวนแถว) — ตัวอย่าง: `sql/add_account_code_erp.sql`, `sql/add_competitor_code.sql` — รหัสของข้อมูลเก่าบน dev กับ host อาจไม่ตรงกันเพราะรายการต่างกัน **host คือตัวจริง**
 - **รหัสจากระบบภายนอก (เช่น ERP) ห้ามใช้เป็น code หลัก:** เก็บแยกเป็นช่อง/ตาราง "External ID" ตามแนวทาง Salesforce — ถ้า 1 รายการมีได้หลายรหัสภายนอก ใช้ตารางจับคู่แบบ 1 ต่อ N (ตัวอย่าง: `account_erp_codes` เก็บรหัสลูกค้า ERP จาก `taiyo.RD01CUST`, `erp_customer_code` UNIQUE กัน 1 รหัส ERP ผูกหลายลูกค้า)
+  - **ลูกค้ารอเปิดหน้าบัญชี ERP (ยืนยันจากผู้ใช้ 2026-09-28):** กฎธุรกิจ Taiyo — ใบเสนอราคาไม่บังคับรหัส ERP แต่**ออก SO ต้องมีหน้าบัญชีลูกค้าใน ERP** — ดีลที่ชนะ (Deal Signed/Delivered/ชนะการประมูล/ส่งมอบแล้ว) ตั้งแต่ `app_config.erp_pending_start_date` (2026-09-28) และลูกค้ายังไม่มีรหัสใน `account_erp_codes` = รอเปิดหน้าบัญชี
+    - คำนวณจากข้อมูลจริงทุกครั้ง ไม่มีตาราง log — ผูกรหัส ERP แล้วหายจากรายการเอง (`includes/erp_pending_helper.php`)
+    - หน้าต่างปิดดีล/ชนะ (sales-pipeline, bid-pipeline, assignments) ขึ้นกล่องเตือน `AppErpWarning` (shared/app.js) — เตือนอย่างเดียว ไม่บล็อก
+    - ชนะแล้วแจ้งเตือน salesadmin ทุกคน ครั้งเดียวต่อดีล (`notifications.ref_type = 'erp_pending'`, `ref_id` = `pipeline_items.id`) กดแล้วเปิด `accounts.html?tab=erp_pending`
+    - แท็บ "รอเปิดหน้าบัญชี" ใน accounts.html — sale เห็นเฉพาะดีลตัวเอง / วันที่ชนะ = ครั้งแรกที่ขั้นเปลี่ยนเป็นขั้นชนะใน `pipeline_item_history`
 - **ช่อง `*_by` ของ audit ยังเก็บ `users.id`** ไม่ใช่ username — เป็นตัวเชื่อม (FK) ส่วนที่คนอ่านคือชื่อที่ JOIN มาแสดง
 
 ## Workflow
