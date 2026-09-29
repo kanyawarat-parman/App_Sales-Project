@@ -243,11 +243,17 @@ function updateUnitName(PDO $db, array $user): void {
         jsonResponse(false, null, 'คุณไม่ใช่เจ้าของงานนี้', 403);
     }
 
-    // ผูก/สร้าง account ใหม่ตามชื่อ+ประเภทที่แก้ไขจริง (ไม่เดาจากชื่อเดิมที่อาจเป็นแค่ placeholder ตอนนำเข้าข้อมูลเก่า)
-    $accountId = findOrCreateAccount($db, $accountType, $unitName, (int)$user['id']);
+    // ผูก/สร้าง account ตามชื่อ+ประเภทที่แก้ไขจริง (ไม่เดาจากชื่อเดิมที่อาจเป็นแค่ placeholder ตอนนำเข้าข้อมูลเก่า)
+    // 2026-09-29: ใช้กฎกันซ้ำเดียวกับหน้าลูกค้า — ชื่อตรงกับรายเดิม/ชื่อคล้าย ตอบ 409 + data.duplicates ให้ sale เลือกรายเดิม (ส่ง account_id กลับมา)
+    // หรือยืนยันว่าเป็นหน่วยงานใหม่ (confirm_not_duplicate) — เดิม findOrCreateAccount() เทียบชื่อตรงทุกตัวแล้วสร้างเอง
+    $choice = !empty($body['account_id'])
+        ? ['account_id' => (int)$body['account_id']]
+        : ['new_account' => ['name' => $unitName, 'account_type' => $accountType, 'confirm_not_duplicate' => !empty($body['confirm_not_duplicate'])]];
+    $accountId = resolveChosenAccount($db, $choice, $user);
 
-    $upd = $db->prepare("UPDATE announcements SET unit_name = ?, account_id = ?, updated_by = ?, updated_at = NOW() WHERE id = ?");
-    $upd->execute([$unitName, $accountId, $user['id'], $announcementId]);
+    $upd = $db->prepare("UPDATE announcements SET unit_name = ?, updated_by = ?, updated_at = NOW() WHERE id = ?");
+    $upd->execute([$unitName, $user['id'], $announcementId]);
+    linkAnnouncementAccount($db, $announcementId, $accountId, (int)$user['id']);   // ประกาศ + ดีล mirror ให้ตรงกัน
     jsonResponse(true, null, 'บันทึกชื่อหน่วยงานสำเร็จ');
 }
 

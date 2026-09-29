@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/code_helper.php';
+require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../includes/phone_helper.php';
 
@@ -14,6 +15,8 @@ switch ($method) {
     case 'GET':
         switch ($action) {
             case 'search':          searchAccounts($db); break;
+            case 'recent':          jsonResponse(true, recentAccounts($db, $user)); break;
+            case 'suggest_for_announcement': suggestForAnnouncement($db); break;
             case 'check_duplicate': checkDuplicateAccount($db); break;
             case 'list':             listAccounts($db); break;
             case 'detail':           getAccountDetail($db, (int)($_GET['id'] ?? 0)); break;
@@ -48,36 +51,75 @@ function getDealErpStatus(PDO $db): void {
 }
 
 // ค้นหาหน่วยงาน/บริษัทด้วยชื่อ (autocomplete) — ใช้ตอนสร้างดีลขายตรงใหม่ (sales-pipeline.html)
-// ทิศทางเดียว: หาชื่อ account ที่มีอยู่แล้วที่ "มีคำค้นหาอยู่ในชื่อ" (พิมพ์สั้น หาเจอชื่อยาวกว่า) — พอสำหรับ autocomplete พิมพ์ทีละคำ
 function searchAccounts(PDO $db): void {
-    $q = trim($_GET['q'] ?? '');
-    if ($q === '') jsonResponse(true, []);
     // ค้นหาได้ทั้งชื่อ, รหัสลูกค้า CRM (account_code) และรหัสลูกค้า ERP ที่ผูกไว้ (2026-09-26)
-    $stmt = $db->prepare('
-        SELECT a.id, a.account_code, a.name, a.account_type FROM accounts a
-        WHERE a.name LIKE ? OR a.account_code LIKE ?
-           OR EXISTS (SELECT 1 FROM account_erp_codes e WHERE e.account_id = a.id AND e.erp_customer_code LIKE ?)
-        ORDER BY a.name LIMIT 10
-    ');
-    $like = '%' . $q . '%';
-    $stmt->execute([$like, $like, $like]);
-    jsonResponse(true, $stmt->fetchAll());
+    // 2026-09-29: ค้นแบบยืดหยุ่น (ตัด บริษัท/จำกัด/ช่องว่าง + ชื่อคล้าย) กติกาเดียวกับตรวจซ้ำ — includes/account_helper.php
+    jsonResponse(true, searchAccountsFuzzy($db, (string)($_GET['q'] ?? '')));
+}
+
+// เสนอลูกค้าให้ประกาศงานประมูล (หน้าต่างมอบหมายงาน / เลือกลูกค้าในหน้างานประมูล — 2026-09-29)
+// ?announcement_id= ใช้ชื่อหน่วยงานในประกาศ / ?unit_name= ใช้ชื่อที่ส่งมา (sale แก้ชื่อหน่วยงานงานย้อนหลัง)
+// current_account = ลูกค้าที่ประกาศนี้ผูกไว้แล้ว (มอบหมายซ้ำ / เปลี่ยน sale ไม่ต้องเลือกใหม่)
+function suggestForAnnouncement(PDO $db): void {
+    $announcementId = (int)($_GET['announcement_id'] ?? 0);
+    $unitName = trim((string)($_GET['unit_name'] ?? ''));
+    $current = null;
+    if ($announcementId) {
+        $stmt = $db->prepare('SELECT ann.unit_name, a.id, a.account_code, a.name, a.account_type
+                              FROM announcements ann LEFT JOIN accounts a ON a.id = ann.account_id WHERE ann.id = ?');
+        $stmt->execute([$announcementId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) jsonResponse(false, null, 'ไม่พบประกาศ', 404);
+        if ($unitName === '') $unitName = trim((string)$row['unit_name']);
+        if ($row['id']) $current = ['id' => (int)$row['id'], 'account_code' => $row['account_code'], 'name' => $row['name'], 'account_type' => $row['account_type']];
+    }
+    // จำนวนงานที่มอบหมายแล้วของประกาศนี้ — หน้าจอเตือนตอนเปลี่ยนลูกค้า (มีผลทุกงาน)
+    $count = 0;
+    if ($announcementId) {
+        $c = $db->prepare('SELECT COUNT(*) FROM project_assignments WHERE announcement_id = ?');
+        $c->execute([$announcementId]);
+        $count = (int)$c->fetchColumn();
+    }
+    jsonResponse(true, ['unit_name' => $unitName, 'current_account' => $current, 'assignment_count' => $count] + suggestAccountsForUnitName($db, $unitName));
+}
+
+// ลูกค้าล่าสุด (Recent Items แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-09-29) ขึ้นทันทีตอนคลิกช่องลูกค้าในฟอร์มดีล ก่อนพิมพ์
+// เรียงตามดีลที่มีความเคลื่อนไหวล่าสุด (ขายตรง + งานประมูล) — sale เห็นเฉพาะลูกค้าจากดีลของตัวเอง / ธุรการ-ผู้จัดการ-admin เห็นทั้งทีม
+// มีไม่ถึง 10 ราย (เช่น sale ใหม่ยังไม่มีดีล) เติมด้วยลูกค้าที่เพิ่งเพิ่มในระบบล่าสุด
+function recentAccounts(PDO $db, array $user, int $limit = 10): array {
+    $where = 'pi.account_id IS NOT NULL'; $params = [];
+    if ($user['role'] === 'sale') { $where .= ' AND pi.assigned_to = ?'; $params[] = $user['id']; }
+    $stmt = $db->prepare("
+        SELECT a.id, a.account_code, a.name, a.account_type, MAX(pi.updated_at) AS last_activity
+        FROM pipeline_items pi JOIN accounts a ON a.id = pi.account_id
+        WHERE $where
+        GROUP BY a.id, a.account_code, a.name, a.account_type
+        ORDER BY last_activity DESC
+        LIMIT $limit
+    ");
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (count($rows) < $limit) {
+        $ids = array_column($rows, 'id') ?: [0];
+        $more = $db->query('SELECT id, account_code, name, account_type, created_at AS last_activity FROM accounts
+                            WHERE id NOT IN (' . implode(',', array_map('intval', $ids)) . ') ORDER BY created_at DESC, id DESC LIMIT ' . ($limit - count($rows)))
+                   ->fetchAll(PDO::FETCH_ASSOC);
+        $rows = array_merge($rows, $more);
+    }
+    return $rows;
 }
 
 // เช็คชื่อคล้ายกันก่อนสร้าง/บันทึกชื่อใหม่ — ต้องเช็ค 2 ทิศทาง ต่างจาก searchAccounts() เพราะไม่รู้ว่าชื่อที่พิมพ์จะ "สั้นกว่า" หรือ
 // "ยาวกว่า" ชื่อที่มีอยู่แล้ว เช่น พิมพ์ "เพิ่มสิน สาขา 2" ทั้งที่มี "เพิ่มสิน" อยู่แล้ว (ชื่อเดิมสั้นกว่า ไม่ใช่ substring ของคำค้นหาแบบ
 // searchAccounts() เช็ค) — ยืนยันจากผู้ใช้ 2026-09-22 หลังเจอเคสสร้างซ้ำจริงเพราะเช็คทิศทางเดียวไม่พอ
+// 2026-09-28: ใช้กฎกันซ้ำกลาง findDuplicateAccounts() (includes/account_helper.php) — ตัดคำบริษัท/จำกัด/ช่องว่างก่อนเทียบ + ชื่อสะกดต่าง 1-2 ตัว
+// คืนรายการเดียว (รูปแบบเดิม ให้ bid-pipeline.html ใช้ต่อได้) แต่ละรายการมี match_type = exact | similar | tax
+// ?tax_id= ตรวจเลขภาษีซ้ำด้วย / ?exclude_id= ไม่เทียบกับลูกค้าที่กำลังแก้ไข
 function checkDuplicateAccount(PDO $db): void {
     $q = trim($_GET['q'] ?? '');
-    if ($q === '') jsonResponse(true, []);
-    $stmt = $db->prepare('
-        SELECT id, account_code, name, account_type FROM accounts
-        WHERE name LIKE CONCAT("%", ?, "%")
-           OR ? LIKE CONCAT("%", name, "%")
-        ORDER BY name LIMIT 10
-    ');
-    $stmt->execute([$q, $q]);
-    jsonResponse(true, $stmt->fetchAll());
+    $taxId = preg_replace('/\D/', '', (string)($_GET['tax_id'] ?? ''));
+    if ($q === '' && $taxId === '') jsonResponse(true, []);
+    jsonResponse(true, duplicateList(findDuplicateAccounts($db, $q, strlen($taxId) === 13 ? $taxId : null, (int)($_GET['exclude_id'] ?? 0))));
 }
 
 // สร้างหน่วยงาน/บริษัทใหม่แบบเร็ว (quick-create ตอนค้นหาไม่เจอ) — เก็บแค่ชื่อ+ประเภท ส่วนเบอร์โทร/ที่อยู่กรอกเพิ่มทีหลังได้จากหน้ารายละเอียด account
@@ -95,10 +137,14 @@ function createAccount(PDO $db, array $user): void {
     $phone    = normalizePhone($body['phone'] ?? '', 'เบอร์สำนักงาน');
     $phoneExt = normalizePhoneExt($body['phone_ext'] ?? '', 'เบอร์ต่อ');
     $mobile   = normalizePhone($body['mobile'] ?? '', 'เบอร์มือถือ');
+    // กันลูกค้าซ้ำ (2026-09-28) — ชื่อตรงห้ามสร้าง / คล้ายหรือเลขภาษีซ้ำต้องยืนยัน แล้วจดไว้ในบันทึก
+    $warn = guardDuplicateAccount($db, $body, $name, $taxId, 0, true, true);
+    $note = trim($body['note'] ?? '');
+    if ($warn) $note = trim($note . "\n" . confirmedNotDuplicateNote($warn, $user));
     $accountCode = nextAccountCode($db, (int)$user['id']);
     $stmt = $db->prepare('INSERT INTO accounts (account_code, account_type, name, tax_id, phone, phone_ext, mobile, address, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([$accountCode, $type, $name, $taxId, $phone, $phoneExt, $mobile,
-                    trim($body['address'] ?? '') ?: null, trim($body['note'] ?? '') ?: null, $user['id'], $user['id']]);
+                    trim($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $user['id']]);
     jsonResponse(true, ['id' => (int)$db->lastInsertId(), 'account_code' => $accountCode, 'name' => $name, 'account_type' => $type], 'สร้างหน่วยงาน/บริษัทสำเร็จ');
 }
 
@@ -190,15 +236,19 @@ function updateAccount(PDO $db, array $user): void {
     // account_code ไม่รับจากหน้าเว็บ — รหัสไม่เปลี่ยนหลังออกแล้ว
     $taxId = normalizeTaxId($body['tax_id'] ?? '');
     // เบอร์: ตรวจรูปแบบเฉพาะช่องที่แก้ — เบอร์เก่าที่ยังไม่ได้แก้ไม่ขวางการบันทึกช่องอื่น (includes/phone_helper.php)
-    $old = $db->prepare('SELECT phone, mobile FROM accounts WHERE id = ?');
+    $old = $db->prepare('SELECT name, tax_id, phone, mobile FROM accounts WHERE id = ?');
     $old->execute([$id]);
     $oldRow = $old->fetch();
     if (!$oldRow) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
     $phone    = phoneForUpdate($body['phone'] ?? '', $oldRow['phone'], 'เบอร์สำนักงาน');
     $phoneExt = normalizePhoneExt($body['phone_ext'] ?? '', 'เบอร์ต่อ');
     $mobile   = phoneForUpdate($body['mobile'] ?? '', $oldRow['mobile'], 'เบอร์มือถือ');
+    // กันลูกค้าซ้ำ (2026-09-28) — ตรวจเฉพาะเมื่อเปลี่ยนชื่อ / เปลี่ยนเลขภาษี (แก้ช่องอื่นของลูกค้าเก่าไม่ติด)
+    $warn = guardDuplicateAccount($db, $body, $name, $taxId, $id, $name !== $oldRow['name'], $taxId !== null && $taxId !== $oldRow['tax_id']);
+    $note = trim((string)($body['note'] ?? ''));
+    if ($warn) $note = trim($note . "\n" . confirmedNotDuplicateNote($warn, $user));
     $db->prepare('UPDATE accounts SET account_type = ?, name = ?, tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
-       ->execute([$type, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, ($body['note'] ?? '') ?: null, $user['id'], $id]);
+       ->execute([$type, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $id]);
     jsonResponse(true, null, 'บันทึกสำเร็จ');
 }
 

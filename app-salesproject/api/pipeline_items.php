@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/project_code_helper.php';
 require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../includes/phone_helper.php';
+require_once __DIR__ . '/../includes/account_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -471,6 +472,8 @@ function createItem(PDO $db, array $user, array $body): void {
         if (empty($body['competitor_ids']) || !is_array($body['competitor_ids'])) {
             jsonError(400, 'กรุณาเลือกคู่แข่ง (ถ้าไม่มีหรือไม่ทราบ ให้เลือก "ไม่มีคู่แข่ง" หรือ "ยังไม่ทราบ")');
         }
+        // ตรวจผู้ติดต่อใหม่ก่อนบันทึกดีล (เบอร์ผิดรูปแบบ / เบอร์ตรงคนเดิมแต่ชื่อต่าง) — กันดีลถูกบันทึกค้างโดยไม่มีผู้ติดต่อ (2026-09-29)
+        precheckDealContacts($db, $accountId, dealContactsFromBody($body));
     }
 
     // รหัสงานกลาง (project_code): ถ้ามี announcement ต้นทาง (มาจากงานประมูล) ให้ copy รหัสเดิมจาก project_assignments มาใช้ ไม่ออกรหัสใหม่ซ้ำ
@@ -533,14 +536,40 @@ function createItem(PDO $db, array $user, array $body): void {
 // ผูกผู้ติดต่อเข้ากับ account ที่ระบุ — ใช้เบอร์โทรเช็คก่อนว่ามีคนนี้อยู่แล้วหรือยัง (เช่น sale เพิ่มดีลที่ 2 ให้บริษัทเดิม คุยกับคนเดิม) กันสร้างซ้ำ
 // ใช้ร่วมกันทั้งตอนสร้างดีลใหม่ (createItem, บังคับกรอก) และแก้ไขดีลเก่า (updateItem, ไม่บังคับ — เรียกเฉพาะเมื่อมีข้อมูลส่งมา)
 // $userId = ผู้ใช้ที่ login — บันทึกเป็นผู้สร้าง/ผู้แก้ไขของผู้ติดต่อที่สร้างใหม่ (ยืนยันจากผู้ใช้ 2026-09-26)
+// ตรวจผู้ติดต่อใหม่ในดีลก่อนบันทึกอะไรลง DB — ชื่อ/เบอร์ครบ, รูปแบบเบอร์ถูก, เบอร์ไม่ชนคนเดิมที่ชื่อต่างกัน (ตอบ error ทันที)
+function precheckDealContacts(PDO $db, ?int $accountId, array $list): void {
+    $chk = $db->prepare('SELECT full_name FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
+    foreach ($list as $item) {
+        if (!empty($item['contact_id'])) continue;
+        $nc = $item['new_contact'] ?? [];
+        $name = trim($nc['full_name'] ?? ''); $phone = trim($nc['phone'] ?? '');
+        if ($name === '')  jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');
+        if ($phone === '') jsonError(400, 'กรุณากรอกเบอร์โทรผู้ติดต่อ');
+        $phone = normalizePhone($phone, 'เบอร์โทรผู้ติดต่อ');
+        if (!$accountId) continue;
+        $chk->execute([$accountId, $phone]);
+        $owner = $chk->fetchColumn();
+        if ($owner !== false && contactNameKey($owner) !== contactNameKey($name)) {
+            jsonError(409, 'เบอร์ ' . $phone . ' เป็นของผู้ติดต่อ "' . $owner . '" อยู่แล้ว — ถ้าเป็นคนเดียวกันให้เลือกคนเดิม ถ้าไม่ใช่ให้แก้เบอร์');
+        }
+    }
+}
+
 function upsertDealContact(PDO $db, ?int $accountId, string $contactName, string $contactPhone, string $contactPosition, ?int $userId = null): ?int {
     if (!$accountId || !$contactName || !$contactPhone) return null;
     // เบอร์ตัวเลขล้วน + เทียบกับข้อมูลเก่าแบบตัดขีดออก (080-151-6361 = 0801516361 เป็นคนเดิม) — includes/phone_helper.php (2026-09-28)
     $contactPhone = normalizePhone($contactPhone, 'เบอร์โทรผู้ติดต่อ');
-    $existingContact = $db->prepare('SELECT id FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
+    $existingContact = $db->prepare('SELECT id, full_name FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
     $existingContact->execute([$accountId, $contactPhone]);
-    $existingId = $existingContact->fetchColumn();
-    if ($existingId) return (int)$existingId;
+    $existing = $existingContact->fetch();
+    if ($existing) {
+        // เบอร์ตรงคนเดิม: ชื่อตรงกัน = คนเดิม ใช้คนเดิม / ชื่อต่างกัน = ห้ามแทนเงียบๆ (เคยแทน B ด้วย A โดยผู้ใช้ไม่รู้ — 2026-09-29)
+        // ให้หน้าเว็บถามผู้ใช้: เลือกคนเดิม (ส่ง contact_id) หรือแก้เบอร์
+        if (contactNameKey($existing['full_name']) !== contactNameKey($contactName)) {
+            jsonError(409, 'เบอร์ ' . $contactPhone . ' เป็นของผู้ติดต่อ "' . $existing['full_name'] . '" อยู่แล้ว — ถ้าเป็นคนเดียวกันให้เลือกคนเดิม ถ้าไม่ใช่ให้แก้เบอร์');
+        }
+        return (int)$existing['id'];
+    }
     $db->prepare('INSERT INTO contacts (account_id, full_name, phone, position, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)')
        ->execute([$accountId, $contactName, $contactPhone, $contactPosition ?: null, $userId, $userId]);
     return (int)$db->lastInsertId();
@@ -742,6 +771,10 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
 
     // ผู้แก้ไขล่าสุด = user ที่ login (กฎการสร้าง Database ข้อ 1 — 2026-09-26)
     $fields[] = 'updated_by = ?'; $params[] = $user['id'];
+
+    // ตรวจผู้ติดต่อใหม่ก่อนบันทึกดีล (เหมือนตอนสร้าง) — กันดีลถูกแก้ไปครึ่งเดียว (2026-09-29)
+    $precheckAccountId = array_key_exists('account_id', $body) ? (int)($body['account_id'] ?: 0) : (int)($row['account_id'] ?? 0);
+    if ($precheckAccountId && array_key_exists('deal_contacts', $body)) precheckDealContacts($db, $precheckAccountId, dealContactsFromBody($body));
 
     $params[] = $id;
     $db->prepare("UPDATE pipeline_items SET " . implode(', ', $fields) . " WHERE id = ?")->execute($params);

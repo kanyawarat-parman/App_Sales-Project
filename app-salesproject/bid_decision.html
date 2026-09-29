@@ -520,63 +520,86 @@
 
     <!-- ══════════════ Assign Modal ══════════════ -->
     <div v-if="modal.type==='assign'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
-      <div class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-        <div class="bg-teal-600 text-white px-6 py-5 shrink-0">
-          <h3 class="text-[1.1rem] font-bold m-0">มอบหมายงานให้ Sale</h3>
-          <div class="text-[.82rem] opacity-75 mt-1 max-w-[380px] overflow-hidden text-ellipsis whitespace-nowrap">{{ modal.data?.project_name }}</div>
+      <!-- หน้าตาเดียวกับหน้าต่างสร้างดีล (sales-pipeline.html): หัวขาว + กล่องเทาแบ่งส่วนมีเลขหัวข้อ + ปุ่มล่าง (ยืนยันจากผู้ใช้ 2026-09-29) -->
+      <div class="bg-white rounded-2xl w-full max-w-[800px] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+        <!-- หัว modal แบบมาตรฐานของระบบ (หัวขาว + เส้นล่าง เหมือนฟอร์มดีล / หน้าลูกค้า) — เดิมหัวสีเขียวทึบ (ยืนยันจากผู้ใช้ 2026-09-29) -->
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">มอบหมายงานให้ Sale</h3>
+            <div class="text-sm text-slate-500 mt-1 overflow-hidden text-ellipsis whitespace-nowrap">{{ modal.data?.project_name }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
-        <div class="p-6 overflow-y-auto flex-1">
-          <label class="block text-[.85rem] font-bold text-slate-600 mb-2">เลือก Sale ที่รับงาน:</label>
-          <!-- จำกัดความสูงเฉพาะรายชื่อ sale ให้เลื่อนแยกส่วนตัวเอง (ยืนยันจากผู้ใช้ 2026-09-23) กัน "ความสำคัญ"/"หมายเหตุ"/ปุ่มมอบหมาย
-               ต้องเลื่อนผ่านรายชื่อทั้งหมดก่อนถึง ถ้ามี sale จำนวนมาก — เห็นพอดีประมาณ 4 คนแล้วเลื่อนดูคนที่เหลือในกล่องนี้ -->
-          <div class="flex flex-col gap-2 mt-3 mb-4 max-h-[280px] overflow-y-auto pr-1">
+        <div class="p-5 overflow-y-auto flex-1">
+          <!-- ① ลูกค้าของงาน: ระบบเสนอ → ธุรการขายเลือก/ยืนยันเองทุกครั้ง ระบบไม่สร้างเอง (Lead Convert — ยืนยันจากผู้ใช้ 2026-09-29) -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ลูกค้า (หน่วยงาน) <span class="text-red-500">*</span></h3>
+            </div>
+            <app-bid-account-picker ref="bidAccountPicker" :announcement-id="modal.data?.id" v-model="assignAccount" hide-label can-change-current></app-bid-account-picker>
+          </section>
+          <!-- ② Sale ที่รับงาน -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">Sale ที่รับงาน <span class="text-red-500">*</span></h3>
+            </div>
+          <!-- การ์ด Sale แบบตาราง 3 คอลัมน์ (มือถือ 1 / แท็บเล็ต 2) — เห็นทุกคนโดยไม่ต้องเลื่อนกล่องซ้อน (ยืนยันจากผู้ใช้ 2026-09-29 แบบ ก.)
+               เดิม 2026-09-23 เป็นแถวเดียว + กล่องเลื่อนสูง 280px — เลื่อน 2 ชั้นซ้อนกัน ผู้ใช้รู้สึกติดขัด -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 auto-rows-fr gap-2">
             <div v-for="s in sortedSaleUsers" :key="s.id"
-                 class="flex items-center gap-3 px-3.5 py-2.5 border-2 rounded-xl cursor-pointer transition-all"
-                 :class="assignForm.assigned_to===s.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-200'"
+                 class="relative flex items-center gap-2.5 px-3 py-2.5 border-2 rounded-xl cursor-pointer transition-all"
+                 :class="assignForm.assigned_to===s.id ? 'border-teal-500 bg-teal-50' : 'border-slate-200 bg-white hover:border-teal-200'"
                  @click="assignForm.assigned_to=s.id">
-              <img v-if="s.photo_url" :src="s.photo_url" class="w-9 h-9 rounded-full object-cover shrink-0" />
-              <div v-else class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-[.85rem] shrink-0"
+              <img v-if="s.photo_url" :src="s.photo_url" class="w-10 h-10 rounded-full object-cover shrink-0" />
+              <div v-else class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-[.9rem] shrink-0"
                    :style="{background: s.avatar_color||'#64748b'}">
                 {{ s.full_name?.charAt(0) }}
               </div>
-              <div class="flex-1">
-                <div class="text-[.95rem] font-semibold text-slate-800">
-                  {{ s.full_name }}
-                  <span v-if="rotationDuty && s.id===rotationDuty.id" class="bg-emerald-100 text-emerald-700 text-[.7rem] font-bold px-1.5 py-0.5 rounded-full ml-1">📅 เวรวันนี้</span>
-                </div>
-                <div class="text-[.78rem] text-slate-400 mt-0.5">
-                  งานที่รับอยู่: {{ s.active_tasks }} งาน
-                  <span v-if="s.urgent_tasks>0" class="text-red-600 font-bold ml-1">⚡ เร่งด่วน {{ s.urgent_tasks }}</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-[.92rem] font-semibold text-slate-800 leading-snug truncate" :title="s.full_name">{{ s.full_name }}</div>
+                <div class="text-[.78rem] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-1.5">
+                  <span v-if="rotationDuty && s.id===rotationDuty.id" class="bg-emerald-100 text-emerald-700 text-[.7rem] font-bold px-1.5 py-0.5 rounded-full">📅 เวรวันนี้</span>
+                  รับอยู่ {{ s.active_tasks }} งาน
+                  <span v-if="s.urgent_tasks>0" class="text-red-600 font-bold ml-1">⚡ ด่วน {{ s.urgent_tasks }}</span>
+                  <span v-if="assignForm.assigned_to===s.id" class="ml-auto text-teal-700 text-lg font-bold leading-none">✓</span>
                 </div>
               </div>
-              <div v-if="assignForm.assigned_to===s.id" class="text-blue-600 text-xl">✓</div>
             </div>
           </div>
-
-          <label class="block text-[.85rem] font-bold text-slate-600 mb-2 mt-4">ความสำคัญ:</label>
+          </section>
+          <!-- ③ ความสำคัญ + หมายเหตุ -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ความสำคัญและหมายเหตุ</h3>
+            </div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1">ความสำคัญ</label>
           <div class="flex gap-2">
-            <button class="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 cursor-pointer transition-all font-sans"
-                    :class="assignForm.priority==='ต่ำ' ? 'bg-green-600 border-green-600 text-white' : 'bg-green-50 border-green-500 text-green-700'"
+            <button type="button" class="flex-1 py-2.5 rounded-xl text-sm font-semibold border cursor-pointer transition-all font-sans"
+                    :class="assignForm.priority==='ต่ำ' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
                     @click="assignForm.priority='ต่ำ'">ต่ำ</button>
-            <button class="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 cursor-pointer transition-all font-sans"
-                    :class="assignForm.priority==='ปกติ' ? 'bg-blue-600 border-blue-600 text-white' : 'bg-blue-50 border-blue-500 text-blue-700'"
+            <button type="button" class="flex-1 py-2.5 rounded-xl text-sm font-semibold border cursor-pointer transition-all font-sans"
+                    :class="assignForm.priority==='ปกติ' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
                     @click="assignForm.priority='ปกติ'">ปกติ</button>
-            <button class="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 cursor-pointer transition-all font-sans"
-                    :class="assignForm.priority==='เร่งด่วน' ? 'bg-red-600 border-red-600 text-white' : 'bg-red-50 border-red-500 text-red-600'"
+            <button type="button" class="flex-1 py-2.5 rounded-xl text-sm font-semibold border cursor-pointer transition-all font-sans"
+                    :class="assignForm.priority==='เร่งด่วน' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
                     @click="assignForm.priority='เร่งด่วน'">เร่งด่วน</button>
           </div>
 
-          <div class="mt-4">
-            <label class="block text-[.85rem] font-bold text-slate-600 mb-1.5">หมายเหตุถึง Sale (ไม่บังคับ):</label>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">หมายเหตุถึง Sale <span class="text-xs font-normal text-slate-400">(ไม่บังคับ)</span></label>
             <textarea v-model="assignForm.secretary_notes"
                       class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y font-sans"
                       rows="2" placeholder="เช่น ต้องนำแค็ตตาล็อก, เตรียมใบเสนอราคาพิเศษ..."></textarea>
           </div>
+          </section>
         </div>
-        <div class="px-6 py-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-100 shrink-0">
-          <button class="px-4 py-2 rounded-xl text-sm font-medium bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
-          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  @click="saveAssign" :disabled="!assignForm.assigned_to || saving">
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="saveAssign" :disabled="!assignForm.assigned_to || !assignAccount || saving">
             <span v-if="saving">กำลังบันทึก...</span>
             <span v-else>มอบหมาย</span>
           </button>
@@ -586,14 +609,18 @@
 
     <app-modal ref="appModal"></app-modal>
 
+    <!-- สร้างลูกค้าใหม่แต่ชื่อตรง/คล้ายรายเดิม (API ตอบ 409) — ซ้อนบนหน้าต่างมอบหมาย -->
+    <app-duplicate-accounts :duplicates="dupList" pick-label="ใช้รายนี้" confirm-label="ยืนยันว่าเป็นหน่วยงานใหม่ — มอบหมาย"
+      @pick="onAssignDuplicatePick" @confirm="onAssignDuplicateConfirm" @close="dupList = null"></app-duplicate-accounts>
+
   </template>
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=44"></script>
+<script src="shared/app.js?v=60"></script>
 <script>
 const SalesAdminApp = {
-  components: { AppNav, AppModal },
+  components: { AppNav, AppModal, AppBidAccountPicker, AppDuplicateAccounts },
   data() {
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     return {
@@ -618,6 +645,9 @@ const SalesAdminApp = {
       docsLoading: false,
       decideForm: { bid_decision: null, decision_reason: '' },
       assignForm: { assigned_to: null, priority: 'ปกติ', secretary_notes: '' },
+      assignAccount: null,   // ลูกค้าที่เลือกในหน้าต่างมอบหมาย { account_id } | { new_account } (2026-09-29)
+      changeAccountConfirmed: false,   // ยืนยันเปลี่ยนลูกค้าของประกาศที่ผูกแล้ว (ถามครั้งเดียวต่อการเปิดหน้าต่าง)
+      dupList: null,         // หน้าต่างพบลูกค้าที่อาจซ้ำ
     };
   },
   computed: {
@@ -796,11 +826,21 @@ const SalesAdminApp = {
 
     openAssign(row) {
       this.assignForm = { assigned_to: this.rotationDuty?.id ?? null, priority: 'ปกติ', secretary_notes: '' };
+      this.assignAccount = null;
+      this.changeAccountConfirmed = false;
       this.modal = { type: 'assign', data: { ...row } };
     },
 
     async saveAssign() {
       if (!this.assignForm.assigned_to) { await this.showAlert('กรุณาเลือก Sale', 'error'); return; }
+      if (!this.assignAccount) { await this.showAlert('กรุณาเลือกลูกค้า หรือเลือกสร้างลูกค้าใหม่', 'error'); return; }
+      // เปลี่ยนลูกค้าของประกาศที่ผูกไว้แล้ว — มีผลทุกงานของประกาศ ถามยืนยันครั้งเดียว (2026-09-29)
+      if (this.assignAccount.change_account && !this.changeAccountConfirmed) {
+        const n = this.$refs.bidAccountPicker?.assignmentCount || 0;
+        const ok = await this.showConfirm('เปลี่ยนลูกค้าของประกาศนี้', `ลูกค้าจะเปลี่ยนในทุกงานของประกาศนี้${n ? ` (${n} งาน)` : ''} และดีลที่ผูกอยู่ — ต้องการเปลี่ยนหรือไม่?`, 'เปลี่ยนและมอบหมาย');
+        if (!ok) return;
+        this.changeAccountConfirmed = true;
+      }
       this.saving = true;
       let r;
       try {
@@ -809,6 +849,7 @@ const SalesAdminApp = {
           assigned_to: this.assignForm.assigned_to,
           priority: this.assignForm.priority,
           secretary_notes: this.assignForm.secretary_notes,
+          ...this.assignAccount,
         });
       } catch {
         // server ตอบกลับไม่ใช่ JSON (เช่น PHP error) — ไม่ให้ปุ่มค้างที่ "กำลังบันทึก..."
@@ -816,10 +857,26 @@ const SalesAdminApp = {
       } finally {
         this.saving = false;
       }
+      // สร้างลูกค้าใหม่แต่ชื่อตรง/คล้ายรายเดิม → ให้เลือกรายเดิม หรือยืนยันว่าเป็นหน่วยงานใหม่ (งานยังไม่ถูกบันทึก)
+      if (!r.success && r.data?.duplicates) { this.dupList = r.data.duplicates; return; }
       if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
       this.closeModal();
       await Promise.all([this.loadSummary(), this.loadSaleUsers(), this.loadTab()]);
       await this.showAlert('มอบหมายงานสำเร็จ', 'success');
+    },
+
+    async onAssignDuplicatePick(d) {
+      this.dupList = null;
+      this.$refs.bidAccountPicker.pickAccount(d);
+      await this.$nextTick();
+      await this.saveAssign();
+    },
+
+    async onAssignDuplicateConfirm() {
+      this.dupList = null;
+      this.$refs.bidAccountPicker.confirmNew();
+      await this.$nextTick();
+      await this.saveAssign();
     },
 
     closeModal() {

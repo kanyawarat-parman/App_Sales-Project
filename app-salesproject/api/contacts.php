@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/phone_helper.php';
+require_once __DIR__ . '/../includes/account_helper.php';
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -47,6 +48,20 @@ function createContact(PDO $db, array $user): void {
     if ($phone === null) jsonResponse(false, null, 'กรุณาระบุเบอร์โทร', 400);
     $officePhone = normalizePhone($body['office_phone'] ?? '', 'เบอร์สำนักงาน');
     $officeExt   = normalizePhoneExt($body['office_phone_ext'] ?? '', 'เบอร์ต่อ');
+
+    // ผู้ติดต่อซ้ำ (เบอร์เดียวกันในลูกค้าเดียวกัน — เทียบตัวเลขล้วน) 2026-09-29:
+    //   ชื่อตรงกัน (ตัดคำนำหน้า) = คนเดิม → ไม่สร้างซ้ำ คืนคนเดิม (existing = true)
+    //   ชื่อต่างกัน → 409 + data.existing_contact ให้หน้าเว็บถาม "ใช้คนเดิมแทน" หรือแก้เบอร์ — ไม่แทนเงียบๆ
+    $dup = $db->prepare('SELECT id, full_name, phone FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
+    $dup->execute([$accountId, $phone]);
+    $existing = $dup->fetch();
+    if ($existing) {
+        if (contactNameKey($existing['full_name']) === contactNameKey($fullName)) {
+            jsonResponse(true, ['id' => (int)$existing['id'], 'existing' => true], 'มีผู้ติดต่อคนนี้อยู่แล้ว (เบอร์เดียวกัน) — ใช้คนเดิม');
+        }
+        jsonResponse(false, ['existing_contact' => ['id' => (int)$existing['id'], 'full_name' => $existing['full_name'], 'phone' => $existing['phone']]],
+            'เบอร์ ' . $phone . ' เป็นของผู้ติดต่อ "' . $existing['full_name'] . '" อยู่แล้ว — ถ้าเป็นคนเดียวกันให้ใช้คนเดิม ถ้าไม่ใช่ให้แก้เบอร์', 409);
+    }
 
     // ผู้สร้าง/ผู้แก้ไข = ผู้ใช้ที่ login — กฎการสร้าง Database ข้อ 1 (ยืนยันจากผู้ใช้ 2026-09-26)
     $stmt = $db->prepare('INSERT INTO contacts (account_id, full_name, phone, office_phone, office_phone_ext, position, email, is_primary, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');

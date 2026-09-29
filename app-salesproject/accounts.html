@@ -195,6 +195,10 @@
 
     <app-modal ref="appModal"></app-modal>
 
+    <!-- พบลูกค้าที่อาจซ้ำ (กันลูกค้าซ้ำ 2026-09-28) — ซ้อนบนหน้าต่างลูกค้า -->
+    <app-duplicate-accounts :duplicates="dupDialog.list" pick-label="เปิดรายนี้" :confirm-label="dupDialog.confirmLabel"
+      @pick="onDuplicatePick" @confirm="onDuplicateConfirm" @close="dupDialog.list = null"></app-duplicate-accounts>
+
     <!-- MODAL: รายละเอียด/แก้ไข/สร้างหน่วยงาน — header/footer แบบเดียวกับ sp-form modal ใน sales-pipeline.html (ยืนยันจากผู้ใช้ 2026-09-22 ว่าเป็น pattern มาตรฐานของระบบ ไม่ใช่ header สีทึบแบบ users.html/sources.html) -->
     <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4"
       v-if="modal.type==='account'" @click.self="closeModal">
@@ -375,12 +379,12 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=46"></script>
+<script src="shared/app.js?v=47"></script>
 <script>
 const { createApp } = Vue;
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal },
+  components: { AppNav, AppTabBar, AppModal, AppDuplicateAccounts },
   data() {
     return {
       authReady: false,
@@ -390,6 +394,7 @@ createApp({
       accounts: [],
       searchQuery: '',
       phoneFixOnly: false,   // ตัวกรอง "เบอร์ต้องแก้ไข" (2026-09-28)
+      dupDialog: { list: null, confirmLabel: '' },   // หน้าต่างพบลูกค้าที่อาจซ้ำ (2026-09-28)
       accountForm: { id: null, account_code: '', account_type: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' },
       accountDetail: { contacts: [], deals: [], erp_codes: [] },
       erpForm: { show: false, account_erp_code_id: null, erp_customer_code: '', erp_role: '', is_primary: false, note: '' },
@@ -416,9 +421,11 @@ createApp({
     filteredAccounts() {
       const q = this.searchQuery.trim().toLowerCase();
       const qDigits = q.replace(/\D/g, '');   // ค้นหาเบอร์แบบพิมพ์ขีดหรือไม่มีขีดก็เจอ
+      const qName = this.normalizeAccountName(q);   // ค้นชื่อแบบตัด บริษัท/จำกัด/ช่องว่าง (2026-09-29) เช่น "เอคลาส" เจอ "เอ คลาส แมนเนจเม้นท์"
       const list = this.phoneFixOnly ? this.accounts.filter(a => Number(a.phone_needs_fix) === 1) : this.accounts;
       if (!q) return list;
       return list.filter(a => [a.name, a.account_code, a.erp_codes, a.tax_id].some(v => (v || '').toLowerCase().includes(q))
+        || (qName && this.normalizeAccountName(a.name).includes(qName))
         || (qDigits.length >= 4 && [a.phone, a.mobile].some(v => String(v || '').replace(/\D/g, '').includes(qDigits))));
     },
     phoneFixCount() { return this.accounts.filter(a => Number(a.phone_needs_fix) === 1).length; },
@@ -525,17 +532,19 @@ createApp({
     async submitAccount() {
       if (!this.accountForm.name.trim()) { await this.showAlert('กรุณาระบุชื่อหน่วยงาน/บริษัท', 'error'); return; }
       if (!this.accountForm.account_type) { await this.showAlert('กรุณาเลือกประเภท', 'error'); return; }
+      await this.saveAccount(false);
+    },
+
+    // กันลูกค้าซ้ำ (2026-09-28): API ตรวจเองตอนบันทึก — ชื่อตรงกันห้ามบันทึก / ชื่อคล้ายหรือเลขภาษีซ้ำ ต้องกดยืนยันก่อน
+    // ตอบ 409 พร้อม data.duplicates → เปิดหน้าต่างให้เลือกรายเดิม หรือยืนยันว่าเป็นคนละราย (ส่งซ้ำพร้อม confirm_not_duplicate)
+    async saveAccount(confirmNotDuplicate) {
       const isCreate = !this.accountForm.id;
-      // เตือนก่อนถ้าเจอชื่อคล้ายกันอยู่แล้ว (กันสร้าง account ซ้ำโดยไม่ตั้งใจ — ยืนยันจากผู้ใช้ 2026-09-22)
-      if (isCreate) {
-        const dup = await apiCall('GET', 'api/accounts.php?action=check_duplicate&q=' + encodeURIComponent(this.accountForm.name.trim()));
-        if (dup.success && dup.data.length) {
-          const names = dup.data.map(a => a.name).join(', ');
-          const ok = await this.showConfirm('พบชื่อคล้ายกัน', `พบหน่วยงาน/บริษัทที่ชื่อคล้ายกันอยู่แล้ว: ${names} — ต้องการสร้างใหม่จริงหรือไม่?`, 'สร้างใหม่');
-          if (!ok) return;
-        }
+      const res = await apiCall('POST', `api/accounts.php?action=${isCreate ? 'create' : 'update'}`,
+        { ...this.accountForm, confirm_not_duplicate: confirmNotDuplicate });
+      if (!res.success && res.data?.duplicates) {
+        this.dupDialog = { list: res.data.duplicates, confirmLabel: isCreate ? 'ยืนยันว่าเป็นคนละราย — สร้างใหม่' : 'ยืนยันว่าเป็นคนละราย — บันทึก' };
+        return;
       }
-      const res = await apiCall('POST', `api/accounts.php?action=${isCreate ? 'create' : 'update'}`, this.accountForm);
       if (res.success) {
         await this.loadAccounts();
         if (isCreate) {
@@ -548,6 +557,26 @@ createApp({
         }
         await this.showAlert(isCreate ? 'เพิ่มหน่วยงานสำเร็จ' : 'บันทึกสำเร็จ', 'success');
       } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    // ทำชื่อเป็นรูปแบบเดียวกันก่อนค้นหา — ต้องตรงกับ normalizeAccountName() ใน includes/account_helper.php
+    normalizeAccountName(name) {
+      let s = String(name || '').toLowerCase()
+        .replace(/\b(public\s+company\s+limited|company\s+limited|co\s*\.?\s*,?\s*ltd\.?|limited|ltd\.?|inc\.?|corporation|corp\.?)(?=\W|$)/g, '');
+      for (const w of ['บริษัทมหาชนจำกัด', 'ห้างหุ้นส่วนจำกัด', 'ห้างหุ้นส่วนสามัญ', '(มหาชน)', 'มหาชน', 'บริษัท', 'บจก.', 'บมจ.', 'หจก.', 'หสน.', 'บ.', 'จำกัด']) s = s.split(w).join('');
+      return s.replace(/[^\p{L}\p{M}\p{N}]+/gu, '');
+    },
+
+    // เลือกรายเดิมจากหน้าต่างพบลูกค้าซ้ำ → เปิดรายละเอียดรายนั้นแทน (ข้อมูลที่พิมพ์ไว้ในฟอร์มไม่ถูกบันทึก)
+    async onDuplicatePick(d) {
+      this.dupDialog.list = null;
+      const account = this.accounts.find(a => Number(a.id) === Number(d.id)) || d;
+      await this.openAccountModal(account);
+    },
+
+    async onDuplicateConfirm() {
+      this.dupDialog.list = null;
+      await this.saveAccount(true);
     },
 
     async loadAccountDetail(id) {

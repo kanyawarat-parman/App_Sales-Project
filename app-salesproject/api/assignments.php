@@ -38,6 +38,8 @@ switch ($method) {
             case 'delete':   requireRole(['admin','salesadmin']); deleteAssignment($db, $user); break;
             case 'reassign': requireRole(['admin','salesadmin']); reassignAssignment($db, $user); break;
             case 'nudge':    requireRole(['admin','salesadmin']); nudgeAssignment($db, $user); break;
+            // เลือก/เปลี่ยนลูกค้าของงานประมูล (งานที่ยังไม่ผูก เช่น ประกาศเก่า) — ธุรการขาย/admin ยืนยันลูกค้า (2026-09-29)
+            case 'link_account': requireRole(['admin','salesadmin']); linkAssignmentAccount($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -153,7 +155,7 @@ function getDetail(PDO $db, array $user): void {
                a.project_no, a.project_name, a.unit_name, a.announce_date, a.close_date,
                a.price_median, a.items, a.spec, a.can_bid, a.reason, a.docs_required,
                a.need_sample, a.sample_detail, a.conditions, a.url, a.keyword_match, a.filter_status,
-               a.source_type, acc.account_type,
+               a.source_type, acc.account_type, a.account_id, acc.account_code, acc.name AS account_name,
                u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url, u1.phone AS sale_phone,
                u2.full_name AS secretary_name
         FROM pipeline_items pi
@@ -188,6 +190,20 @@ function getDetail(PDO $db, array $user): void {
     jsonResponse(true, $row);
 }
 
+// ผูก/เปลี่ยนลูกค้าให้งานประมูล — body: project_code + account_id (ลูกค้าเดิม) หรือ new_account (สร้างใหม่ ผ่านกฎกันซ้ำ)
+// ใช้ทั้งงานที่ยังไม่ผูก และเปลี่ยนลูกค้าที่ผูกผิด (มีผลทุกงานของประกาศ — หน้าเว็บถามยืนยันก่อน)
+// ผูกที่ประกาศ + ดีล mirror ทุกแถวของประกาศนั้น (includes/account_helper.php linkAnnouncementAccount)
+function linkAssignmentAccount(PDO $db, array $user): void {
+    $body = getJsonBody();
+    $stmt = $db->prepare('SELECT announcement_id FROM project_assignments WHERE project_code = ?');
+    $stmt->execute([$body['project_code'] ?? '']);
+    $announcementId = (int)$stmt->fetchColumn();
+    if (!$announcementId) jsonResponse(false, null, 'ไม่พบงานประมูล', 404);
+    $accountId = resolveChosenAccount($db, $body, $user);
+    linkAnnouncementAccount($db, $announcementId, $accountId, (int)$user['id']);
+    jsonResponse(true, ['account_id' => $accountId], 'ผูกลูกค้าแล้ว');
+}
+
 function createAssignment(PDO $db, array $user): void {
     $body           = getJsonBody();
     $announcementId = (int)($body['announcement_id'] ?? 0);
@@ -203,6 +219,21 @@ function createAssignment(PDO $db, array $user): void {
     $chk = $db->prepare('SELECT id FROM project_assignments WHERE announcement_id = ? AND assigned_to = ?');
     $chk->execute([$announcementId, $assignedTo]);
     if ($chk->fetch()) jsonResponse(false, null, 'มอบหมายงานนี้ให้คนนี้แล้ว', 409);
+
+    // ลูกค้าของงาน (Lead Convert แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-09-29): salesadmin เลือก/ยืนยันเองทุกครั้งในหน้าต่างมอบหมาย
+    // body.account_id = ลูกค้าเดิม / body.new_account = สร้างใหม่ (ผ่านกฎกันซ้ำ — ชื่อตรงห้าม, ชื่อคล้ายต้องยืนยัน) — ระบบไม่สร้างเองแล้ว
+    // ตรวจก่อนบันทึกงาน: ถ้าติดกฎกันซ้ำ (409) งานยังไม่ถูกสร้าง / ประกาศที่ผูกลูกค้าไว้แล้ว (มอบหมายซ้ำ/หลายคน) ใช้ลูกค้าเดิม
+    $annAcc = $db->prepare('SELECT account_id FROM announcements WHERE id = ?');
+    $annAcc->execute([$announcementId]);
+    $existingAccountId = $annAcc->fetchColumn();
+    if ($existingAccountId === false) jsonResponse(false, null, 'ไม่พบประกาศ', 404);
+    if ($existingAccountId && !empty($body['change_account'])) {
+        // ธุรการเปลี่ยนลูกค้าของประกาศที่ผูกผิด (หน้าต่างมอบหมาย ปุ่ม "เปลี่ยน") — ผูกใหม่ทั้งประกาศ + ดีล mirror ทุกงาน (2026-09-29)
+        $accountId = resolveChosenAccount($db, $body, $user);
+        if ($accountId !== (int)$existingAccountId) linkAnnouncementAccount($db, $announcementId, $accountId, (int)$user['id']);
+    } else {
+        $accountId = $existingAccountId ? (int)$existingAccountId : resolveChosenAccount($db, $body, $user);
+    }
 
     // คำนวณ SLA deadline
     $sla = $db->prepare('SELECT completion_hours FROM sla_config WHERE priority = ?');
@@ -235,13 +266,10 @@ function createAssignment(PDO $db, array $user): void {
     $annStmt->execute([$announcementId]);
     $ann = $annStmt->fetch();
 
-    // ผูก account อัตโนมัติ (ถ้ายังไม่เคยผูกไว้จากการมอบหมายครั้งก่อนหน้า)
+    // ผูกลูกค้าที่ salesadmin เลือกไว้ (ตรวจ/สร้างแล้วด้านบน) ให้ประกาศ — ดีล mirror ด้านล่างใช้ค่าเดียวกัน
     if ($ann && empty($ann['account_id'])) {
-        $accountId = findOrCreateAccount($db, 'government', $ann['unit_name'] ?? '', (int)$user['id']);
-        if ($accountId) {
-            $db->prepare('UPDATE announcements SET account_id = ?, updated_by = ? WHERE id = ?')->execute([$accountId, $user['id'], $announcementId]);
-            $ann['account_id'] = $accountId;
-        }
+        linkAnnouncementAccount($db, $announcementId, $accountId, (int)$user['id']);
+        $ann['account_id'] = $accountId;
     }
 
     // In-app notification
@@ -578,17 +606,9 @@ function updateAssignment(PDO $db, array $user): void {
                 $title = $annRow['project_name'] ?? 'งาน e-Bidding';
                 $client = $annRow['unit_name'] ?? '';
                 $value  = $annRow['price_median'] ?? null;
-                // ผูก account (เผื่อประกาศเก่าที่ยังไม่เคยผ่าน createAssignment() รุ่นใหม่ที่ auto-link ให้)
-                // ⚠️ ห้าม auto-สร้าง account ให้ source_type='legacy_quotation' ที่ยังไม่เคยผูกไว้ เพราะ unit_name ของงานกลุ่มนี้
-                // อาจยังเป็นค่า placeholder ตอนนำเข้าข้อมูลเก่า ไม่ใช่ชื่อจริง (เจอบั๊กจริง 2026-09-22 — สร้าง account ผิดชื่อผิดประเภทไปแล้วรอบหนึ่ง)
-                // ปล่อย account_id เป็น NULL ไว้ก่อน รอ sale แก้ไขชื่อให้ถูกผ่าน api/announcements.php's update_unit_name (มีให้เลือกประเภทด้วย) เอง
+                // ลูกค้า: ใช้ที่ประกาศผูกไว้ — ยังไม่ผูก (ประกาศเก่าก่อนมีระบบลูกค้า) ปล่อยว่าง ไม่สร้างเอง (2026-09-29)
+                // ขึ้นในแท็บ "รอเปิดหน้าบัญชี" ว่ายังไม่ผูกลูกค้า → salesadmin กด "เลือกลูกค้า" ในหน้างานประมูล (action link_account)
                 $accountId = $annRow['account_id'] ?? null;
-                if (!$accountId && $annRow['source_type'] !== 'legacy_quotation') {
-                    $accountId = findOrCreateAccount($db, 'government', $client, (int)$user['id']);
-                    if ($accountId) {
-                        $db->prepare('UPDATE announcements SET account_id = ?, updated_by = ? WHERE id = ?')->execute([$accountId, $user['id'], $current['announcement_id']]);
-                    }
-                }
                 // งานฝั่ง ebidding ไม่ออก project_code ใหม่ — ใช้รหัสเดียวกับ project_assignments ที่ผูกอยู่แล้ว
                 $projectCode = $current['project_code'] ?? nextProjectCode($db, 'now', (int)$user['id']);
                 $db->prepare("

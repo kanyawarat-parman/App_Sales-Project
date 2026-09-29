@@ -872,6 +872,338 @@ const AppErpWarning = {
   `,
 };
 
+/* ── AppDuplicateAccounts: หน้าต่าง "พบลูกค้าที่อาจซ้ำ" (กันลูกค้าซ้ำ — ยืนยันจากผู้ใช้ 2026-09-28) ──
+   ใช้ตอน API สร้าง/แก้ลูกค้าตอบ 409 พร้อม data.duplicates (api/accounts.php guardDuplicateAccount)
+   - มีชื่อตรงกัน (match_type=exact) → ห้ามสร้าง ให้เลือกรายเดิมเท่านั้น
+   - ชื่อคล้าย / เลขภาษีซ้ำ → เลือกรายเดิม หรือกด "ยืนยันว่าเป็นคนละราย" (หน้าที่เรียกส่ง confirm_not_duplicate: true ไปซ้ำ)
+   ใช้ปุ่มกดชัดเจน ไม่ใช้ช่องติ๊ก (ผู้ใช้วัย 50-60) — ใช้ใน accounts.html, sales-pipeline.html */
+const AppDuplicateAccounts = {
+  props: {
+    duplicates: { type: Array, default: null },     // null = ซ่อน
+    pickLabel: { type: String, default: 'ใช้รายนี้' },
+    confirmLabel: { type: String, default: 'ยืนยันว่าเป็นคนละราย — สร้างใหม่' },
+  },
+  emits: ['pick', 'confirm', 'close'],
+  computed: {
+    hasExact() { return (this.duplicates || []).some(d => d.match_type === 'exact'); },
+  },
+  methods: {
+    matchLabel(t) { return { exact: 'ชื่อตรงกัน', similar: 'ชื่อคล้ายกัน', tax: 'เลขภาษีเดียวกัน' }[t] || ''; },
+  },
+  template: `
+<div v-if="duplicates" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" @click.self="$emit('close')">
+  <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+    <div class="px-6 py-5 border-b border-slate-100">
+      <h3 class="font-bold text-lg m-0" :class="hasExact ? 'text-rose-700' : 'text-amber-700'">
+        {{ hasExact ? 'มีลูกค้ารายนี้อยู่แล้ว' : 'พบลูกค้าที่อาจเป็นรายเดียวกัน' }}
+      </h3>
+      <p class="text-sm text-slate-600 mt-1 mb-0 leading-relaxed">
+        <template v-if="hasExact">สร้างซ้ำไม่ได้ — กรุณาเลือกรายเดิมด้านล่าง</template>
+        <template v-else>ถ้าเป็นรายเดียวกัน กด "{{ pickLabel }}" / ถ้าไม่ใช่ กดยืนยันด้านล่าง</template>
+      </p>
+    </div>
+    <div class="p-4 overflow-y-auto flex-1">
+      <div v-for="d in duplicates" :key="d.id" class="flex items-center gap-3 p-3 mb-2 rounded-xl ring-1 ring-slate-200">
+        <div class="flex-1 min-w-0">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="font-mono text-xs text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 whitespace-nowrap">{{ d.account_code }}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded font-semibold whitespace-nowrap"
+              :class="d.match_type === 'exact' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'">{{ matchLabel(d.match_type) }}</span>
+          </div>
+          <div class="font-semibold text-slate-800 mt-1">{{ d.name }}</div>
+          <div class="text-sm text-slate-500">{{ d.account_type === 'government' ? 'ราชการ' : 'เอกชน' }}<span v-if="d.tax_id"> · เลขภาษี {{ d.tax_id }}</span></div>
+        </div>
+        <button type="button" @click="$emit('pick', d)"
+          class="shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]">{{ pickLabel }}</button>
+      </div>
+    </div>
+    <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+      <button type="button" @click="$emit('close')"
+        class="px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]">ยกเลิก</button>
+      <button v-if="!hasExact" type="button" @click="$emit('confirm')"
+        class="px-4 py-2.5 rounded-xl text-[.95rem] font-bold bg-amber-500 hover:bg-amber-600 text-white border-0 cursor-pointer min-h-[44px]">{{ confirmLabel }}</button>
+    </div>
+  </div>
+</div>
+  `,
+};
+
+/* ── AppBidAccountPicker: เลือกลูกค้าของงานประมูล (Lead Convert แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-09-29) ──
+   ระบบ "เสนอ" ลูกค้าจากชื่อหน่วยงานในประกาศ (api/accounts.php suggest_for_announcement) → salesadmin เลือก/ยืนยันเองทุกครั้ง
+   - เคยผูกกับประกาศชื่อนี้รายเดียว / ชื่อตรงรายเดียว → เลือกไว้ให้ (ยังต้องกดมอบหมายเอง) / ชื่อคล้าย → แสดงแต่ไม่เลือกไว้ให้
+   - ไม่เจอเลย → เลือก "สร้างลูกค้าใหม่" ไว้ให้ (ชื่อตามประกาศ แก้ได้ / ประเภทราชการเป็นค่าเริ่มต้น)
+   - ประกาศผูกลูกค้าไว้แล้ว (มอบหมายซ้ำ/เปลี่ยน sale) → แสดงลูกค้าเดิม ไม่ต้องเลือก
+   v-model = { account_id } | { new_account: { name, account_type } } | null (ยังไม่เลือก)
+   API ตรวจกันซ้ำอีกชั้น (409 + data.duplicates) → หน้าที่ใช้เปิด AppDuplicateAccounts แล้วเรียก $refs.xxx.pickAccount(d) หรือ confirmNew()
+   ใช้ใน bid_decision.html, announcements.html (หน้าต่างมอบหมาย), bid-pipeline.html (เลือกลูกค้าให้งานที่ยังไม่ผูก) */
+const AppBidAccountPicker = {
+  props: {
+    announcementId: { type: [Number, String], default: null },
+    modelValue: { type: Object, default: null },
+    allowCurrent: { type: Boolean, default: true },   // false = เลือกใหม่ได้แม้ประกาศผูกลูกค้าไว้แล้ว
+    hideLabel: { type: Boolean, default: false },
+    canChangeCurrent: { type: Boolean, default: false },
+    excludeAccountId: { type: [Number, String], default: null },   // ลูกค้าที่ผูกอยู่ (โหมดเปลี่ยนลูกค้าในหน้างานประมูล) — ไม่เสนอ/ไม่เลือกไว้ให้ และเปิดแบบเต็มทันที // true = มีปุ่ม [เปลี่ยน] ในบรรทัด "ผูกไว้แล้ว" (ธุรการ/admin — 2026-09-29)     // true = ไม่แสดงหัวข้อ "ลูกค้า (หน่วยงาน)" (หน้าที่มีหัวข้อกล่องอยู่แล้ว)
+  },
+  emits: ['update:modelValue'],
+  data() {
+    return {
+      loading: false, unitName: '', current: null, suggestions: [],
+      choice: '', newName: '', newType: 'government', confirmNotDuplicate: false,
+      searchQ: '', searchResults: [], searched: false,
+      pickedExtra: null,   // ลูกค้าที่เลือกจากผลค้นหา — ยังแสดงอยู่แม้เปลี่ยน/ลบคำค้น
+      expanded: false,     // false = บรรทัดสรุป / true = แบบเต็ม (ระบบแนะนำ / ค้นหา / สร้างใหม่)
+      needsDecision: false, // มีแค่ชื่อคล้าย ระบบไม่เลือกให้ — เปิดเต็มพร้อมกล่องเตือน
+      changingCurrent: false, // กำลังเปลี่ยนลูกค้าของประกาศที่ผูกไว้แล้ว (กรณีผูกผิด)
+      assignmentCount: 0,     // จำนวนงานที่มอบหมายแล้วของประกาศนี้ (เปลี่ยนลูกค้ามีผลทุกงาน)
+      newNameExact: [],       // ลูกค้าที่ชื่อตรงกับชื่อ "สร้างลูกค้าใหม่" — มี = สร้างไม่ได้ ต้องใช้รายเดิม (2026-09-29)
+      showSearch: false,      // ช่องค้นหาลูกค้าซ่อนไว้ กดลิงก์ "ค้นหา" จึงเปิด (Progressive Disclosure — ยืนยันจากผู้ใช้ 2026-09-29)
+    };
+  },
+  watch: {
+    announcementId: { immediate: true, handler() { this.load(); } },
+    choice(v) {
+      if (v === 'new') this.checkNewName(); else this.newNameExact = [];
+      if (v.startsWith('id:')) {
+        const id = Number(v.slice(3));
+        const hit = this.searchResults.find(r => Number(r.id) === id);
+        if (hit) this.pickedExtra = hit;
+        else if (this.suggestions.some(s => Number(s.id) === id)) this.pickedExtra = null;
+      } else this.pickedExtra = null;
+      this.emitValue();
+    },
+    newName() { this.confirmNotDuplicate = false; this.checkNewName(); this.emitValue(); },
+    newType() { this.emitValue(); },
+  },
+  computed: {
+    searchOpen() { return this.showSearch || this.changingCurrent || !!Number(this.excludeAccountId || 0); },
+    extraResults() { const ids = new Set(this.suggestions.map(s => Number(s.id))); return this.searchResults.filter(r => !ids.has(Number(r.id))); },
+    // ลูกค้าที่เลือกอยู่ (สำหรับบรรทัดสรุป)
+    chosenAccount() {
+      if (!this.choice.startsWith('id:')) return null;
+      const id = Number(this.choice.slice(3));
+      return this.suggestions.find(s => Number(s.id) === id) || this.shownResults.find(r => Number(r.id) === id) || null;
+    },
+    // ผลค้นหา + รายที่เลือกไว้จากการค้นครั้งก่อน (ไม่ให้หายไปจากจอ)
+    shownResults() {
+      const list = [...this.extraResults];
+      if (this.pickedExtra && !list.some(r => Number(r.id) === Number(this.pickedExtra.id))) list.unshift(this.pickedExtra);
+      return list;
+    },
+  },
+  methods: {
+    async load() {
+      this.expanded = false; this.needsDecision = false; this.changingCurrent = false; this.assignmentCount = 0; this.showSearch = false;
+      this.current = null; this.suggestions = []; this.choice = ''; this.searchQ = ''; this.searchResults = []; this.searched = false; this.pickedExtra = null; this.confirmNotDuplicate = false;
+      if (!this.announcementId) { this.emitValue(); return; }
+      this.loading = true;
+      const res = await apiCall('GET', 'api/accounts.php?action=suggest_for_announcement&announcement_id=' + encodeURIComponent(this.announcementId));
+      this.loading = false;
+      if (!res.success) { this.emitValue(); return; }
+      this.unitName = res.data.unit_name || '';
+      this.newName = this.unitName;
+      // ประเภทเริ่มต้น: ชื่อบอกว่าเป็นนิติบุคคลเอกชน → เอกชน / ที่เหลือ (ประกาศ e-GP ส่วนใหญ่) → ราชการ — แก้ได้
+      this.newType = /^(บริษัท|บ\.|บจก|บมจ|หจก|ห้างหุ้นส่วน)/.test(this.unitName.trim()) ? 'private' : 'government';
+      this.current = this.allowCurrent ? res.data.current_account : null;
+      this.assignmentCount = Number(res.data.assignment_count || 0);
+      const excluded = Number(this.excludeAccountId || 0);
+      this.suggestions = (res.data.suggestions || []).filter(x => Number(x.id) !== excluded);
+      if (excluded) this.choice = '';   // เปลี่ยนลูกค้า: ให้เลือกเองทุกครั้ง
+      else if (res.data.preselect_id) this.choice = 'id:' + res.data.preselect_id;
+      else if (!this.suggestions.length) this.choice = 'new';
+      // ระบบมั่นใจ (เลือกไว้ให้แล้ว) = บรรทัดสรุป / มีแค่ชื่อคล้าย = เปิดเต็มให้ตัดสินใจ
+      this.needsDecision = !this.choice && !excluded;
+      // ไม่เจอลูกค้าเลย (สร้างใหม่) → เปิดเต็มให้เห็น/แก้ชื่อที่จะสร้าง
+      this.expanded = this.needsDecision || !!excluded || this.choice === 'new';
+      this.emitValue();
+    },
+    emitValue() {
+      let v = null;
+      if (this.current && !this.changingCurrent) v = { account_id: this.current.id };
+      else if (this.choice.startsWith('id:')) v = { account_id: Number(this.choice.slice(3)) };
+      else if (this.choice === 'new' && this.newName.trim() && !this.newNameExact.length) v = { new_account: { name: this.newName.trim(), account_type: this.newType, confirm_not_duplicate: this.confirmNotDuplicate } };
+      // เปลี่ยนลูกค้าของประกาศที่ผูกแล้ว → บอก API ให้เปลี่ยน (มีผลทุกงานของประกาศ) — หน้าที่ใช้ถามยืนยันก่อนบันทึก
+      if (v && this.current && this.changingCurrent) v.change_account = true;
+      this.$emit('update:modelValue', v);
+    },
+    reasonLabel(s) {
+      return { remembered: `เคยผูกกับประกาศชื่อนี้ (${s.announce_count} งาน)`, exact: 'ชื่อตรงกัน', similar: 'ชื่อคล้ายกัน' }[s.reason] || '';
+    },
+    onSearch() {
+      clearTimeout(this._timer);
+      const q = this.searchQ.trim();
+      this.searched = false;
+      if (!q) { this.searchResults = []; return; }
+      this._timer = setTimeout(async () => {
+        const res = await apiCall('GET', 'api/accounts.php?action=search&q=' + encodeURIComponent(q));
+        if (res.success) this.searchResults = res.data;
+        this.searched = true;
+      }, 250);
+    },
+    // ชื่อลูกค้าใหม่ตรงกับรายที่มีอยู่ (หลังตัด บริษัท/จำกัด/ช่องว่าง) → เตือนทันที + ปุ่มมอบหมายกดไม่ได้ จนกว่าจะใช้รายเดิมหรือแก้ชื่อ
+    // เดิมให้เลือกได้แล้วค่อยโดน API ปฏิเสธตอนบันทึก ผู้ใช้รู้ตัวช้า (ผู้ใช้เจอ 2026-09-29)
+    checkNewName() {
+      clearTimeout(this._nameTimer);
+      const name = this.newName.trim();
+      if (this.choice !== 'new' || !name) { this.newNameExact = []; return; }
+      this._nameTimer = setTimeout(async () => {
+        const res = await apiCall('GET', 'api/accounts.php?action=check_duplicate&q=' + encodeURIComponent(name));
+        if (name !== this.newName.trim()) return;   // ผู้ใช้พิมพ์ต่อแล้ว
+        this.newNameExact = res.success ? res.data.filter(d => d.match_type === 'exact') : [];
+        this.emitValue();
+      }, 300);
+    },
+    useExactInstead(d) {
+      if (!this.suggestions.some(x => Number(x.id) === Number(d.id))) this.suggestions.unshift({ ...d, reason: 'exact', announce_count: 0 });
+      this.choice = 'id:' + d.id;
+      this.expanded = false;
+    },
+    // กดเลือกลูกค้าในรายการ → แสดงบรรทัดสรุปทันที ไม่ต้องเลื่อนหาปุ่มยืนยัน (ผู้ใช้กดแล้วไม่เห็นอะไรเปลี่ยน — 2026-09-29)
+    collapseAfterPick() { this.expanded = false; },
+    openSearch() { this.showSearch = true; this.$nextTick(() => this.$refs.searchInput?.focus()); },
+    startChangeCurrent() {
+      this.changingCurrent = true;
+      this.choice = '';
+      this.needsDecision = false;
+      this.expanded = true;
+      this.emitValue();
+    },
+    cancelChangeCurrent() {
+      this.changingCurrent = false;
+      this.expanded = false;
+      this.emitValue();
+    },
+    // เรียกจากหน้าที่ใช้ ตอน API ตอบ 409 แล้วผู้ใช้เลือกรายเดิมในหน้าต่างพบลูกค้าซ้ำ
+    pickAccount(d) {
+      if (!this.suggestions.some(s => Number(s.id) === Number(d.id))) this.suggestions.push({ ...d, reason: d.match_type || 'similar', announce_count: 0 });
+      this.choice = 'id:' + d.id;
+      this.expanded = false;
+    },
+    // ยืนยันว่าเป็นหน่วยงานใหม่ (ชื่อคล้ายรายอื่น) — ส่ง confirm_not_duplicate ไปครั้งถัดไป
+    confirmNew() { this.choice = 'new'; this.confirmNotDuplicate = true; this.expanded = false; this.emitValue(); },
+  },
+  template: `
+<div>
+  <label v-if="!hideLabel" class="block text-sm font-semibold text-slate-700 mb-1">ลูกค้า (หน่วยงาน) <span class="text-red-500">*</span></label>
+  <div v-if="loading" class="text-sm text-slate-400 py-2">กำลังค้นหาลูกค้าที่ตรงกับประกาศ...</div>
+  <template v-else>
+    <!-- ชื่อหน่วยงานจากประกาศ แสดงทุกกรณี (ผูกแล้ว / บรรทัดสรุป / แบบเต็ม) ให้ผู้ใช้เทียบกับลูกค้าที่ผูก (ยืนยันจากผู้ใช้ 2026-09-29) -->
+    <div class="text-sm text-slate-500 mb-2">ชื่อหน่วยงานในประกาศ: <span class="font-semibold text-slate-800">"{{ unitName || '-' }}"</span></div>
+    <div v-if="current && !changingCurrent" class="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-teal-50 ring-1 ring-teal-200 text-sm">
+      <span class="font-mono text-xs text-teal-700 bg-white rounded px-1.5 py-0.5">{{ current.account_code }}</span>
+      <span class="font-semibold text-slate-800">{{ current.name }}</span>
+      <span class="ml-auto text-xs text-teal-700">ผูกไว้แล้ว</span>
+      <!-- ผูกผิด (เช่น ระบบเดิมสร้างเอง) → ธุรการ/admin เปลี่ยนได้ มีผลทุกงานของประกาศนี้ (2026-09-29) -->
+      <button v-if="canChangeCurrent" type="button" @click="startChangeCurrent"
+        class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">เปลี่ยน</button>
+    </div>
+    <!-- แบบย่อ 1 บรรทัด (Progressive Disclosure — ยืนยันจากผู้ใช้ 2026-09-29): ระบบมั่นใจ (เคยผูก / ชื่อตรง / ไม่เจอใคร) แสดงสรุปให้ตรวจ
+         งานหลักของหน้าต่างคือเลือก sale จึงไม่กินพื้นที่ — กด "เปลี่ยน" เพื่อเปิดแบบเต็ม / ชื่อคล้าย (ต้องตัดสินใจ) เปิดเต็มอัตโนมัติ -->
+    <div v-else-if="!expanded" class="flex items-center gap-2 flex-wrap p-3 rounded-xl ring-1 ring-teal-200 bg-teal-50/60 text-sm">
+      <template v-if="choice === 'new'">
+        <span class="font-semibold text-teal-800">✚ สร้างลูกค้าใหม่</span>
+        <span class="font-semibold text-slate-800">"{{ newName }}"</span>
+        <span class="text-slate-500">({{ newType === 'government' ? 'ราชการ' : 'เอกชน' }})</span>
+      </template>
+      <template v-else-if="chosenAccount">
+        <span class="font-mono text-xs text-teal-700 bg-white rounded px-1.5 py-0.5">{{ chosenAccount.account_code }}</span>
+        <span class="font-semibold text-slate-800">{{ chosenAccount.name }}</span>
+        <span v-if="chosenAccount.reason === 'similar'" class="text-xs font-semibold text-amber-700">เลือกเอง (ชื่อคล้ายกับในประกาศ)</span>
+        <span v-else-if="chosenAccount.reason" class="text-xs font-semibold text-emerald-700">✓ {{ reasonLabel(chosenAccount) }}</span>
+        <span v-else class="text-xs font-semibold text-slate-500">เลือกจากการค้นหา</span>
+      </template>
+      <button type="button" @click="expanded = true"
+        class="ml-auto shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">เปลี่ยน</button>
+      <div v-if="changingCurrent && current" class="basis-full text-xs text-amber-800 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-2.5 py-1.5">
+        เปลี่ยนจาก <b>{{ current.account_code }} {{ current.name }}</b> — มีผลกับทุกงานของประกาศนี้<span v-if="assignmentCount"> ({{ assignmentCount }} งาน)</span>
+        <button type="button" @click="cancelChangeCurrent" class="ml-1 font-semibold text-slate-600 underline bg-transparent border-0 cursor-pointer p-0">ยกเลิกการเปลี่ยน</button>
+      </div>
+    </div>
+    <template v-else>
+      <div v-if="changingCurrent" class="mb-2 p-2.5 rounded-lg bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-900">
+        เปลี่ยนจาก <b>{{ current.account_code }} {{ current.name }}</b> — มีผลกับทุกงานของประกาศนี้<span v-if="assignmentCount"> ({{ assignmentCount }} งาน)</span> และดีลที่ผูกอยู่
+        <button type="button" @click="cancelChangeCurrent" class="block mt-1.5 text-xs font-semibold text-slate-600 underline bg-transparent border-0 cursor-pointer p-0">ยกเลิกการเปลี่ยน ใช้ลูกค้าเดิม</button>
+      </div>
+      <div v-if="needsDecision" class="mb-2 p-2.5 rounded-lg bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-900">
+        พบลูกค้าชื่อคล้ายกับชื่อในประกาศ — กรุณาเลือกว่าเป็นรายเดิม หรือสร้างลูกค้าใหม่
+      </div>
+      <!-- เรียงเป็น 3 กลุ่มจากบนลงล่าง: ระบบแนะนำ → ค้นหาเอง (ผลขึ้นใต้ช่องค้นหา) → สร้างใหม่ (2026-09-29 — เดิมผลค้นหาไปโผล่เหนือช่องค้นหา ผู้ใช้งง) -->
+      <div v-if="suggestions.length || searchOpen" class="text-sm text-slate-500 mb-2">กรุณาตรวจและเลือก 1 ข้อ</div>
+      <div v-else class="mb-2 text-sm font-semibold text-amber-700">ไม่พบลูกค้าที่ชื่อตรงกับประกาศ — ระบบจะสร้างลูกค้าใหม่ตามชื่อหน่วยงานให้ (โปรดตรวจสอบแก้ไขอีกครั้ง)</div>
+
+      <div v-if="suggestions.length" class="mb-3">
+        <div class="text-xs font-bold text-slate-500 mb-1.5">ระบบแนะนำ</div>
+        <label v-for="s in suggestions" :key="'s' + s.id" class="flex items-start gap-2.5 p-2.5 mb-1.5 rounded-xl ring-1 cursor-pointer"
+          :class="choice === 'id:' + s.id ? 'ring-teal-400 bg-teal-50/60' : 'ring-slate-200 bg-white'">
+          <input type="radio" :value="'id:' + s.id" v-model="choice" @change="collapseAfterPick" class="accent-teal-600 w-5 h-5 mt-0.5 shrink-0">
+          <span class="min-w-0">
+            <span class="flex flex-wrap items-center gap-1.5">
+              <span class="font-mono text-xs text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 whitespace-nowrap">{{ s.account_code }}</span>
+              <span class="text-xs px-1.5 py-0.5 rounded font-semibold whitespace-nowrap"
+                :class="s.reason === 'similar' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'">{{ reasonLabel(s) }}</span>
+            </span>
+            <span class="block text-sm font-semibold text-slate-800 mt-0.5">{{ s.name }}</span>
+            <span class="block text-xs text-slate-500">{{ s.account_type === 'government' ? 'ราชการ' : 'เอกชน' }}</span>
+          </span>
+        </label>
+      </div>
+
+      <div v-if="searchOpen" class="mb-3">
+        <div class="text-xs font-bold text-slate-500 mb-1.5">{{ suggestions.length ? 'ไม่ใช่รายที่แนะนำ? ค้นหาลูกค้าอื่น' : 'ค้นหาลูกค้าในระบบ' }}</div>
+        <input ref="searchInput" v-model="searchQ" @input="onSearch" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white"
+          placeholder="🔍 พิมพ์ชื่อ / รหัสลูกค้า / รหัส ERP">
+        <!-- ผลค้นหาแบบกระชับ แถวละ 1 บรรทัด กล่องสูงไม่เกิน ~5 แถว เลื่อนดูในกล่อง (เดิมการ์ดใหญ่ ยาวลงมาจนดันส่วนอื่น — 2026-09-29) -->
+        <div v-if="searchQ.trim() || pickedExtra" class="mt-1.5 max-h-52 overflow-y-auto rounded-xl ring-1 ring-slate-200 bg-white">
+        <label v-for="r in shownResults" :key="'r' + r.id" class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 last:border-b-0 cursor-pointer"
+          :class="choice === 'id:' + r.id ? 'bg-teal-50' : 'hover:bg-slate-50'">
+          <input type="radio" :value="'id:' + r.id" v-model="choice" @change="collapseAfterPick" class="accent-teal-600 w-4 h-4 shrink-0">
+          <span class="font-mono text-[11px] text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 whitespace-nowrap shrink-0">{{ r.account_code }}</span>
+          <span class="text-sm text-slate-800 truncate">{{ r.name }}</span>
+          <span class="ml-auto shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded-full"
+            :class="r.account_type === 'government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ r.account_type === 'government' ? 'ราชการ' : 'เอกชน' }}</span>
+        </label>
+          <div v-if="searchQ.trim() && searched && !extraResults.length" class="text-sm text-slate-400 px-3 py-2">ไม่พบลูกค้าที่ชื่อใกล้เคียง — เลือก "สร้างลูกค้าใหม่" ด้านล่าง</div>
+        </div>
+      </div>
+
+      <div v-if="suggestions.length || searchOpen" class="text-xs font-bold text-slate-500 mb-1.5">หรือ</div>
+      <label class="flex items-start gap-2.5 p-2.5 mb-1.5 rounded-xl ring-1 cursor-pointer"
+        :class="choice === 'new' ? 'ring-teal-400 bg-teal-50/60' : 'ring-slate-200 bg-white'">
+        <input type="radio" value="new" v-model="choice" class="accent-teal-600 w-5 h-5 mt-0.5 shrink-0">
+        <span class="flex-1 min-w-0">
+          <span class="block text-sm font-semibold text-slate-800">สร้างลูกค้าใหม่</span>
+          <template v-if="choice === 'new'">
+            <input v-model="newName" class="mt-1.5 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-500 bg-white" placeholder="ชื่อหน่วยงาน">
+            <span v-if="newNameExact.length" class="block mt-1.5 p-2.5 rounded-lg bg-rose-50 ring-1 ring-rose-200 text-sm text-rose-800">
+              มีลูกค้าชื่อนี้อยู่แล้ว สร้างซ้ำไม่ได้ — ใช้รายเดิม หรือแก้ชื่อถ้าเป็นคนละหน่วยงาน
+              <span v-for="d in newNameExact" :key="'ex' + d.id" class="flex items-center gap-2 mt-1.5">
+                <span class="font-mono text-xs text-teal-700 bg-white rounded px-1.5 py-0.5">{{ d.account_code }}</span>
+                <span class="font-semibold text-slate-800 truncate">{{ d.name }}</span>
+                <button type="button" @click.prevent="useExactInstead(d)"
+                  class="ml-auto shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">ใช้รายนี้</button>
+              </span>
+            </span>
+            <span class="flex gap-2 mt-1.5">
+              <button type="button" @click="newType = 'government'" class="flex-1 border rounded-lg py-1.5 text-sm font-medium cursor-pointer"
+                :class="newType === 'government' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 bg-white'">ราชการ</button>
+              <button type="button" @click="newType = 'private'" class="flex-1 border rounded-lg py-1.5 text-sm font-medium cursor-pointer"
+                :class="newType === 'private' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 bg-white'">เอกชน</button>
+            </span>
+            <button v-if="newName.trim() && !newNameExact.length" type="button" @click.prevent="expanded = false"
+              class="mt-2 w-full py-2 rounded-lg text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">✓ ใช้ชื่อนี้สร้างลูกค้าใหม่</button>
+          </template>
+        </span>
+      </label>
+      <button v-if="!searchOpen" type="button" @click="openSearch"
+        class="block mt-1 mb-1 text-sm font-semibold text-teal-700 underline bg-transparent border-0 cursor-pointer p-0">มีลูกค้าอยู่แล้วแต่ชื่อไม่ตรง? ค้นหาด้วยตนเอง</button>
+      <button v-if="choice.startsWith('id:')" type="button" @click="expanded = false"
+        class="mt-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">✓ ใช้ตัวเลือกนี้</button>
+    </template>
+  </template>
+</div>
+  `,
+};
+
 /* ── AppModal Vue Component ──
    Modal กลางจอแทนที่ toast (showAlert) และ confirm() ของเบราว์เซอร์ (showConfirm) ทั้งระบบ
    ใช้ผ่าน SharedMethods.showAlert()/showConfirm() เท่านั้น ไม่เรียก .alert()/.confirm() ตรงๆ

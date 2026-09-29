@@ -557,10 +557,52 @@
 
     <app-modal ref="appModal"></app-modal>
 
+    <!-- พบลูกค้าที่อาจซ้ำ ตอนกด "+ สร้างใหม่" ในฟอร์มดีล (กันลูกค้าซ้ำ 2026-09-28) -->
+    <app-duplicate-accounts :duplicates="spDupDialog.list" pick-label="ใช้รายนี้"
+      @pick="onSpDuplicatePick" @confirm="onSpDuplicateConfirm" @close="spDupDialog.list = null"></app-duplicate-accounts>
+
+    <!-- เพิ่มผู้ติดต่อใหม่ของลูกค้า (Quick Create) — บันทึกเข้าลูกค้าทันที แล้วติ๊กเข้าดีลให้ (2026-09-29) -->
+    <div v-if="spNewContact.show" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" @click.self="spNewContact.show = false">
+      <div class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden">
+        <div class="px-6 py-5 border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">เพิ่มผู้ติดต่อใหม่</h3>
+          <div class="text-sm text-slate-500 mt-1">ของ {{ spForm.account_name }}</div>
+        </div>
+        <div class="p-5 space-y-3">
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อ <span class="text-red-500">*</span></label>
+            <input v-model="spNewContact.full_name" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น คุณสมชาย">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">เบอร์มือถือ <span class="text-red-500">*</span></label>
+            <input v-model="spNewContact.phone" type="tel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="081-234-5678">
+            <p v-if="phoneInputProblem(spNewContact.phone)" class="text-sm text-amber-700 m-0 mt-1">{{ phoneInputProblem(spNewContact.phone) }}</p>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">ตำแหน่ง</label>
+            <input v-model="spNewContact.position" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ไม่บังคับ">
+          </div>
+          <!-- เบอร์ตรงผู้ติดต่อเดิม (API ตอบ 409) → ใช้คนเดิม หรือแก้เบอร์ -->
+          <div v-if="spNewContact.existing" class="p-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-900">
+            เบอร์นี้เป็นของ "{{ spNewContact.existing.full_name }}" อยู่แล้ว — ถ้าเป็นคนเดียวกันกด "ใช้คนเดิม" ถ้าไม่ใช่ให้แก้เบอร์
+            <button type="button" @click="useSpExistingContact"
+              class="block mt-2 px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white border-0 cursor-pointer">ใช้ "{{ spNewContact.existing.full_name }}" แทน</button>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button type="button" @click="spNewContact.show = false"
+            class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]">ยกเลิก</button>
+          <button type="button" @click="saveSpNewContact" :disabled="spNewContact.saving"
+            class="inline-flex items-center px-5 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] disabled:opacity-50">บันทึกผู้ติดต่อ</button>
+        </div>
+      </div>
+    </div>
+
     <!-- MODALS -->
     <!-- SP: Add / Edit Deal Modal -->
     <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
-      <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+      <!-- กว้าง 800px (เดิม 560px) — ฟอร์มมีผู้ติดต่อหลายคน + บทบาท/คนหลัก แคบเกินไป (ยืนยันจากผู้ใช้ 2026-09-29) มือถือยังเต็มจอเหมือนเดิม -->
+      <div class="bg-white rounded-2xl w-full max-w-[800px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
         <!-- หัว modal อยู่กับที่ (ไม่เลื่อนตามฟอร์ม) — แสดงรหัสงาน/สถานะ/ประเภทดีล/เลขที่ใบเสนอราคา ให้เห็นตลอดว่ากำลังแก้งานไหน
              (ย้ายขึ้นมาจากเหนือกล่อง ① — ยืนยันจากผู้ใช้ 2026-09-23) ป้ายประเภทดีลอ่านจากค่าที่บันทึกไว้ (modal.data) ไม่ใช่ค่าที่กำลังเลือกในฟอร์ม -->
         <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
@@ -604,26 +646,31 @@
               <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อลูกค้า / บริษัท <span v-if="!spForm.id" class="text-red-500">*</span></label>
 
               <!-- เลือกแล้ว (หรือจองชื่อ account ใหม่ไว้ ยังไม่สร้างจริงจนกว่าจะบันทึกดีลสำเร็จ): แสดงเป็น chip -->
-              <div v-if="spForm.account_id || spForm.account_is_new" class="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 bg-slate-50">
+              <div v-if="spForm.account_id" class="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 bg-slate-50">
                 <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="spForm.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ spForm.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
                 <span class="text-sm flex-1 truncate">{{ spForm.account_name }}</span>
-                <span v-if="spForm.account_is_new" class="text-[10px] text-slate-400 shrink-0">(ใหม่)</span>
                 <button type="button" @click="removeSpAccount"
                   class="border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-pointer p-1">✕</button>
               </div>
 
               <!-- ยังไม่ได้เลือก: ช่องค้นหา -->
               <div v-else class="relative">
-                <input v-model="spAccountQuery" @input="searchSpAccounts" @focus="spAccountDropdownOpen = !!spAccountQuery.trim()"
+                <!-- คลิกช่อง (ยังไม่พิมพ์) = ขึ้นลูกค้าล่าสุด / พิมพ์ = ค้นหาแบบยืดหยุ่น (2026-09-29) -->
+                <input v-model="spAccountQuery" @input="searchSpAccounts" @focus="openSpAccountDropdown" @click="openSpAccountDropdown"
                   class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"
                   placeholder="พิมพ์ค้นหาชื่อ / รหัสลูกค้า / รหัส ERP">
-                <div v-if="spAccountDropdownOpen" class="absolute left-0 right-0 top-[44px] bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-56 overflow-y-auto">
+                <div v-if="spAccountDropdownOpen" class="absolute left-0 right-0 top-[44px] bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-72 overflow-y-auto">
+                  <div v-if="!spAccountQuery.trim()" class="px-3.5 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100">
+                    {{ currentUser?.role === 'sale' ? 'ลูกค้าที่คุณเพิ่งทำดีลด้วย' : 'ลูกค้าที่มีดีลล่าสุด' }}
+                  </div>
+                  <div v-else-if="!spAccountResults.length" class="px-3.5 py-2.5 text-sm text-slate-400">ไม่พบลูกค้าที่ชื่อใกล้เคียง</div>
                   <div v-for="a in spAccountResults" :key="a.id" @click="selectSpAccount(a)"
                     class="px-3.5 py-2.5 cursor-pointer hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50">
                     <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="a.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ a.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
                     <span v-if="a.account_code" class="font-mono text-[11px] text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 shrink-0">{{ a.account_code }}</span>
                     <span class="text-sm">{{ a.name }}</span>
                   </div>
+                  <div v-if="!spAccountQuery.trim()" class="px-3.5 py-2 text-xs text-slate-400 border-b border-slate-50">พิมพ์ชื่อ / รหัสลูกค้า / รหัส ERP เพื่อค้นหาเพิ่ม</div>
                   <div @click="openSpAccountCreatePanel" class="px-3.5 py-2.5 cursor-pointer hover:bg-teal-50 text-teal-700 text-sm font-medium flex items-center gap-1.5">
                     + สร้างใหม่{{ spAccountQuery.trim() ? ': "' + spAccountQuery.trim() + '"' : '' }}
                   </div>
@@ -651,47 +698,121 @@
             <!-- ผู้ติดต่อในดีลนี้ (Opportunity Contact Roles — ยืนยันจากผู้ใช้ 2026-09-28)
                  ผู้ติดต่อยังอยู่ที่ลูกค้า / ดีลติ๊กเลือกว่าใครเกี่ยวข้อง + บทบาท + คนหลัก 1 คน — ดีลใหม่ต้องมีอย่างน้อย 1 คน, ดีลเก่าไม่บังคับ
                  ใช้ติ๊กและปุ่มกด ไม่มีลากวาง (ผู้ใช้วัย 50-60) -->
-            <div v-if="spForm.account_id || spForm.account_is_new">
+            <div v-if="spForm.account_id">
               <label class="block text-sm font-semibold text-slate-700 mb-1">ผู้ติดต่อในดีลนี้ <span v-if="!spForm.id" class="text-red-500">*</span></label>
-              <p class="text-sm text-slate-500 m-0 mb-2">ติ๊กคนที่คุยเรื่องดีลนี้ เลือกบทบาท และกด "คนหลัก" 1 คน</p>
-              <div v-for="(c, i) in spContactRows" :key="c.key"
-                class="mb-2 rounded-xl border p-3" :class="c.selected ? 'border-teal-400 bg-teal-50/60' : 'border-slate-200 bg-white'">
-                <div class="flex items-center gap-3 flex-wrap">
-                  <label v-if="!c.is_new" class="flex items-center gap-2 cursor-pointer flex-1 min-w-[180px]">
-                    <input type="checkbox" v-model="c.selected" @change="onSpContactToggle(c)" class="accent-teal-600 w-5 h-5">
-                    <span>
-                      <span class="font-semibold text-slate-800">{{ c.full_name }}</span>
-                      <span class="block text-sm text-slate-500">{{ formatPhone(c.phone) }}<span v-if="c.position"> · {{ c.position }}</span></span>
-                    </span>
-                  </label>
-                  <span v-else class="flex-1 min-w-[180px] text-sm font-semibold text-teal-700">ผู้ติดต่อใหม่</span>
-                  <template v-if="c.selected">
-                    <select v-model="c.contact_role_id" class="border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white">
-                      <option value="">บทบาท: ไม่ระบุ</option>
-                      <option v-for="r in spActiveContactRoles" :key="r.contact_role_id" :value="r.contact_role_id">{{ r.contact_role_name }}</option>
-                    </select>
-                    <button type="button" @click="setSpPrimaryContact(c)"
-                      class="px-3 py-2 rounded-lg text-sm font-semibold border-0 cursor-pointer"
-                      :class="c.is_primary ? 'bg-teal-700 text-white' : 'bg-white ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50'">
-                      {{ c.is_primary ? '★ คนหลัก' : 'ตั้งเป็นคนหลัก' }}
-                    </button>
-                  </template>
-                  <button v-if="c.is_new" type="button" @click="removeSpNewContact(i)"
-                    class="px-2 py-2 text-sm text-rose-600 bg-transparent border-0 cursor-pointer">ลบ</button>
+              <!-- ขั้นตอนเป็นข้อ ๆ — ผู้ใช้หาช่องบทบาท/คนหลักไม่เจอ เพราะขึ้นหลังติ๊กเท่านั้น (ยืนยันจากผู้ใช้ 2026-09-29) -->
+              <!-- ขั้นตอน 3 ข้อแบบการ์ดเรียงแนวนอน (มือถือเรียงลง) — อ่านง่ายกว่าข้อความยาวเป็นย่อหน้า (ยืนยันจากผู้ใช้ 2026-09-29)
+                   ใช้ป้าย "ขั้นที่ n" ขอบเส้น ไม่ใช่วงกลมทึบ เพราะชนกับเลขหัวข้อกล่อง ① ลูกค้า จนผู้ใช้สับสน -->
+              <p class="text-sm text-slate-500 m-0 mb-2">
+                ดีล 1 ดีลเลือกผู้ติดต่อได้หลายคน ตามบทบาท เช่น ผู้ตัดสินใจ ผู้ออกแบบ ผู้จัดซื้อ
+              </p>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                <div class="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100/60">
+                  <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white text-slate-700 text-[11px] font-bold whitespace-nowrap">ขั้นที่ 1</span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-bold text-slate-800">ติ๊กเลือกคน</span>
+                    <span class="block text-xs text-slate-600 leading-relaxed">เลือกได้หลายคน ถ้าไม่มีในรายการ กด "+ เพิ่มผู้ติดต่อใหม่"</span>
+                  </span>
                 </div>
-                <div v-if="c.is_new" class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 items-start">
-                  <input v-model="c.full_name" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ชื่อ เช่น คุณสมชาย ใจดี *">
-                  <!-- 1 ช่อง = 1 เบอร์ (ปกติมือถือ) พิมพ์ขีดได้ ระบบเก็บเป็นตัวเลขล้วน — 2026-09-28 -->
-                  <div class="flex flex-col gap-1">
-                    <input v-model="c.phone" type="tel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เบอร์มือถือ เช่น 081-234-5678 *">
-                    <p v-if="phoneInputProblem(c.phone)" class="text-sm text-amber-700 m-0">{{ phoneInputProblem(c.phone) }}</p>
-                  </div>
-                  <input v-model="c.position" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ตำแหน่ง (ไม่บังคับ)">
+                <div class="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100/60">
+                  <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white text-slate-700 text-[11px] font-bold whitespace-nowrap">ขั้นที่ 2</span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-bold text-slate-800">เลือกบทบาท</span>
+                    <span class="block text-xs text-slate-600 leading-relaxed">เช่น ผู้ตัดสินใจ ผู้ออกแบบ ผู้จัดซื้อ — ช่องขึ้นหลังติ๊ก</span>
+                  </span>
+                </div>
+                <div class="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100/60">
+                  <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white text-slate-700 text-[11px] font-bold whitespace-nowrap">ขั้นที่ 3</span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-bold text-slate-800">เลือกคนหลัก</span>
+                    <span class="block text-xs text-slate-600 leading-relaxed">เฉพาะเมื่อเลือกหลายคน · คนเดียวระบบตั้งให้เอง</span>
+                  </span>
                 </div>
               </div>
-              <p v-if="!spContactRows.length" class="text-sm text-slate-400 m-0 mb-2">ลูกค้ารายนี้ยังไม่มีผู้ติดต่อ — กดเพิ่มผู้ติดต่อใหม่</p>
-              <button type="button" @click="addSpNewContact"
-                class="text-sm font-semibold text-teal-700 bg-transparent border-0 cursor-pointer px-0">+ เพิ่มผู้ติดต่อใหม่</button>
+              <!-- ผู้ติดต่อของลูกค้า (บันทึกแล้วทุกคน) — ติ๊กคนที่อยู่ในดีล → บทบาท + คนหลัก
+                   ผู้ติดต่อใหม่เพิ่มผ่านหน้าต่าง "เพิ่มผู้ติดต่อใหม่" ซึ่งบันทึกเข้าลูกค้าทันที แล้วขึ้นในรายการนี้แบบติ๊กไว้ให้ (Quick Create — 2026-09-29)
+                   จอกว้าง = ตารางแถวละคน + แถบสรุปคนที่เลือก / มือถือ = การ์ดทีละคน (ยืนยันจากผู้ใช้ 2026-09-29 — ผู้ติดต่อหลายคนต้องเห็นชัด) -->
+              <div v-if="spSelectedContactCount" class="mb-2 px-3 py-2 rounded-lg bg-white ring-1 ring-teal-300 text-sm">
+                <span class="font-bold text-teal-800">เลือกแล้ว {{ spSelectedContactCount }} คน:</span>
+                <span v-for="(c, i) in spSelectedContactsOrdered" :key="'sum' + c.key" class="text-slate-700 ml-1">
+                  <span v-if="i" class="text-slate-300"> · </span>
+                  <span :class="c.is_primary ? 'font-bold text-teal-800' : ''">{{ c.is_primary ? '★ ' : '' }}{{ c.full_name }}</span>
+                  <span class="text-slate-500"> ({{ spRoleName(c.contact_role_id) }})</span>
+                </span>
+              </div>
+
+              <!-- จอกว้าง: ตาราง — คลิกที่ไหนในแถวก็ติ๊กได้ -->
+              <div v-if="spContactRows.length" class="hidden sm:block mb-2 rounded-xl ring-1 ring-slate-200 overflow-hidden bg-white">
+                <table class="w-full border-collapse text-sm">
+                  <thead>
+                    <tr class="bg-slate-50 text-slate-500 text-xs font-bold">
+                      <th class="w-10 px-3 py-2 text-center">เลือก</th>
+                      <th class="px-2 py-2 text-left">ชื่อ</th>
+                      <th class="px-2 py-2 text-left">เบอร์</th>
+                      <th class="px-2 py-2 text-left">ตำแหน่ง</th>
+                      <th class="px-2 py-2 text-left w-[190px]">บทบาทในดีล</th>
+                      <th class="px-3 py-2 text-center w-[110px]">คนหลัก</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="c in spContactRows" :key="'t' + c.key" @click="toggleSpContact(c)"
+                      class="border-t border-slate-100 cursor-pointer" :class="c.selected ? 'bg-teal-50' : 'hover:bg-slate-50'">
+                      <td class="px-3 py-2.5 text-center">
+                        <input type="checkbox" :checked="c.selected" @click.stop="toggleSpContact(c)" class="accent-teal-600 w-5 h-5 align-middle cursor-pointer">
+                      </td>
+                      <td class="px-2 py-2.5">
+                        <span class="font-semibold text-slate-800">{{ c.full_name }}</span>
+                        <span v-if="c.just_added" class="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">เพิ่งเพิ่ม</span>
+                      </td>
+                      <td class="px-2 py-2.5 text-slate-600 whitespace-nowrap">{{ formatPhone(c.phone) || '-' }}</td>
+                      <td class="px-2 py-2.5 text-slate-600">{{ c.position || '-' }}</td>
+                      <td class="px-2 py-2">
+                        <select v-if="c.selected" v-model="c.contact_role_id" @click.stop class="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white">
+                        <option value="">ไม่ระบุ</option>
+                        <option v-for="r in spActiveContactRoles" :key="r.contact_role_id" :value="r.contact_role_id">{{ r.contact_role_name }}</option>
+                      </select>
+                        <span v-if="!c.selected" class="text-slate-300">—</span>
+                      </td>
+                      <td class="px-3 py-2 text-center" @click.stop>
+                        <template v-if="c.selected">
+                          <span v-if="spSelectedContactCount === 1" class="text-xs font-semibold text-teal-700 whitespace-nowrap">★ อัตโนมัติ</span>
+                          <input v-else type="radio" name="sp-primary-contact-t" :checked="c.is_primary" @change="setSpPrimaryContact(c)" class="accent-teal-600 w-5 h-5 cursor-pointer">
+                        </template>
+                        <span v-else class="text-slate-300">—</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- มือถือ: การ์ดทีละคน -->
+              <div v-for="c in spContactRows" :key="'m' + c.key"
+                class="sm:hidden mb-2 rounded-xl border p-3" :class="c.selected ? 'border-teal-400 bg-teal-50/60' : 'border-slate-200 bg-white'">
+                <label class="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" :checked="c.selected" @change="toggleSpContact(c)" class="accent-teal-600 w-5 h-5 shrink-0">
+                  <span class="min-w-0">
+                    <span class="font-semibold text-slate-800">{{ c.full_name }}</span>
+                    <span v-if="c.just_added" class="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">เพิ่งเพิ่ม</span>
+                    <span class="block text-sm text-slate-500">{{ formatPhone(c.phone) }}<span v-if="c.position"> · ตำแหน่ง {{ c.position }}</span></span>
+                  </span>
+                </label>
+                <div v-if="c.selected" class="flex items-center gap-2 flex-wrap mt-2.5 pt-2.5 border-t border-teal-100">
+                  <span class="text-xs font-semibold text-slate-600">บทบาทในดีล</span>
+                  <select v-model="c.contact_role_id" class="flex-1 min-w-[150px] border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white">
+                        <option value="">ไม่ระบุ</option>
+                        <option v-for="r in spActiveContactRoles" :key="r.contact_role_id" :value="r.contact_role_id">{{ r.contact_role_name }}</option>
+                      </select>
+                  <span v-if="spSelectedContactCount === 1" class="shrink-0 text-sm font-semibold text-teal-700">★ คนหลัก (อัตโนมัติ)</span>
+                  <label v-else class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer ring-1"
+                    :class="c.is_primary ? 'ring-teal-400 bg-white text-teal-700' : 'ring-slate-200 bg-white text-slate-500'">
+                    <input type="radio" name="sp-primary-contact-m" :checked="c.is_primary" @change="setSpPrimaryContact(c)" class="accent-teal-600 w-4 h-4">
+                    คนหลัก
+                  </label>
+                </div>
+              </div>
+              <p v-if="!spContactRows.length" class="text-sm text-slate-400 m-0 mb-2">ลูกค้ารายนี้ยังไม่มีผู้ติดต่อ — กด "+ เพิ่มผู้ติดต่อใหม่"</p>
+              <button type="button" @click="openSpNewContact"
+                class="inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-300 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">+ เพิ่มผู้ติดต่อใหม่</button>
             </div>
           </section>
 
@@ -1308,12 +1429,12 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=46"></script>
+<script src="shared/app.js?v=48"></script>
 <script>
 const { createApp } = Vue;
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal, AppErpWarning },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppDuplicateAccounts },
   data() {
     return {
       authReady: false,
@@ -1332,6 +1453,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       dealTypes: [], // master ประเภทดีล จาก api/pipeline_items.php?action=deal_types
       competitors: [], // master คู่แข่ง จาก api/competitors.php?action=list (โหลดครั้งเดียว ค้นหาฝั่งหน้าเว็บ)
       spSavedCompetitors: [], // คู่แข่งที่บันทึกไว้ของดีลที่เปิดแก้ — แสดงที่หัว modal
+      spDupDialog: { list: null, name: '' },   // หน้าต่างพบลูกค้าที่อาจซ้ำ (2026-09-28)
+      spNewContact: { show: false, full_name: '', phone: '', position: '', saving: false, existing: null },   // หน้าต่างเพิ่มผู้ติดต่อใหม่ (2026-09-29)
       spContactRows: [],      // ผู้ติดต่อของลูกค้า + คนใหม่ ในฟอร์มดีล (ติ๊ก/บทบาท/คนหลัก) — ผู้ติดต่อในดีล 2026-09-28
       contactRoles: [],       // master บทบาท จาก api/pipeline_items.php?action=contact_roles
       spCompetitorQuery: '',
@@ -1339,6 +1462,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       // ช่องค้นหา/สร้างหน่วยงาน-บริษัทใหม่ ในฟอร์มสร้าง/แก้ไขดีล (ยืนยันจากผู้ใช้ 2026-09-22)
       spAccountQuery: '',
       spAccountResults: [],
+      spRecentAccounts: null,   // ลูกค้าล่าสุด โหลดครั้งแรกที่คลิกช่อง (ต่อการเปิดฟอร์ม 1 ครั้ง) — 2026-09-29
       spAccountDropdownOpen: false,
       spAccountCreating: false,
       spNewAccountType: '',
@@ -1358,6 +1482,9 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
   },
   computed: {
     spActiveContactRoles() { return this.contactRoles.filter(r => Number(r.is_active) === 1); },
+    spSelectedContactCount() { return this.spContactRows.filter(c => c.selected).length; },
+    // แถบสรุปคนที่เลือก — คนหลักขึ้นก่อน
+    spSelectedContactsOrdered() { return this.spContactRows.filter(c => c.selected).sort((a, b) => Number(b.is_primary) - Number(a.is_primary)); },
     // ปุ่มประเภทดีลในฟอร์ม — แสดงเฉพาะที่ใช้งานอยู่ (is_active=1) + ประเภทเดิมของดีลที่กำลังแก้ (เผื่อถูกปิดใช้งานไปแล้ว)
     // คู่แข่งที่เลือกอยู่ในฟอร์ม (แปลง competitor_ids เป็นชื่อ) — หาใน master ไม่เจอ (เช่นเพิ่งเพิ่มจากเครื่องอื่น) ก็ยังแสดงจากค่าที่บันทึกไว้
     spSelectedCompetitors() {
@@ -1984,6 +2111,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       }
       this.spAccountQuery = '';
       this.spAccountResults = [];
+      this.spRecentAccounts = null;
       this.spAccountDropdownOpen = false;
       this.spAccountCreating = false;
       this.spNewAccountType = '';
@@ -2003,20 +2131,34 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       }
     },
 
+    // คลิกช่องลูกค้า: ยังไม่พิมพ์ → ลูกค้าล่าสุด (Recent Items — ยืนยันจากผู้ใช้ 2026-09-29) / พิมพ์ไว้แล้ว → เปิดผลค้นหาเดิม
+    // ลูกค้าประจำอยู่บนสุดเสมอ เลือกได้โดยไม่ต้องพิมพ์ ลดการกดสร้างใหม่ซ้ำ
+    async openSpAccountDropdown() {
+      if (this.spAccountCreating) return;
+      if (this.spAccountQuery.trim()) { this.spAccountDropdownOpen = true; return; }
+      if (this.spRecentAccounts === null) {
+        const res = await apiCall('GET', 'api/accounts.php?action=recent');
+        this.spRecentAccounts = res.success ? res.data : [];
+      }
+      if (this.spAccountQuery.trim()) return;   // ระหว่างรอโหลด ผู้ใช้เริ่มพิมพ์แล้ว — ให้ผลค้นหาแสดงแทน
+      this.spAccountResults = this.spRecentAccounts;
+      this.spAccountDropdownOpen = true;
+    },
+
     // ค้นหาหน่วยงาน/บริษัทแบบ debounce เล็กน้อย กันยิง API ถี่เกินไปทุกครั้งที่พิมพ์
     searchSpAccounts() {
       clearTimeout(this._spAccountTimer);
       const q = this.spAccountQuery.trim();
-      this.spAccountDropdownOpen = !!q;
-      if (!q) { this.spAccountResults = []; return; }
+      if (!q) { this.openSpAccountDropdown(); return; }   // ลบคำค้นจนว่าง → กลับไปแสดงลูกค้าล่าสุด
+      this.spAccountDropdownOpen = true;
       this._spAccountTimer = setTimeout(async () => {
         const res = await apiCall('GET', 'api/accounts.php?action=search&q=' + encodeURIComponent(q));
         if (res.success) this.spAccountResults = res.data;
       }, 250);
     },
-    selectSpAccount(a, isNew = false) {
+    selectSpAccount(a) {
       this.spForm.account_id = a.id;
-      this.spForm.account_is_new = isNew;
+      this.spForm.account_is_new = false;
       this.spForm.account_name = a.name;
       this.spForm.account_type = a.account_type;
       this.spForm.client_name = a.name;
@@ -2041,39 +2183,50 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spAccountDropdownOpen = false;
       this.spNewAccountType = '';
     },
-    // ยังไม่ยิง API สร้าง account จริงตรงนี้ — แค่ "จอง" ชื่อ+ประเภทไว้ในฟอร์มก่อน แล้วค่อยสร้างจริงตอน submitSpForm()
-    // ผ่าน validation ครบทุกอย่างแล้วเท่านั้น กันปัญหา account ถูกสร้างค้างไว้ใน DB ทั้งที่ดีลไม่ถูกบันทึก
-    // เพราะฟิลด์อื่นในฟอร์มยังไม่ครบ (เจอบั๊กจริงจากผู้ใช้ 2026-09-22 — account "หจด เพิ่มสิน" ค้างไม่มี contact/deal เลย)
+    // สร้างลูกค้าใหม่ทันทีตอนกดยืนยัน (มาตรฐาน CRM — ยืนยันจากผู้ใช้ 2026-09-29) เพื่อให้เพิ่มผู้ติดต่อใหม่ได้ทันที
+    // เดิม "จอง" ชื่อไว้แล้วสร้างตอนบันทึกดีล (2026-09-22 กันลูกค้าค้าง) — ตอนนี้มีกฎกันซ้ำแล้ว ลูกค้าที่ไม่มีดีลถือเป็นข้อมูลจริงที่ผ่านตรวจซ้ำ
     async confirmSpAccountCreate() {
       const name = this.spAccountQuery.trim();
       if (!name) { await this.showAlert('กรุณาระบุชื่อหน่วยงาน/บริษัท', 'error'); return; }
       if (!this.spNewAccountType) { await this.showAlert('กรุณาเลือกประเภทหน่วยงาน', 'error'); return; }
-      // เตือนก่อนถ้าเจอชื่อคล้ายกันอยู่แล้ว (กันสร้าง account ซ้ำโดยไม่ตั้งใจ — ยืนยันจากผู้ใช้ 2026-09-22)
+      // กันลูกค้าซ้ำ (2026-09-28): ตรวจก่อนจองชื่อ — ชื่อตรงกันต้องใช้รายเดิม / ชื่อคล้ายหรือเลขภาษีซ้ำต้องกดยืนยันว่าเป็นคนละราย
+      // API สร้างลูกค้าตรวจซ้ำอีกชั้นตอนบันทึกดีล (api/accounts.php guardDuplicateAccount)
       const dup = await apiCall('GET', 'api/accounts.php?action=check_duplicate&q=' + encodeURIComponent(name));
       if (dup.success && dup.data.length) {
-        const names = dup.data.map(a => a.name).join(', ');
-        const ok = await this.showConfirm('พบชื่อคล้ายกัน', `พบหน่วยงาน/บริษัทที่ชื่อคล้ายกันอยู่แล้ว: ${names} — ต้องการสร้างใหม่จริงหรือไม่? กด "ยกเลิก" เพื่อเลือกจากรายการที่พบแทน`, 'สร้างใหม่');
-        if (!ok) {
-          // กลับไปโชว์รายการที่เจอให้เลือกได้เลย แทนที่จะแค่ปิดหน้าต่างเฉยๆ (ยืนยันจากผู้ใช้ 2026-09-22)
-          this.spAccountCreating = false;
-          this.spAccountResults = dup.data;
-          this.spAccountDropdownOpen = true;
-          return;
-        }
+        this.spDupDialog = { list: dup.data, name };
+        return;
       }
-      this.selectSpAccount({ id: null, name, account_type: this.spNewAccountType }, true);
+      await this.createSpAccountNow(name, false);
+    },
+
+    // บันทึกลูกค้าใหม่ลง DB แล้วเลือกให้ดีลนี้ — API ตรวจกันซ้ำอีกชั้น (409 → หน้าต่างพบลูกค้าที่อาจซ้ำ)
+    async createSpAccountNow(name, confirmNotDuplicate) {
+      const res = await apiCall('POST', 'api/accounts.php?action=create',
+        { name, account_type: this.spNewAccountType, confirm_not_duplicate: confirmNotDuplicate });
+      if (!res.success && res.data?.duplicates) { this.spDupDialog = { list: res.data.duplicates, name }; return; }
+      if (!res.success) { await this.showAlert(res.message || 'สร้างหน่วยงาน/บริษัทไม่สำเร็จ', 'error'); return; }
+      this.selectSpAccount({ id: res.data.id, name: res.data.name, account_type: res.data.account_type });
+    },
+
+    // เลือกรายเดิมจากหน้าต่างพบลูกค้าซ้ำ → ผูกดีลกับลูกค้ารายนั้นแทนการสร้างใหม่
+    onSpDuplicatePick(d) {
+      this.spDupDialog.list = null;
+      this.selectSpAccount(d);
+    },
+
+    // ยืนยันว่าเป็นคนละราย → สร้างลูกค้าใหม่ทันทีพร้อม confirm_not_duplicate (ระบบจดหมายเหตุว่าใครยืนยัน)
+    async onSpDuplicateConfirm() {
+      const name = this.spDupDialog.name;
+      this.spDupDialog.list = null;
+      await this.createSpAccountNow(name, true);
     },
 
     async submitSpForm() {
       // ลำดับการเช็คตรงกับลำดับช่องในฟอร์ม (ลูกค้า → ผู้ติดต่อ → ชื่อโครงการ → ...) ให้เตือนช่องบนสุดที่ยังขาดก่อน
       if (!this.spForm.id) {
-        if (!this.spForm.account_id && !this.spForm.account_is_new) { await this.showAlert('กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท', 'error'); return; }
+        if (!this.spForm.account_id) { await this.showAlert('กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท', 'error'); return; }
         if (!this.spContactRows.some(c => c.selected)) { await this.showAlert('กรุณาเลือกหรือเพิ่มผู้ติดต่อในดีลอย่างน้อย 1 คน', 'error'); return; }
       }
-      const incompleteContact = this.spContactRows.find(c => c.is_new && (!String(c.full_name).trim() || !String(c.phone).trim()));
-      if (incompleteContact) { await this.showAlert('กรุณากรอกชื่อและเบอร์โทรของผู้ติดต่อใหม่ให้ครบ (หรือกด "ลบ" ถ้าไม่ใช้)', 'error'); return; }
-      const badPhoneContact = this.spContactRows.find(c => c.is_new && this.phoneInputProblem(c.phone));
-      if (badPhoneContact) { await this.showAlert('เบอร์โทรผู้ติดต่อใหม่: ' + this.phoneInputProblem(badPhoneContact.phone), 'error'); return; }
       if (!this.spForm.title.trim()) { await this.showAlert('กรุณาระบุชื่อโครงการ/รายการ', 'error'); return; }
       // ดีลใหม่ไม่เลือกความสำคัญ/ประเภทดีล/ไม่ใส่โอกาสปิดดีลไว้ให้ก่อน — กันเผลอกดผ่านแล้วได้ค่า default ที่ไม่ได้ตั้งใจ (ยืนยันจากผู้ใช้ 2026-09-23)
       // โอกาสปิดดีลเช็คใน requiredDealFields ด้านล่างอยู่แล้ว
@@ -2102,15 +2255,6 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       }
       // แหล่งที่มาไม่เลือกไว้ให้ก่อนเช่นกัน — ช่องสุดท้ายของกล่อง ④ จึงเช็คต่อจาก requiredDealFields (ยืนยันจากผู้ใช้ 2026-09-23)
       if (!this.spForm.source_type) { await this.showAlert('กรุณาเลือกแหล่งที่มาของงาน', 'error'); return; }
-      // ผ่าน validation ทุกอย่างแล้วเท่านั้นถึงค่อยสร้าง account จริงลง DB (ถ้าเป็น account ใหม่ที่จองชื่อไว้)
-      // กันปัญหา account ถูกสร้างค้างไว้ทั้งที่ดีลไม่ถูกบันทึกเพราะฟิลด์อื่นไม่ครบ (เจอบั๊กจริงจากผู้ใช้ 2026-09-22)
-      // ใช้เงื่อนไข account_is_new เพียงอย่างเดียว (ไม่เช็ค !spForm.id) เพราะตอนแก้ไขดีลเก่าก็เลือก "+ สร้างใหม่" เพื่อผูก account ใหม่ได้เหมือนกัน
-      if (this.spForm.account_is_new) {
-        const accRes = await apiCall('POST', 'api/accounts.php?action=create', { name: this.spForm.account_name, account_type: this.spForm.account_type });
-        if (!accRes.success) { await this.showAlert(accRes.message || 'สร้างหน่วยงาน/บริษัทไม่สำเร็จ', 'error'); return; }
-        this.spForm.account_id = accRes.data.id;
-        this.spForm.account_is_new = false;
-      }
 
       const payload = { ...this.spForm };
       delete payload.contact_name; delete payload.contact_phone; delete payload.contact_position;
@@ -2154,7 +2298,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       const inDeal = new Map(dealContacts.map(d => [Number(d.contact_id), d]));
       return accountContacts.map(c => {
         const d = inDeal.get(Number(c.id));
-        return { key: 'c' + c.id, contact_id: Number(c.id), is_new: false, full_name: c.full_name, phone: c.phone || '', position: c.position || '',
+        return { key: 'c' + c.id, contact_id: Number(c.id), full_name: c.full_name, phone: c.phone || '', position: c.position || '',
                  selected: !!d, contact_role_id: d?.contact_role_id || '', is_primary: !!(d && Number(d.is_primary) === 1) };
       });
     },
@@ -2162,22 +2306,65 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spContactRows = [];
       if (accountId) {
         const res = await apiCall('GET', `api/contacts.php?action=list&account_id=${accountId}`);
-        if (res.success) this.spContactRows = this.buildSpContactRows(res.data, []);
+        // ผู้ติดต่อที่เพิ่งบันทึกระหว่างรอโหลด ต้องไม่หาย (บั๊กที่ผู้ใช้เจอ 2026-09-29)
+        const addedWhileLoading = this.spContactRows.filter(c => c.just_added);
+        if (res.success) {
+          const ids = new Set(addedWhileLoading.map(c => c.contact_id));
+          this.spContactRows = [...this.buildSpContactRows(res.data.filter(c => !ids.has(Number(c.id))), []), ...addedWhileLoading];
+        }
+        // ลูกค้ายังไม่มีผู้ติดต่อ (เช่น ลูกค้าเพิ่งสร้าง) → เปิดหน้าต่างเพิ่มผู้ติดต่อให้เลย
+        if (!this.spContactRows.length && Number(this.spForm.account_id) === Number(accountId)) this.openSpNewContact();
       }
-      if (!this.spContactRows.length) this.addSpNewContact();   // ลูกค้าใหม่ / ยังไม่มีผู้ติดต่อ → เปิดช่องกรอกคนใหม่ให้เลย
     },
-    addSpNewContact() {
-      this.spContactRows.push({ key: 'n' + Date.now() + Math.random(), contact_id: null, is_new: true, full_name: '', phone: '', position: '',
-                                selected: true, contact_role_id: '', is_primary: !this.spContactRows.some(c => c.selected && c.is_primary) });
+
+    // ─── เพิ่มผู้ติดต่อใหม่ (Quick Create) — บันทึกเข้าลูกค้าทันที (api/contacts.php create) แล้วติ๊กเข้าดีลให้ (2026-09-29) ───
+    openSpNewContact() {
+      this.spNewContact = { show: true, full_name: '', phone: '', position: '', saving: false, existing: null };
     },
-    removeSpNewContact(i) {
-      const wasPrimary = this.spContactRows[i].is_primary;
-      this.spContactRows.splice(i, 1);
-      if (wasPrimary) this.ensureSpPrimaryContact();
+    async saveSpNewContact() {
+      const f = this.spNewContact;
+      if (!f.full_name.trim()) { await this.showAlert('กรุณากรอกชื่อผู้ติดต่อ', 'error'); return; }
+      if (!f.phone.trim())     { await this.showAlert('กรุณากรอกเบอร์มือถือ', 'error'); return; }
+      if (this.phoneInputProblem(f.phone)) { await this.showAlert('เบอร์มือถือ: ' + this.phoneInputProblem(f.phone), 'error'); return; }
+      f.saving = true; f.existing = null;
+      const res = await apiCall('POST', 'api/contacts.php?action=create',
+        { account_id: this.spForm.account_id, full_name: f.full_name.trim(), phone: f.phone.trim(), position: f.position.trim() });
+      f.saving = false;
+      // เบอร์ตรงผู้ติดต่อเดิมแต่ชื่อต่าง → ให้เลือกใช้คนเดิม หรือแก้เบอร์ (ไม่แทนเงียบๆ)
+      if (!res.success && res.data?.existing_contact) { f.existing = res.data.existing_contact; return; }
+      if (!res.success) { await this.showAlert(res.message || 'บันทึกผู้ติดต่อไม่สำเร็จ', 'error'); return; }
+      // สำเร็จ (หรือเป็นคนเดิมชื่อเดียวกัน — existing) → ติ๊กคนนั้นเข้าดีล
+      this.addOrSelectSpContact({ id: res.data.id, full_name: f.full_name.trim(), phone: f.phone.replace(/[^0-9+]/g, ''), position: f.position.trim() });
+      f.show = false;
+    },
+    useSpExistingContact() {
+      const e = this.spNewContact.existing;
+      if (!e) return;
+      this.addOrSelectSpContact({ id: e.id, full_name: e.full_name, phone: e.phone, position: '' });
+      this.spNewContact.show = false;
+    },
+    // ติ๊กผู้ติดต่อเข้าดีล — ถ้ายังไม่อยู่ในรายการ (เพิ่งบันทึก) เพิ่มเข้าไปพร้อมป้าย "เพิ่งเพิ่ม"
+    addOrSelectSpContact(c) {
+      let row = this.spContactRows.find(x => Number(x.contact_id) === Number(c.id));
+      if (!row) {
+        row = { key: 'c' + c.id, contact_id: Number(c.id), full_name: c.full_name, phone: c.phone || '', position: c.position || '',
+                selected: false, contact_role_id: '', is_primary: false, just_added: true };
+        this.spContactRows.push(row);
+      }
+      row.selected = true;
+      this.ensureSpPrimaryContact();
     },
     onSpContactToggle(c) {
       if (!c.selected) c.is_primary = false;
       this.ensureSpPrimaryContact();
+    },
+    // ติ๊ก/เอาติ๊กออก (ใช้ทั้งคลิกแถวในตาราง และช่องติ๊ก)
+    toggleSpContact(c) {
+      c.selected = !c.selected;
+      this.onSpContactToggle(c);
+    },
+    spRoleName(id) {
+      return this.contactRoles.find(r => r.contact_role_id === id)?.contact_role_name || 'ไม่ระบุบทบาท';
     },
     setSpPrimaryContact(c) {
       this.spContactRows.forEach(x => { x.is_primary = x === c; });
@@ -2189,7 +2376,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     },
     spDealContactsPayload() {
       return this.spContactRows.filter(c => c.selected).map(c => ({
-        ...(c.is_new ? { new_contact: { full_name: c.full_name.trim(), phone: c.phone.trim(), position: c.position.trim() } } : { contact_id: c.contact_id }),
+        contact_id: c.contact_id,
         contact_role_id: c.contact_role_id || null,
         is_primary: c.is_primary,
       }));
