@@ -23,6 +23,8 @@ switch ($method) {
             // ลูกค้ารอเปิดหน้าบัญชี ERP (2026-09-28) — ดู includes/erp_pending_helper.php
             case 'erp_status':       getDealErpStatus($db); break;
             case 'erp_pending':      jsonResponse(true, listErpPending($db, $user)); break;
+            // รายงานลูกค้าชื่อคล้ายกัน (2026-09-30) — ธุรการขาย / admin เท่านั้น (ยืนยันจากผู้ใช้)
+            case 'similar_pairs':    requireRole(['admin', 'salesadmin']); jsonResponse(true, findSimilarAccountPairs($db, !empty($_GET['include_ignored']))); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -33,6 +35,11 @@ switch ($method) {
             // รหัสลูกค้า ERP: admin / ธุรการขาย เท่านั้น เพราะต้องตรงกับฝ่ายบัญชี (ยืนยันจากผู้ใช้ 2026-09-26) — sale ดูได้อย่างเดียว
             case 'erp_code_save':   requireRole(['admin', 'salesadmin']); saveErpCode($db, $user); break;
             case 'erp_code_delete': requireRole(['admin', 'salesadmin']); deleteErpCode($db, $user); break;
+            // ยืนยัน/ยกเลิก "คู่นี้ไม่ซ้ำ" ในรายงานลูกค้าชื่อคล้ายกัน (2026-09-30)
+            case 'ignore_pair':     requireRole(['admin', 'salesadmin']); ignoreAccountPair($db, $user); break;
+            case 'unignore_pair':   requireRole(['admin', 'salesadmin']); unignoreAccountPair($db); break;
+            // รวมลูกค้าซ้ำ (2026-09-30) — ธุรการขาย / admin เท่านั้น / ย้อนกลับไม่ได้ (หน้าเว็บถามยืนยันก่อน) / บันทึกใน account_merge_logs
+            case 'merge_accounts':  requireRole(['admin', 'salesadmin']); mergeAccountsAction($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -180,6 +187,8 @@ function listAccounts(PDO $db): void {
     $stmt = $db->query("
         SELECT a.id, a.account_code, a.account_type, a.name, a.tax_id, a.phone, a.phone_ext, a.mobile, a.address, a.note, a.created_at,
                a.owner_user_id, ou.full_name AS owner_name,
+               (SELECT GROUP_CONCAT(ml.merged_account_code ORDER BY ml.created_at SEPARATOR ', ')
+                  FROM account_merge_logs ml WHERE ml.kept_account_id = a.id) AS merged_codes,
                IF($needsFix, 1, 0) AS phone_needs_fix,
                (SELECT GROUP_CONCAT(e.erp_customer_code ORDER BY e.is_primary DESC, e.erp_customer_code SEPARATOR ', ')
                   FROM account_erp_codes e WHERE e.account_id = a.id) AS erp_codes,
@@ -242,6 +251,11 @@ function getAccountDetail(PDO $db, int $id): void {
     ");
     $deals->execute([$id, $id]);
     $account['deals'] = $deals->fetchAll();
+
+    // ประวัติการรวมลูกค้า (รายที่ถูกรวมเข้ารายนี้) — ทุก role ดูได้ (2026-09-30)
+    $account['merge_logs'] = accountMergeLogs($db, $id);
+    // ลูกค้าที่อาจซ้ำกับรายนี้ — คำเตือนบนหน้ารายละเอียด ทุก role เห็น (2026-09-30)
+    $account['potential_duplicates'] = findPotentialDuplicatesFor($db, $id);
 
     jsonResponse(true, $account);
 }
@@ -358,4 +372,41 @@ function deleteErpCode(PDO $db, array $user): void {
            ->execute([$user['id'], $r['account_id']]);
     }
     jsonResponse(true, null, 'ลบรหัส ERP แล้ว');
+}
+
+// คู่ลูกค้า → [id น้อย, id มาก] (ตาราง account_duplicate_ignores เก็บแบบนี้ กันคู่เดียวกันซ้ำ 2 แถว)
+function accountPairIds(array $body): array {
+    $a = (int)($body['account_id_a'] ?? 0); $b = (int)($body['account_id_b'] ?? 0);
+    if (!$a || !$b || $a === $b) jsonResponse(false, null, 'กรุณาระบุลูกค้า 2 รายที่ต่างกัน', 400);
+    return [min($a, $b), max($a, $b)];
+}
+
+// ยืนยันว่าคู่นี้ไม่ซ้ำ — ซ่อนจากรายงานถาวร (กดซ้ำ = แก้หมายเหตุ)
+function ignoreAccountPair(PDO $db, array $user): void {
+    $body = getJsonBody();
+    [$low, $high] = accountPairIds($body);
+    $cnt = $db->prepare('SELECT COUNT(*) FROM accounts WHERE id IN (?, ?)');
+    $cnt->execute([$low, $high]);
+    if ((int)$cnt->fetchColumn() !== 2) jsonResponse(false, null, 'ไม่พบลูกค้า', 404);
+    $reason = in_array($body['reason'] ?? '', ['exact', 'contains', 'typo', 'prefix', 'tax'], true) ? $body['reason'] : null;
+    $note = mb_substr(trim((string)($body['note'] ?? '')), 0, 255) ?: null;
+    $db->prepare('INSERT INTO account_duplicate_ignores (account_id_low, account_id_high, match_reason, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)
+                  ON DUPLICATE KEY UPDATE note = VALUES(note), updated_by = VALUES(updated_by)')
+       ->execute([$low, $high, $reason, $note, $user['id'], $user['id']]);
+    jsonResponse(true, null, 'บันทึกว่าไม่ซ้ำแล้ว');
+}
+
+// ยกเลิกการยืนยัน — คู่นี้กลับมาในรายงาน
+function unignoreAccountPair(PDO $db): void {
+    [$low, $high] = accountPairIds(getJsonBody());
+    $db->prepare('DELETE FROM account_duplicate_ignores WHERE account_id_low = ? AND account_id_high = ?')->execute([$low, $high]);
+    jsonResponse(true, null, 'ยกเลิกแล้ว คู่นี้กลับมาในรายงาน');
+}
+
+// รวมลูกค้าซ้ำ — body: keep_account_id (รายที่เก็บ), merge_account_id (รายที่ถูกรวม), reason (ไม่บังคับ)
+function mergeAccountsAction(PDO $db, array $user): void {
+    $body = getJsonBody();
+    $reason = mb_substr(trim((string)($body['reason'] ?? '')), 0, 255) ?: null;
+    $result = mergeAccounts($db, (int)($body['keep_account_id'] ?? 0), (int)($body['merge_account_id'] ?? 0), $user, $reason);
+    jsonResponse(true, $result, 'รวม ' . $result['merged_account_code'] . ' เข้า ' . $result['kept_account_code'] . ' แล้ว');
 }
