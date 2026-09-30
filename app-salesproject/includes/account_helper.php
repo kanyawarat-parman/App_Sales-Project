@@ -163,9 +163,9 @@ function searchAccountsFuzzy(PDO $db, string $q, int $limit = 10): array {
     $qLower = mb_strtolower($q, 'UTF-8');
     $target = normalizeAccountName($q);
     $rows = $db->query("
-        SELECT a.id, a.account_code, a.name, a.account_type,
+        SELECT a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name AS owner_name,
                (SELECT GROUP_CONCAT(e.erp_customer_code SEPARATOR ',') FROM account_erp_codes e WHERE e.account_id = a.id) AS erp_codes
-        FROM accounts a
+        FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id
     ")->fetchAll(PDO::FETCH_ASSOC);
     $scored = [];
     foreach ($rows as $r) {
@@ -177,7 +177,8 @@ function searchAccountsFuzzy(PDO $db, string $q, int $limit = 10): array {
         elseif ($target !== '' && str_contains($name, $target)) $score = 70;
         elseif (str_contains(mb_strtolower($r['name'], 'UTF-8'), $qLower)) $score = 65;   // ชื่อเดิมแบบตรงตัว (เผื่อคำที่ถูกตัดตอนทำรูปแบบ)
         elseif (accountNameMatch($target, $name) === 'similar') $score = 50;
-        if ($score) $scored[] = ['id' => $r['id'], 'account_code' => $r['account_code'], 'name' => $r['name'], 'account_type' => $r['account_type'], '_score' => $score];
+        if ($score) $scored[] = ['id' => $r['id'], 'account_code' => $r['account_code'], 'name' => $r['name'], 'account_type' => $r['account_type'],
+                                 'owner_user_id' => $r['owner_user_id'], 'owner_name' => $r['owner_name'], '_score' => $score];
     }
     usort($scored, fn($a, $b) => [$b['_score'], $a['name']] <=> [$a['_score'], $b['name']]);
     return array_map(function ($r) { unset($r['_score']); return $r; }, array_slice($scored, 0, $limit));

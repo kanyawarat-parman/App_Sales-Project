@@ -39,7 +39,7 @@ switch ($method) {
             case 'reassign': requireRole(['admin','salesadmin']); reassignAssignment($db, $user); break;
             case 'nudge':    requireRole(['admin','salesadmin']); nudgeAssignment($db, $user); break;
             // เลือก/เปลี่ยนลูกค้าของงานประมูล (งานที่ยังไม่ผูก เช่น ประกาศเก่า) — ธุรการขาย/admin ยืนยันลูกค้า (2026-09-29)
-            case 'link_account': requireRole(['admin','salesadmin']); linkAssignmentAccount($db, $user); break;
+            case 'link_account': linkAssignmentAccount($db, $user); break;   // ตรวจสิทธิ์ในฟังก์ชัน (sale เจ้าของงานย้อนหลังผูกครั้งแรกได้)
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -193,14 +193,34 @@ function getDetail(PDO $db, array $user): void {
 // ผูก/เปลี่ยนลูกค้าให้งานประมูล — body: project_code + account_id (ลูกค้าเดิม) หรือ new_account (สร้างใหม่ ผ่านกฎกันซ้ำ)
 // ใช้ทั้งงานที่ยังไม่ผูก และเปลี่ยนลูกค้าที่ผูกผิด (มีผลทุกงานของประกาศ — หน้าเว็บถามยืนยันก่อน)
 // ผูกที่ประกาศ + ดีล mirror ทุกแถวของประกาศนั้น (includes/account_helper.php linkAnnouncementAccount)
+// สิทธิ์: admin/salesadmin ผูก/เปลี่ยนได้ทุกงาน — sale เจ้าของงานย้อนหลัง (legacy_quotation) ผูกได้เฉพาะครั้งแรก (ยังไม่ผูก)
+//   เปลี่ยนลูกค้าที่ผูกแล้วยังเป็นของธุรการ/admin (ยืนยันจากผู้ใช้ 2026-09-29 — แทนช่อง "แก้ไขชื่อหน่วยงาน" แบบพิมพ์เอง)
 function linkAssignmentAccount(PDO $db, array $user): void {
     $body = getJsonBody();
-    $stmt = $db->prepare('SELECT announcement_id FROM project_assignments WHERE project_code = ?');
+    $stmt = $db->prepare('
+        SELECT pa.announcement_id, pa.assigned_to, ann.source_type, ann.account_id
+        FROM project_assignments pa JOIN announcements ann ON ann.id = pa.announcement_id
+        WHERE pa.project_code = ?
+    ');
     $stmt->execute([$body['project_code'] ?? '']);
-    $announcementId = (int)$stmt->fetchColumn();
-    if (!$announcementId) jsonResponse(false, null, 'ไม่พบงานประมูล', 404);
+    $job = $stmt->fetch();
+    if (!$job) jsonResponse(false, null, 'ไม่พบงานประมูล', 404);
+    $isLegacy = $job['source_type'] === 'legacy_quotation';
+
+    if (!in_array($user['role'], ['admin', 'salesadmin'], true)) {
+        $isOwnerFirstLink = $user['role'] === 'sale' && $isLegacy
+            && (int)$job['assigned_to'] === (int)$user['id'] && empty($job['account_id']);
+        if (!$isOwnerFirstLink) jsonResponse(false, null, 'ไม่มีสิทธิ์ผูก/เปลี่ยนลูกค้าของงานนี้', 403);
+    }
+
+    $announcementId = (int)$job['announcement_id'];
     $accountId = resolveChosenAccount($db, $body, $user);
     linkAnnouncementAccount($db, $announcementId, $accountId, (int)$user['id']);
+    // งานย้อนหลัง: ชื่อหน่วยงานตอนนำเข้าเป็นชื่อชั่วคราว → ใช้ชื่อลูกค้าที่ผูกแทน (เหมือนเดิมที่ sale แก้ชื่อหน่วยงานเอง)
+    if ($isLegacy) {
+        $db->prepare('UPDATE announcements ann JOIN accounts a ON a.id = ? SET ann.unit_name = a.name, ann.updated_by = ?, ann.updated_at = NOW() WHERE ann.id = ?')
+           ->execute([$accountId, $user['id'], $announcementId]);
+    }
     jsonResponse(true, ['account_id' => $accountId], 'ผูกลูกค้าแล้ว');
 }
 

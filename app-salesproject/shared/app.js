@@ -943,7 +943,8 @@ const AppBidAccountPicker = {
     allowCurrent: { type: Boolean, default: true },   // false = เลือกใหม่ได้แม้ประกาศผูกลูกค้าไว้แล้ว
     hideLabel: { type: Boolean, default: false },
     canChangeCurrent: { type: Boolean, default: false },
-    excludeAccountId: { type: [Number, String], default: null },   // ลูกค้าที่ผูกอยู่ (โหมดเปลี่ยนลูกค้าในหน้างานประมูล) — ไม่เสนอ/ไม่เลือกไว้ให้ และเปิดแบบเต็มทันที // true = มีปุ่ม [เปลี่ยน] ในบรรทัด "ผูกไว้แล้ว" (ธุรการ/admin — 2026-09-29)     // true = ไม่แสดงหัวข้อ "ลูกค้า (หน่วยงาน)" (หน้าที่มีหัวข้อกล่องอยู่แล้ว)
+    excludeAccountId: { type: [Number, String], default: null },
+    ignoreUnitName: { type: Boolean, default: false },   // งานประมูลย้อนหลัง: ชื่อหน่วยงานเป็นชื่อชั่วคราว — ไม่ใช้แนะนำ/ไม่เติมชื่อสร้างใหม่ เปิดค้นหาเลย (2026-09-29)   // ลูกค้าที่ผูกอยู่ (โหมดเปลี่ยนลูกค้าในหน้างานประมูล) — ไม่เสนอ/ไม่เลือกไว้ให้ และเปิดแบบเต็มทันที // true = มีปุ่ม [เปลี่ยน] ในบรรทัด "ผูกไว้แล้ว" (ธุรการ/admin — 2026-09-29)     // true = ไม่แสดงหัวข้อ "ลูกค้า (หน่วยงาน)" (หน้าที่มีหัวข้อกล่องอยู่แล้ว)
   },
   emits: ['update:modelValue'],
   data() {
@@ -1008,6 +1009,13 @@ const AppBidAccountPicker = {
       this.assignmentCount = Number(res.data.assignment_count || 0);
       const excluded = Number(this.excludeAccountId || 0);
       this.suggestions = (res.data.suggestions || []).filter(x => Number(x.id) !== excluded);
+      if (this.ignoreUnitName) {
+        this.suggestions = []; this.newName = ''; this.newType = 'government';
+        this.choice = ''; this.showSearch = true; this.needsDecision = false; this.expanded = true;
+        this.emitValue();
+        this.$nextTick(() => this.$refs.searchInput?.focus());
+        return;
+      }
       if (excluded) this.choice = '';   // เปลี่ยนลูกค้า: ให้เลือกเองทุกครั้ง
       else if (res.data.preselect_id) this.choice = 'id:' + res.data.preselect_id;
       else if (!this.suggestions.length) this.choice = 'new';
@@ -1088,7 +1096,8 @@ const AppBidAccountPicker = {
   <div v-if="loading" class="text-sm text-slate-400 py-2">กำลังค้นหาลูกค้าที่ตรงกับประกาศ...</div>
   <template v-else>
     <!-- ชื่อหน่วยงานจากประกาศ แสดงทุกกรณี (ผูกแล้ว / บรรทัดสรุป / แบบเต็ม) ให้ผู้ใช้เทียบกับลูกค้าที่ผูก (ยืนยันจากผู้ใช้ 2026-09-29) -->
-    <div class="text-sm text-slate-500 mb-2">ชื่อหน่วยงานในประกาศ: <span class="font-semibold text-slate-800">"{{ unitName || '-' }}"</span></div>
+    <div v-if="!ignoreUnitName" class="text-sm text-slate-500 mb-2">ชื่อหน่วยงานในประกาศ: <span class="font-semibold text-slate-800">"{{ unitName || '-' }}"</span></div>
+    <div v-else class="text-sm text-slate-500 mb-2">งานย้อนหลัง — ค้นหาลูกค้าจริงของงานนี้ ถ้าไม่มีในระบบให้เลือก "สร้างลูกค้าใหม่"</div>
     <div v-if="current && !changingCurrent" class="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-teal-50 ring-1 ring-teal-200 text-sm">
       <span class="font-mono text-xs text-teal-700 bg-white rounded px-1.5 py-0.5">{{ current.account_code }}</span>
       <span class="font-semibold text-slate-800">{{ current.name }}</span>
@@ -1150,8 +1159,12 @@ const AppBidAccountPicker = {
 
       <div v-if="searchOpen" class="mb-3">
         <div class="text-xs font-bold text-slate-500 mb-1.5">{{ suggestions.length ? 'ไม่ใช่รายที่แนะนำ? ค้นหาลูกค้าอื่น' : 'ค้นหาลูกค้าในระบบ' }}</div>
-        <input ref="searchInput" v-model="searchQ" @input="onSearch" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white"
-          placeholder="🔍 พิมพ์ชื่อ / รหัสลูกค้า / รหัส ERP">
+        <!-- ไอคอนแว่นขยายเส้นสีเทา แบบเดียวกับช่องค้นหาหน้างานประมูล/งานขายตรง (แทน emoji — 2026-09-29) -->
+        <div class="relative">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input ref="searchInput" v-model="searchQ" @input="onSearch" class="w-full border border-slate-300 rounded-xl pl-9 pr-3.5 py-2.5 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white"
+            placeholder="พิมพ์ชื่อ / รหัสลูกค้า / รหัส ERP">
+        </div>
         <!-- ผลค้นหาแบบกระชับ แถวละ 1 บรรทัด กล่องสูงไม่เกิน ~5 แถว เลื่อนดูในกล่อง (เดิมการ์ดใหญ่ ยาวลงมาจนดันส่วนอื่น — 2026-09-29) -->
         <div v-if="searchQ.trim() || pickedExtra" class="mt-1.5 max-h-52 overflow-y-auto rounded-xl ring-1 ring-slate-200 bg-white">
         <label v-for="r in shownResults" :key="'r' + r.id" class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 last:border-b-0 cursor-pointer"
@@ -1159,7 +1172,9 @@ const AppBidAccountPicker = {
           <input type="radio" :value="'id:' + r.id" v-model="choice" @change="collapseAfterPick" class="accent-teal-600 w-4 h-4 shrink-0">
           <span class="font-mono text-[11px] text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 whitespace-nowrap shrink-0">{{ r.account_code }}</span>
           <span class="text-sm text-slate-800 truncate">{{ r.name }}</span>
-          <span class="ml-auto shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded-full"
+          <!-- ผู้ดูแลลูกค้า (Account Owner — 2026-09-30) ให้เห็นว่าเป็นของใคร / ส่วนกลาง -->
+          <span class="ml-auto shrink-0 text-xs" :class="r.owner_name ? 'text-slate-500' : 'text-slate-400'">{{ r.owner_name || 'ส่วนกลาง' }}</span>
+          <span class="shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded-full"
             :class="r.account_type === 'government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ r.account_type === 'government' ? 'ราชการ' : 'เอกชน' }}</span>
         </label>
           <div v-if="searchQ.trim() && searched && !extraResults.length" class="text-sm text-slate-400 px-3 py-2">ไม่พบลูกค้าที่ชื่อใกล้เคียง — เลือก "สร้างลูกค้าใหม่" ด้านล่าง</div>

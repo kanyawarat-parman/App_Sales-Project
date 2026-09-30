@@ -67,11 +67,11 @@
               <table class="w-full border-collapse text-sm">
                 <thead>
                   <tr class="bg-slate-50">
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ลูกค้า</th>
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ดีล/งานที่ชนะ</th>
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">Sale</th>
-                    <th class="px-4 py-3 text-right text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">มูลค่า</th>
-                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">รอมาแล้ว</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">ลูกค้า</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">ดีล/งานที่ชนะ</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">Sale</th>
+                    <th class="px-4 py-3 text-right text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">มูลค่า</th>
+                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">รอมาแล้ว</th>
                     <th class="px-4 py-3 border-b-2 border-slate-200"></th>
                   </tr>
                 </thead>
@@ -121,6 +121,14 @@
                 :class="phoneFixOnly ? 'bg-amber-500 text-white' : 'bg-amber-50 ring-1 ring-amber-200 text-amber-800 hover:bg-amber-100'">
                 เบอร์ต้องแก้ไข {{ phoneFixCount }}
               </button>
+              <!-- ตัวกรองผู้ดูแลลูกค้า (Account Owner — 2026-09-30) ไม่ซ่อนลูกค้า แค่กรองดู — sale เริ่มที่ "ลูกค้าของฉัน" / อื่นๆ เริ่มที่ "ทั้งหมด" -->
+              <select v-model="ownerFilter"
+                class="border border-slate-200 rounded-xl px-3 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white cursor-pointer">
+                <option value="all">ผู้ดูแล: ทั้งหมด</option>
+                <option v-if="isSale" value="mine">ลูกค้าของฉัน</option>
+                <option value="central">ลูกค้าส่วนกลาง</option>
+                <option v-for="u in salesUsers" :key="u.id" :value="String(u.id)">{{ u.full_name }}</option>
+              </select>
               <input v-model="searchQuery" placeholder="ค้นหาชื่อ / รหัสลูกค้า / รหัส ERP / เบอร์..."
                 class="border border-slate-200 rounded-xl px-3.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
               <button v-if="filteredAccounts.length" @click="exportAccounts" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer whitespace-nowrap">
@@ -133,25 +141,33 @@
               </button>
             </div>
           </div>
+          <!-- คำอธิบายผู้ดูแลลูกค้า (Account Owner) — สีเทาไม่มีกรอบ = คำอธิบาย (ยืนยันจากผู้ใช้ 2026-09-30) -->
+          <div class="px-5 py-3 border-b border-slate-100 text-sm text-slate-500 leading-relaxed">
+            <div><b class="text-slate-700">ผู้ดูแล</b> = Sale ที่ดูแลลูกค้ารายนี้ · <b class="text-slate-700">ลูกค้าส่วนกลาง</b> = ยังไม่มีผู้ดูแล เช่น ลูกค้าจากงานประมูลที่มอบหมายตามเวร</div>
+            <div>ทุกคนเห็นและสร้างดีลกับลูกค้าทุกรายได้ · ลูกค้าที่ Sale สร้างเองมีผู้ดูแลเป็น Sale คนนั้น · เปลี่ยนผู้ดูแลได้ที่ธุรการขาย / admin</div>
+          </div>
           <div>
             <div v-if="loading" class="flex flex-col items-center justify-center py-12 text-slate-400">
               <div class="spinner w-8 h-8 mx-auto"></div>
             </div>
             <div v-else-if="!filteredAccounts.length" class="flex flex-col items-center justify-center py-14 text-slate-400">
               <div class="text-4xl mb-3">🏢</div>
-              <p class="text-sm">{{ phoneFixOnly ? 'ไม่มีเบอร์ที่ต้องแก้ไขแล้ว' : 'ยังไม่มีหน่วยงาน/บริษัทในระบบ' }}</p>
+              <p class="text-sm">{{ phoneFixOnly ? 'ไม่มีเบอร์ที่ต้องแก้ไขแล้ว' : ownerFilter !== 'all' ? 'ไม่พบลูกค้าตามผู้ดูแลที่เลือก' : 'ยังไม่มีหน่วยงาน/บริษัทในระบบ' }}</p>
+              <button v-if="ownerFilter !== 'all'" @click="ownerFilter = 'all'"
+                class="mt-2 px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ดูลูกค้าทั้งหมด</button>
             </div>
             <div v-else class="overflow-x-auto">
               <table class="w-full border-collapse text-sm">
                 <thead>
                   <tr class="bg-slate-50">
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">รหัสลูกค้า</th>
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ชื่อ</th>
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">ประเภท</th>
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">รหัส ERP</th>
-                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">เบอร์โทร</th>
-                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">จำนวนผู้ติดต่อ</th>
-                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide border-b-2 border-slate-200">จำนวนดีล</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">รหัสลูกค้า</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">ชื่อ</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">ประเภท</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">ผู้ดูแล</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">รหัส ERP</th>
+                    <th class="px-4 py-3 text-left text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">เบอร์โทร</th>
+                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">จำนวนผู้ติดต่อ</th>
+                    <th class="px-4 py-3 text-center text-[.75rem] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b-2 border-slate-200">จำนวนดีล</th>
                     <th class="px-4 py-3 border-b-2 border-slate-200"></th>
                   </tr>
                 </thead>
@@ -164,6 +180,10 @@
                         :class="a.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">
                         {{ a.account_type==='government' ? 'ราชการ' : 'เอกชน' }}
                       </span>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <span v-if="a.owner_name" class="text-slate-700">{{ a.owner_name }}</span>
+                      <span v-else class="text-slate-400">ลูกค้าส่วนกลาง</span>
                     </td>
                     <td class="px-4 py-3 text-slate-500 font-mono text-xs">{{ a.erp_codes || '-' }}</td>
                     <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
@@ -234,7 +254,17 @@
                   class="flex-1 border rounded-lg py-2 text-sm font-medium" :class="accountForm.account_type==='private' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'">เอกชน</button>
               </div>
             </div>
-            <div></div>
+            <!-- Sale ผู้ดูแลลูกค้า (Account Owner — 2026-09-30): เปลี่ยนได้เฉพาะธุรการ/admin (API บังคับซ้ำ) / ว่าง = ลูกค้าส่วนกลาง -->
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">Sale ผู้ดูแลลูกค้า</label>
+              <select v-if="canChangeOwner" v-model="accountForm.owner_user_id"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white cursor-pointer">
+                <option value="">ลูกค้าส่วนกลาง (ไม่มีผู้ดูแล)</option>
+                <option v-for="u in salesUsers" :key="u.id" :value="String(u.id)">{{ u.full_name }}</option>
+              </select>
+              <div v-else class="py-2.5 text-sm" :class="ownerDisplayName ? 'text-slate-700' : 'text-slate-400'">{{ ownerDisplayName || 'ลูกค้าส่วนกลาง' }}</div>
+            </div>
+            <p class="col-span-2 text-sm text-slate-500 leading-relaxed m-0 -mt-2">ผู้ดูแลบอกว่าใครดูแลลูกค้ารายนี้ ทุกคนยังเห็นและสร้างดีลได้ — เปลี่ยนผู้ดูแลได้เฉพาะธุรการขาย / admin</p>
             <!-- เบอร์โทร 1 ช่อง = 1 เบอร์ เก็บตัวเลขล้วน (มาตรฐาน CRM — ยืนยันจากผู้ใช้ 2026-09-28) พิมพ์ขีดได้ ระบบตัดออกเอง
                  ข้อความสีส้มใต้ช่อง = รูปแบบยังไม่ถูก รวมถึงเบอร์เก่าที่ต้องแก้ -->
             <div class="flex flex-col gap-1">
@@ -379,7 +409,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=47"></script>
+<script src="shared/app.js?v=63"></script>
 <script>
 const { createApp } = Vue;
 
@@ -394,8 +424,10 @@ createApp({
       accounts: [],
       searchQuery: '',
       phoneFixOnly: false,   // ตัวกรอง "เบอร์ต้องแก้ไข" (2026-09-28)
+      ownerFilter: 'all',    // ตัวกรองผู้ดูแล: all / mine / central / user id (2026-09-30)
+      salesUsers: [],        // รายชื่อ sale สำหรับตัวกรองและช่องผู้ดูแล
       dupDialog: { list: null, confirmLabel: '' },   // หน้าต่างพบลูกค้าที่อาจซ้ำ (2026-09-28)
-      accountForm: { id: null, account_code: '', account_type: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' },
+      accountForm: { id: null, account_code: '', account_type: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' },
       accountDetail: { contacts: [], deals: [], erp_codes: [] },
       erpForm: { show: false, account_erp_code_id: null, erp_customer_code: '', erp_role: '', is_primary: false, note: '' },
       // บทบาทรหัส ERP ตาม SAP Partner Functions — ต้องตรงกับ erpRoles() ใน api/accounts.php
@@ -422,7 +454,11 @@ createApp({
       const q = this.searchQuery.trim().toLowerCase();
       const qDigits = q.replace(/\D/g, '');   // ค้นหาเบอร์แบบพิมพ์ขีดหรือไม่มีขีดก็เจอ
       const qName = this.normalizeAccountName(q);   // ค้นชื่อแบบตัด บริษัท/จำกัด/ช่องว่าง (2026-09-29) เช่น "เอคลาส" เจอ "เอ คลาส แมนเนจเม้นท์"
-      const list = this.phoneFixOnly ? this.accounts.filter(a => Number(a.phone_needs_fix) === 1) : this.accounts;
+      const f = this.ownerFilter;
+      const byOwner = f === 'all' ? this.accounts
+        : f === 'central' ? this.accounts.filter(a => !a.owner_user_id)
+        : this.accounts.filter(a => Number(a.owner_user_id) === Number(f === 'mine' ? this.currentUser?.id : f));
+      const list = this.phoneFixOnly ? byOwner.filter(a => Number(a.phone_needs_fix) === 1) : byOwner;
       if (!q) return list;
       return list.filter(a => [a.name, a.account_code, a.erp_codes, a.tax_id].some(v => (v || '').toLowerCase().includes(q))
         || (qName && this.normalizeAccountName(a.name).includes(qName))
@@ -432,6 +468,13 @@ createApp({
     // เพิ่ม/แก้/ลบรหัส ERP: admin / ธุรการขาย (API บังคับซ้ำ)
     canEditErp() { return ['admin', 'salesadmin'].includes(this.currentUser?.role); },
     isSale() { return this.currentUser?.role === 'sale'; },
+    // เปลี่ยนผู้ดูแลลูกค้า: ธุรการขาย / admin (API บังคับซ้ำ)
+    canChangeOwner() { return ['admin', 'salesadmin'].includes(this.currentUser?.role); },
+    // ชื่อผู้ดูแลที่แสดงให้ role ที่เปลี่ยนไม่ได้ — ลูกค้าใหม่ที่ sale สร้างเอง ผู้ดูแล = ตัวเอง
+    ownerDisplayName() {
+      if (!this.accountForm.id && this.isSale) return this.currentUser?.full_name || '';
+      return this.accountForm.owner_name || '';
+    },
   },
   async mounted() {
     try {
@@ -441,7 +484,8 @@ createApp({
     } catch { window.location.href = 'login.html'; return; }
     this.authReady = true;
     if (new URLSearchParams(window.location.search).get('tab') === 'erp_pending') this.activeTab = 'erp_pending';
-    await Promise.all([this.loadAccounts(), this.loadErpPending()]);
+    if (this.isSale) this.ownerFilter = 'mine';
+    await Promise.all([this.loadAccounts(), this.loadErpPending(), this.loadSalesUsers()]);
   },
   methods: {
     ...SharedMethods,
@@ -451,6 +495,11 @@ createApp({
       const res = await apiCall('GET', 'api/accounts.php?action=list');
       if (res.success) this.accounts = res.data;
       this.loading = false;
+    },
+
+    async loadSalesUsers() {
+      const res = await apiCall('GET', 'api/users.php?action=sales');
+      if (res.success) this.salesUsers = res.data;
     },
 
     setTab(tab) {
@@ -467,11 +516,12 @@ createApp({
 
     // Export ตามที่แสดงบนหน้าจอ (ผลค้นหาปัจจุบัน) — ใช้ exportExcel() กลางใน shared/app.js (2026-09-28)
     exportAccounts() {
-      const headers = ['รหัสลูกค้า', 'ชื่อ', 'ประเภท', 'เลขประจำตัวผู้เสียภาษี', 'รหัส ERP', 'เบอร์สำนักงาน', 'เบอร์มือถือ', 'ที่อยู่', 'จำนวนผู้ติดต่อ', 'จำนวนดีล'];
+      const headers = ['รหัสลูกค้า', 'ชื่อ', 'ประเภท', 'ผู้ดูแล', 'เลขประจำตัวผู้เสียภาษี', 'รหัส ERP', 'เบอร์สำนักงาน', 'เบอร์มือถือ', 'ที่อยู่', 'จำนวนผู้ติดต่อ', 'จำนวนดีล'];
       const rows = this.filteredAccounts.map(a => [
         a.account_code,
         a.name,
         a.account_type === 'government' ? 'ราชการ' : 'เอกชน',
+        a.owner_name || 'ลูกค้าส่วนกลาง',
         a.tax_id || '',
         a.erp_codes || '',
         this.formatPhone(a.phone, a.phone_ext),
@@ -518,11 +568,12 @@ createApp({
     async openAccountModal(a) {
       this.showContactForm = false;
       if (a) {
-        this.accountForm = { id: a.id, account_code: a.account_code, account_type: a.account_type, name: a.name, tax_id: a.tax_id || '',
+        this.accountForm = { id: a.id, account_code: a.account_code, account_type: a.account_type,
+                             owner_user_id: a.owner_user_id ? String(a.owner_user_id) : '', owner_name: a.owner_name || '', name: a.name, tax_id: a.tax_id || '',
                              phone: a.phone || '', phone_ext: a.phone_ext || '', mobile: a.mobile || '', address: a.address || '', note: a.note || '' };
         await this.loadAccountDetail(a.id);
       } else {
-        this.accountForm = { id: null, account_code: '', account_type: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' };
+        this.accountForm = { id: null, account_code: '', account_type: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' };
         this.accountDetail = { contacts: [], deals: [], erp_codes: [] };
       }
       this.erpForm.show = false;
@@ -539,8 +590,11 @@ createApp({
     // ตอบ 409 พร้อม data.duplicates → เปิดหน้าต่างให้เลือกรายเดิม หรือยืนยันว่าเป็นคนละราย (ส่งซ้ำพร้อม confirm_not_duplicate)
     async saveAccount(confirmNotDuplicate) {
       const isCreate = !this.accountForm.id;
-      const res = await apiCall('POST', `api/accounts.php?action=${isCreate ? 'create' : 'update'}`,
-        { ...this.accountForm, confirm_not_duplicate: confirmNotDuplicate });
+      // ส่งผู้ดูแลเฉพาะ role ที่เปลี่ยนได้ — role อื่น API คงค่าเดิม / sale สร้างใหม่ = ตัวเองอัตโนมัติ
+      const { owner_user_id, owner_name, ...form } = this.accountForm;
+      const body = { ...form, confirm_not_duplicate: confirmNotDuplicate };
+      if (this.canChangeOwner) body.owner_user_id = owner_user_id ? Number(owner_user_id) : null;
+      const res = await apiCall('POST', `api/accounts.php?action=${isCreate ? 'create' : 'update'}`, body);
       if (!res.success && res.data?.duplicates) {
         this.dupDialog = { list: res.data.duplicates, confirmLabel: isCreate ? 'ยืนยันว่าเป็นคนละราย — สร้างใหม่' : 'ยืนยันว่าเป็นคนละราย — บันทึก' };
         return;
@@ -551,6 +605,7 @@ createApp({
           // สร้างสำเร็จแล้ว เปลี่ยนฟอร์มเป็นโหมดดูรายละเอียดของหน่วยงานที่เพิ่งสร้าง ไม่ปิด modal เพื่อให้เพิ่มผู้ติดต่อได้ต่อทันที
           this.accountForm.id = res.data.id;
           this.accountForm.account_code = res.data.account_code;
+          this.accountForm.owner_name = this.accounts.find(a => Number(a.id) === Number(res.data.id))?.owner_name || '';
           this.accountDetail = { contacts: [], deals: [], erp_codes: [] };
         } else {
           this.closeModal();

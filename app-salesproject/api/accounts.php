@@ -90,10 +90,11 @@ function recentAccounts(PDO $db, array $user, int $limit = 10): array {
     $where = 'pi.account_id IS NOT NULL'; $params = [];
     if ($user['role'] === 'sale') { $where .= ' AND pi.assigned_to = ?'; $params[] = $user['id']; }
     $stmt = $db->prepare("
-        SELECT a.id, a.account_code, a.name, a.account_type, MAX(pi.updated_at) AS last_activity
+        SELECT a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name AS owner_name, MAX(pi.updated_at) AS last_activity
         FROM pipeline_items pi JOIN accounts a ON a.id = pi.account_id
+        LEFT JOIN users ou ON ou.id = a.owner_user_id
         WHERE $where
-        GROUP BY a.id, a.account_code, a.name, a.account_type
+        GROUP BY a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name
         ORDER BY last_activity DESC
         LIMIT $limit
     ");
@@ -101,8 +102,9 @@ function recentAccounts(PDO $db, array $user, int $limit = 10): array {
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (count($rows) < $limit) {
         $ids = array_column($rows, 'id') ?: [0];
-        $more = $db->query('SELECT id, account_code, name, account_type, created_at AS last_activity FROM accounts
-                            WHERE id NOT IN (' . implode(',', array_map('intval', $ids)) . ') ORDER BY created_at DESC, id DESC LIMIT ' . ($limit - count($rows)))
+        $more = $db->query('SELECT a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name AS owner_name, a.created_at AS last_activity
+                            FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id
+                            WHERE a.id NOT IN (' . implode(',', array_map('intval', $ids)) . ') ORDER BY a.created_at DESC, a.id DESC LIMIT ' . ($limit - count($rows)))
                    ->fetchAll(PDO::FETCH_ASSOC);
         $rows = array_merge($rows, $more);
     }
@@ -141,11 +143,31 @@ function createAccount(PDO $db, array $user): void {
     $warn = guardDuplicateAccount($db, $body, $name, $taxId, 0, true, true);
     $note = trim($body['note'] ?? '');
     if ($warn) $note = trim($note . "\n" . confirmedNotDuplicateNote($warn, $user));
+    // ผู้ดูแลลูกค้า (Account Owner — 2026-09-30): sale สร้างเอง (ขายตรง) = sale คนนั้น / ธุรการ-admin เลือกได้ ไม่เลือก = ลูกค้าส่วนกลาง
+    $ownerId = $user['role'] === 'sale' ? (int)$user['id']
+             : (canChangeAccountOwner($user) ? validAccountOwner($db, $body['owner_user_id'] ?? null) : null);
     $accountCode = nextAccountCode($db, (int)$user['id']);
-    $stmt = $db->prepare('INSERT INTO accounts (account_code, account_type, name, tax_id, phone, phone_ext, mobile, address, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$accountCode, $type, $name, $taxId, $phone, $phoneExt, $mobile,
+    $stmt = $db->prepare('INSERT INTO accounts (account_code, account_type, owner_user_id, name, tax_id, phone, phone_ext, mobile, address, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt->execute([$accountCode, $type, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile,
                     trim($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $user['id']]);
-    jsonResponse(true, ['id' => (int)$db->lastInsertId(), 'account_code' => $accountCode, 'name' => $name, 'account_type' => $type], 'สร้างหน่วยงาน/บริษัทสำเร็จ');
+    jsonResponse(true, ['id' => (int)$db->lastInsertId(), 'account_code' => $accountCode, 'name' => $name, 'account_type' => $type, 'owner_user_id' => $ownerId], 'สร้างหน่วยงาน/บริษัทสำเร็จ');
+}
+
+// ─── ผู้ดูแลลูกค้า (Account Owner / House Account แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-09-30) ───
+// ว่าง = ลูกค้าส่วนกลาง / ผู้ดูแลไม่จำกัดสิทธิ์การเห็นหรือขาย — ใช้บอกว่าใครดูแลและใช้กรอง
+// เปลี่ยนผู้ดูแลได้เฉพาะธุรการ/admin (สร้างดีลกับลูกค้าส่วนกลางไม่ทำให้ผู้ดูแลเปลี่ยน)
+function canChangeAccountOwner(array $user): bool {
+    return in_array($user['role'], ['admin', 'salesadmin'], true);
+}
+
+// ผู้ดูแลต้องเป็น sale ที่ยังใช้งานอยู่ — ว่าง/0 = ลูกค้าส่วนกลาง
+function validAccountOwner(PDO $db, $ownerId): ?int {
+    $ownerId = (int)$ownerId;
+    if (!$ownerId) return null;
+    $stmt = $db->prepare("SELECT id FROM users WHERE id = ? AND role = 'sale' AND is_active = 1");
+    $stmt->execute([$ownerId]);
+    if (!$stmt->fetchColumn()) jsonResponse(false, null, 'ผู้ดูแลลูกค้าต้องเป็น Sale ที่ยังใช้งานอยู่', 400);
+    return $ownerId;
 }
 
 // รายชื่อหน่วยงาน/บริษัททั้งหมด สำหรับหน้า accounts.html — พร้อมจำนวน contact และจำนวนดีลที่ผูกไว้ (ใช้ตัดสินใจว่าหน่วยงานนี้มีความเคลื่อนไหวมากแค่ไหน)
@@ -157,6 +179,7 @@ function listAccounts(PDO $db): void {
               . ' OR EXISTS (SELECT 1 FROM contacts cf WHERE cf.account_id = a.id AND (' . phoneNeedsFixSql('cf.phone') . ' OR ' . phoneNeedsFixSql('cf.office_phone') . '))';
     $stmt = $db->query("
         SELECT a.id, a.account_code, a.account_type, a.name, a.tax_id, a.phone, a.phone_ext, a.mobile, a.address, a.note, a.created_at,
+               a.owner_user_id, ou.full_name AS owner_name,
                IF($needsFix, 1, 0) AS phone_needs_fix,
                (SELECT GROUP_CONCAT(e.erp_customer_code ORDER BY e.is_primary DESC, e.erp_customer_code SEPARATOR ', ')
                   FROM account_erp_codes e WHERE e.account_id = a.id) AS erp_codes,
@@ -169,6 +192,7 @@ function listAccounts(PDO $db): void {
                     AND NOT EXISTS (SELECT 1 FROM pipeline_items pi2 WHERE pi2.announcement_id = ann.id)
                ) AS deal_count
         FROM accounts a
+        LEFT JOIN users ou ON ou.id = a.owner_user_id
         ORDER BY a.name
     ");
     jsonResponse(true, $stmt->fetchAll());
@@ -177,7 +201,7 @@ function listAccounts(PDO $db): void {
 // รายละเอียดหน่วยงาน/บริษัท 1 รายการ + ผู้ติดต่อทั้งหมด + ดีลที่เคยผูกไว้ทั้งหมด (ทั้งขายตรงและ mirror งานประมูล)
 function getAccountDetail(PDO $db, int $id): void {
     if (!$id) jsonResponse(false, null, 'กรุณาระบุ id', 400);
-    $stmt = $db->prepare('SELECT * FROM accounts WHERE id = ?');
+    $stmt = $db->prepare('SELECT a.*, ou.full_name AS owner_name FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id WHERE a.id = ?');
     $stmt->execute([$id]);
     $account = $stmt->fetch();
     if (!$account) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
@@ -236,7 +260,7 @@ function updateAccount(PDO $db, array $user): void {
     // account_code ไม่รับจากหน้าเว็บ — รหัสไม่เปลี่ยนหลังออกแล้ว
     $taxId = normalizeTaxId($body['tax_id'] ?? '');
     // เบอร์: ตรวจรูปแบบเฉพาะช่องที่แก้ — เบอร์เก่าที่ยังไม่ได้แก้ไม่ขวางการบันทึกช่องอื่น (includes/phone_helper.php)
-    $old = $db->prepare('SELECT name, tax_id, phone, mobile FROM accounts WHERE id = ?');
+    $old = $db->prepare('SELECT name, tax_id, phone, mobile, owner_user_id FROM accounts WHERE id = ?');
     $old->execute([$id]);
     $oldRow = $old->fetch();
     if (!$oldRow) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
@@ -247,8 +271,12 @@ function updateAccount(PDO $db, array $user): void {
     $warn = guardDuplicateAccount($db, $body, $name, $taxId, $id, $name !== $oldRow['name'], $taxId !== null && $taxId !== $oldRow['tax_id']);
     $note = trim((string)($body['note'] ?? ''));
     if ($warn) $note = trim($note . "\n" . confirmedNotDuplicateNote($warn, $user));
-    $db->prepare('UPDATE accounts SET account_type = ?, name = ?, tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
-       ->execute([$type, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $id]);
+    // ผู้ดูแลลูกค้า: ธุรการ/admin เปลี่ยนได้ (ส่ง owner_user_id มา) / role อื่นคงค่าเดิมเสมอ ไม่ว่าหน้าเว็บส่งอะไรมา
+    $ownerId = (canChangeAccountOwner($user) && array_key_exists('owner_user_id', $body))
+             ? validAccountOwner($db, $body['owner_user_id'])
+             : ($oldRow['owner_user_id'] !== null ? (int)$oldRow['owner_user_id'] : null);
+    $db->prepare('UPDATE accounts SET account_type = ?, owner_user_id = ?, name = ?, tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
+       ->execute([$type, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $id]);
     jsonResponse(true, null, 'บันทึกสำเร็จ');
 }
 

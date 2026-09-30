@@ -652,6 +652,10 @@
                 <button type="button" @click="removeSpAccount"
                   class="border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-pointer p-1">✕</button>
               </div>
+              <!-- ลูกค้ามี Sale คนอื่นดูแล — แจ้งให้รู้ ไม่บล็อก (Account Owner — ยืนยันจากผู้ใช้ 2026-09-30) -->
+              <p v-if="spAccountOwnedByOther" class="mt-1.5 mb-0 text-sm text-amber-700">
+                ลูกค้ารายนี้มี <b>{{ spForm.account_owner_name }}</b> ดูแลอยู่ — สร้างดีลได้ แต่ควรแจ้งหรือคุยกันก่อน
+              </p>
 
               <!-- ยังไม่ได้เลือก: ช่องค้นหา -->
               <div v-else class="relative">
@@ -668,7 +672,8 @@
                     class="px-3.5 py-2.5 cursor-pointer hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50">
                     <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="a.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ a.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
                     <span v-if="a.account_code" class="font-mono text-[11px] text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 shrink-0">{{ a.account_code }}</span>
-                    <span class="text-sm">{{ a.name }}</span>
+                    <span class="text-sm flex-1 min-w-0">{{ a.name }}</span>
+                    <span class="text-xs shrink-0" :class="a.owner_name ? 'text-slate-500' : 'text-slate-400'">{{ a.owner_name || 'ลูกค้าส่วนกลาง' }}</span>
                   </div>
                   <div v-if="!spAccountQuery.trim()" class="px-3.5 py-2 text-xs text-slate-400 border-b border-slate-50">พิมพ์ชื่อ / รหัสลูกค้า / รหัส ERP เพื่อค้นหาเพิ่ม</div>
                   <div @click="openSpAccountCreatePanel" class="px-3.5 py-2.5 cursor-pointer hover:bg-teal-50 text-teal-700 text-sm font-medium flex items-center gap-1.5">
@@ -1429,7 +1434,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=48"></script>
+<script src="shared/app.js?v=63"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1481,6 +1486,13 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     };
   },
   computed: {
+    // ลูกค้าที่เลือกมี Sale คนอื่นเป็นผู้ดูแล (ไม่ใช่ลูกค้าส่วนกลาง และไม่ใช่ sale ของดีลนี้)
+    spAccountOwnedByOther() {
+      const owner = Number(this.spForm?.account_owner_id || 0);
+      if (!owner) return false;
+      const dealSale = Number(this.spForm.assigned_to || (this.currentUser?.role === 'sale' ? this.currentUser.id : 0));
+      return owner !== dealSale;
+    },
     spActiveContactRoles() { return this.contactRoles.filter(r => Number(r.is_active) === 1); },
     spSelectedContactCount() { return this.spContactRows.filter(c => c.selected).length; },
     // แถบสรุปคนที่เลือก — คนหลักขึ้นก่อน
@@ -2161,6 +2173,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spForm.account_is_new = false;
       this.spForm.account_name = a.name;
       this.spForm.account_type = a.account_type;
+      this.spForm.account_owner_id = a.owner_user_id || null;   // ผู้ดูแลลูกค้า — ใช้แจ้งเตือนเท่านั้น (2026-09-30)
+      this.spForm.account_owner_name = a.owner_name || '';
       this.spForm.client_name = a.name;
       // เติม "ประเภทลูกค้า" (segment) จากประเภทหน่วยงาน — เดิมให้เลือกซ้ำเองจนข้อมูลขัดกัน (ลูกค้าราชการ แต่ดีลบันทึกเป็น Private)
       // ยังแก้เองได้ในฟอร์มถ้าไม่ตรง (ยืนยันจากผู้ใช้ 2026-09-23)
@@ -2177,6 +2191,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spForm.account_is_new = false;
       this.spForm.account_name = '';
       this.spForm.account_type = '';
+      this.spForm.account_owner_id = null;
+      this.spForm.account_owner_name = '';
     },
     openSpAccountCreatePanel() {
       this.spAccountCreating = true;
@@ -2205,7 +2221,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         { name, account_type: this.spNewAccountType, confirm_not_duplicate: confirmNotDuplicate });
       if (!res.success && res.data?.duplicates) { this.spDupDialog = { list: res.data.duplicates, name }; return; }
       if (!res.success) { await this.showAlert(res.message || 'สร้างหน่วยงาน/บริษัทไม่สำเร็จ', 'error'); return; }
-      this.selectSpAccount({ id: res.data.id, name: res.data.name, account_type: res.data.account_type });
+      this.selectSpAccount({ id: res.data.id, name: res.data.name, account_type: res.data.account_type, owner_user_id: res.data.owner_user_id });
     },
 
     // เลือกรายเดิมจากหน้าต่างพบลูกค้าซ้ำ → ผูกดีลกับลูกค้ารายนั้นแทนการสร้างใหม่
