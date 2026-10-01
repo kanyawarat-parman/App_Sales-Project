@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/project_code_helper.php';
 require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
+require_once __DIR__ . '/../includes/usage_helper.php';
 require_once __DIR__ . '/../api/line.php';
 
 $user   = requireAuth();
@@ -40,6 +41,10 @@ switch ($method) {
             case 'nudge':    requireRole(['admin','salesadmin']); nudgeAssignment($db, $user); break;
             // เลือก/เปลี่ยนลูกค้าของงานประมูล (งานที่ยังไม่ผูก เช่น ประกาศเก่า) — ธุรการขาย/admin ยืนยันลูกค้า (2026-09-29)
             case 'link_account': linkAssignmentAccount($db, $user); break;   // ตรวจสิทธิ์ในฟังก์ชัน (sale เจ้าของงานย้อนหลังผูกครั้งแรกได้)
+            // ปุ่ม "ตรวจแล้ว — รอเลื่อนสถานะถัดไป" ของงานประมูลย้อนหลัง (2026-09-30) — ตรวจสิทธิ์ในฟังก์ชัน
+            case 'confirm_import_review': confirmBidImportReview($db, $user); break;
+            // "ไม่ใช่งานของฉัน" ของงานย้อนหลัง — sale เจ้าของงานโอนให้ sale คนอื่นเอง (ยืนยันจากผู้ใช้ 2026-10-01) — ตรวจสิทธิ์ในฟังก์ชัน
+            case 'transfer_import': transferBidImport($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -222,6 +227,58 @@ function linkAssignmentAccount(PDO $db, array $user): void {
            ->execute([$accountId, $user['id'], $announcementId]);
     }
     jsonResponse(true, ['account_id' => $accountId], 'ผูกลูกค้าแล้ว');
+}
+
+// ปุ่ม "ตรวจแล้ว — รอเลื่อนสถานะถัดไป" ของงานประมูลย้อนหลังที่นำเข้า (ยืนยันจากผู้ใช้ 2026-09-30)
+// นำเข้าที่ "ชนะการประมูล" — ตรวจแล้ว = เลื่อนสถานะ หรือกดปุ่มนี้ (ยังชนะรอส่งมอบจริง) / ไม่บังคับเลือกลูกค้าก่อน
+// เฉพาะ sale เจ้าของงาน / ธุรการขาย / admin (เพิ่ม admin 2026-09-30) — body: project_code
+function confirmBidImportReview(PDO $db, array $user): void {
+    if (!in_array($user['role'], ['sale', 'salesadmin', 'admin'], true)) jsonResponse(false, null, 'เฉพาะ Sale เจ้าของงาน ธุรการขาย หรือ admin', 403);
+    $body = getJsonBody();
+    $stmt = $db->prepare('SELECT pa.announcement_id, pa.assigned_to, pa.status, q.reviewed_at
+                          FROM project_assignments pa JOIN quotation_import_log q ON q.project_assignment_id = pa.id
+                          WHERE pa.project_code = ?');
+    $stmt->execute([$body['project_code'] ?? '']);
+    $job = $stmt->fetch();
+    if (!$job) jsonResponse(false, null, 'งานนี้ไม่ใช่ข้อมูลย้อนหลังที่นำเข้า', 404);
+    if ($user['role'] === 'sale' && (int)$job['assigned_to'] !== (int)$user['id']) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    // เลื่อนออกจากชนะการประมูลแล้ว (ส่งมอบ/ยกเลิก/แพ้) = ตรวจแล้วจากสถานะ ไม่ต้องกดยืนยัน
+    if ($job['reviewed_at'] !== null || $job['status'] !== 'ชนะการประมูล') jsonResponse(false, null, 'งานนี้ตรวจแล้ว', 400);
+    markImportReviewed($db, $user, null, (int)$job['announcement_id'], ['sale', 'salesadmin', 'admin']);
+    jsonResponse(true, null, 'บันทึกว่าตรวจแล้ว');
+}
+
+// "ไม่ใช่งานของฉัน" ของงานประมูลย้อนหลังที่รอตรวจ — โอนให้ sale คนอื่น (ยืนยันจากผู้ใช้ 2026-10-01 เลือกให้ sale เลือกคนรับเอง)
+// นับว่าผู้โอนตรวจแล้ว แล้วใช้ reassignAssignment() เดิม (ย้าย mirror + ประวัติ + แจ้งเตือนคนรับ)
+// สิทธิ์: sale เจ้าของงาน / ธุรการขาย / admin — เฉพาะงานที่ยังรอตรวจ (ยังชนะการประมูล) — body: project_code, assigned_to
+function transferBidImport(PDO $db, array $user): void {
+    if (!in_array($user['role'], ['sale', 'salesadmin', 'admin'], true)) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    $body = getJsonBody();
+    $stmt = $db->prepare('SELECT pa.announcement_id, pa.assigned_to, pa.status, q.reviewed_at
+                          FROM project_assignments pa JOIN quotation_import_log q ON q.project_assignment_id = pa.id
+                          WHERE pa.project_code = ?');
+    $stmt->execute([$body['project_code'] ?? '']);
+    $job = $stmt->fetch();
+    if (!$job) jsonResponse(false, null, 'งานนี้ไม่ใช่ข้อมูลย้อนหลังที่นำเข้า', 404);
+    if ($user['role'] === 'sale' && (int)$job['assigned_to'] !== (int)$user['id']) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    if ($job['reviewed_at'] !== null || $job['status'] !== 'ชนะการประมูล') jsonResponse(false, null, 'งานนี้ตรวจแล้ว', 400);
+    $newSale = (int)($body['assigned_to'] ?? 0);
+    if (!$newSale || $newSale === (int)$job['assigned_to']) jsonResponse(false, null, 'กรุณาเลือก Sale คนอื่น', 400);
+    $ok = $db->prepare("SELECT 1 FROM users WHERE id = ? AND role = 'sale' AND is_active = 1");
+    $ok->execute([$newSale]);
+    if (!$ok->fetchColumn()) jsonResponse(false, null, 'ไม่พบ Sale ที่เลือก', 404);
+
+    markImportReviewed($db, $user, null, (int)$job['announcement_id'], ['sale', 'salesadmin', 'admin']);
+    reassignAssignment($db, $user, true);   // ย้ายงาน + กระดิ่งผู้รับ แล้วตอบกลับ "มอบหมายใหม่สำเร็จ" ก่อน
+
+    // เบื้องหลัง: อีเมลแจ้งผู้รับโอน ตามการตั้งค่าแจ้งเตือนของผู้รับ (ยืนยันจากผู้ใช้ 2026-10-01)
+    $info = $db->prepare('SELECT pa.project_code, ann.project_name AS title, ann.unit_name AS client, pa.status,
+                                 COALESCE(pa.bid_amount, ann.price_median) AS value, u.full_name AS from_name
+                          FROM project_assignments pa JOIN announcements ann ON ann.id = pa.announcement_id
+                          JOIN users u ON u.id = ? WHERE pa.project_code = ?');
+    $info->execute([$user['id'], $body['project_code']]);
+    $row = $info->fetch(PDO::FETCH_ASSOC);
+    if ($row) sendTransferEmail($db, $newSale, $row + ['kind' => 'งาน', 'page' => 'bid-pipeline.html']);
 }
 
 function createAssignment(PDO $db, array $user): void {
@@ -654,6 +711,10 @@ function updateAssignment(PDO $db, array $user): void {
         }
     }
 
+    // งานย้อนหลัง "ตรวจแล้ว" เฉพาะเมื่อเลื่อนสถานะ — บันทึกหมายเหตุ/ราคาเฉยๆ ไม่นับ (ยืนยันจากผู้ใช้ 2026-09-30)
+    if (isset($body['status']) && $body['status'] !== $current['status']) {
+        markImportReviewed($db, $user, null, (int)$current['announcement_id']);
+    }
     jsonResponse(true, null, 'อัพเดตสำเร็จ');
 }
 
@@ -699,6 +760,7 @@ function acceptAssignment(PDO $db, array $user): void {
            ->execute([$piId, $current['project_code'], $user['id'], $newStatus, $histNote]);
     }
 
+    markImportReviewed($db, $user, null, (int)$current['announcement_id']);   // งานย้อนหลัง "ตรวจแล้ว" (2026-09-30)
     jsonResponse(true, ['status' => $newStatus], 'บันทึกผลสำเร็จ');
 }
 
@@ -907,7 +969,8 @@ function getMyCalendar(PDO $db, array $user): void {
 /** มอบหมายงานที่มีอยู่แล้วใหม่ให้ sale คนอื่น (ย้ายเจ้าของงาน) — ใช้จาก Gantt/รายการเมื่อ sale เดิมงานล้นมือ
     แจ้งเตือนแบบ in-app เท่านั้น (ไม่ยิง LINE/email ซ้ำ) กัน notify ซ้ำซ้อน/ไปกวนคนที่ไม่เกี่ยวข้องโดยไม่ตั้งใจ
     Phase 4c: เปลี่ยนให้รับ project_code แทน id */
-function reassignAssignment(PDO $db, array $user): void {
+// $continueAfter = true: ตอบกลับผู้ใช้ก่อน แล้วให้ผู้เรียกทำงานเบื้องหลังต่อ (เช่น ส่งอีเมลแจ้งโอนงาน — 2026-10-01)
+function reassignAssignment(PDO $db, array $user, bool $continueAfter = false): void {
     $body          = getJsonBody();
     $projectCode   = $body['project_code'] ?? '';
     $newAssignedTo = (int)($body['assigned_to'] ?? 0);
@@ -956,6 +1019,7 @@ function reassignAssignment(PDO $db, array $user): void {
     $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by) VALUES (?, 'new_assignment', 'มอบหมายงานให้คุณ (เปลี่ยนผู้รับผิดชอบ)', ?, 'assignment', ?, ?, ?)")
        ->execute([$newAssignedTo, $projName, $id, $user['id'], $user['id']]);
 
+    if ($continueAfter) { respondThenContinue(null, 'มอบหมายใหม่สำเร็จ'); return; }
     jsonResponse(true, null, 'มอบหมายใหม่สำเร็จ');
 }
 
@@ -1043,7 +1107,11 @@ function fetchKanbanBuckets(PDO $db, array $where, array $params): array {
                pi.sla_deadline, pi.created_at AS assigned_at,
                a.project_no, a.project_name, a.unit_name, a.close_date, a.price_median,
                u1.id AS sale_id, u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url,
-               COALESCE(h.last_changed_at, pi.created_at) AS stage_entered_at
+               COALESCE(h.last_changed_at, pi.created_at) AS stage_entered_at,
+               -- งานประมูลย้อนหลังที่ยังไม่ตรวจ (ป้ายรอตรวจ — 2026-09-30)
+               IF(EXISTS(SELECT 1 FROM quotation_import_log q JOIN project_assignments pa2 ON pa2.id = q.project_assignment_id
+                         WHERE pa2.announcement_id = pi.announcement_id AND pa2.assigned_to = pi.assigned_to AND q.reviewed_at IS NULL
+                           AND pa2.status = 'ชนะการประมูล'), 1, 0) AS import_pending
         FROM pipeline_items pi
         JOIN announcements a ON a.id = pi.announcement_id
         JOIN users u1 ON u1.id = pi.assigned_to

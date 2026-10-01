@@ -386,6 +386,12 @@
               <input v-model="spSearch" type="text" placeholder="ค้นหาชื่องาน, ลูกค้า, รหัสงาน..."
                 class="flex-1 border-0 outline-none text-sm bg-transparent">
             </div>
+            <!-- ข้อมูลย้อนหลังที่ยังไม่ตรวจ (ใบเสนอราคาเก่าที่นำเข้า) — sale ต้องบันทึกหรือย้ายสถานะ (รายงานการใช้งาน — 2026-09-30) -->
+            <button v-if="spImportPendingCount || spImportPendingOnly" type="button" @click="spImportPendingOnly = !spImportPendingOnly"
+              class="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold border-0 cursor-pointer shrink-0"
+              :class="spImportPendingOnly ? 'bg-amber-500 text-white' : 'bg-amber-50 ring-1 ring-amber-200 text-amber-800 hover:bg-amber-100'">
+              ข้อมูลย้อนหลังที่ยังไม่ตรวจ ({{ spImportPendingCount }})
+            </button>
             <button @click="modal = {type:'sp-adv-filter'}"
               class="inline-flex items-center gap-1.5 border-[1.5px] border-slate-200 rounded-full px-3 py-2 text-sm font-semibold bg-white text-slate-500 hover:bg-slate-50 cursor-pointer transition-all shrink-0"
               :class="{[spFilterBtnActiveClass]: spAdvFilterCount>0}">
@@ -460,6 +466,7 @@
                       <span v-if="card.deal_type_id && card.deal_type_id !== 'normal'" class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold bg-fuchsia-100 text-fuchsia-700">{{ card.deal_type_name }}</span>
                     </div>
                     <div v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-1">{{ card.project_code }}</div>
+                    <div v-if="Number(card.import_pending) === 1" class="inline-block ml-1 mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</div>
                     <div class="font-bold text-[.95rem] leading-tight mb-1 text-slate-800">{{ card.title }}</div>
                     <div class="text-[.85rem] text-slate-500 mb-1" v-if="card.client_name">{{ card.client_name }}</div>
                     <div class="text-[1.05rem] font-black text-green-600 mb-2" v-if="card.value">฿{{ formatNumber(card.value) }}</div>
@@ -476,6 +483,11 @@
                     <div v-if="card.win_loss_reason" class="text-[.75rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 mb-2 line-clamp-2">
                       {{ card.win_loss_reason }}<span v-if="card.stage==='Lost' && card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
                     </div>
+                    <!-- ดีลนำเข้าย้อนหลังรอตรวจ: ปุ่มยืนยันบนการ์ดเลย ไม่ต้องเปิดฟอร์ม (ยืนยันจากผู้ใช้ 2026-09-30) -->
+                    <button v-if="canConfirmSpImport(card)" type="button" @click.stop="openSpImportReview(card)"
+                      class="w-full text-sm font-bold py-2 px-2 rounded-lg border-0 cursor-pointer bg-teal-700 text-white hover:bg-teal-800 mb-1 disabled:opacity-50"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจดีลนี้</button>
+                    <!-- ดู / แก้ไข อยู่ก่อนปุ่มเลื่อนขั้น (แบบเดียวกับ "ดูรายละเอียด" ก่อน "ส่งต่อ" ในงานประมูล — ยืนยันจากผู้ใช้ 2026-10-01) -->
+                    <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 mb-1" @click="openSpForm(card)">ดู / แก้ไข</button>
                     <button v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)"
                       class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200 mb-1"
                       @click="confirmSpMove(card, spNextStage(card.stage))">
@@ -488,7 +500,6 @@
                     <div v-if="card.stage === 'Deal Signed'" class="flex gap-1 mb-1">
                       <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="confirmSpMove(card, 'Delivered')">ส่งสินค้าแล้ว</button>
                     </div>
-                    <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 mt-1" @click="openSpForm(card)">แก้ไข</button>
                   </div>
                 </div>
               </div>
@@ -507,6 +518,7 @@
                 <span v-if="card.deal_type_id && card.deal_type_id !== 'normal'" class="inline-block px-2 py-0.5 rounded text-[.75rem] font-semibold bg-fuchsia-100 text-fuchsia-700">{{ card.deal_type_name }}</span>
                 <span class="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :style="spStageClass(card.stage)">{{ spStageLabel(card.stage, card.source_type) }}</span>
               </div>
+              <div v-if="Number(card.import_pending) === 1" class="inline-block mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</div>
               <div class="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1">{{ card.title }}</div>
               <div v-if="card.value" class="text-base font-bold text-green-600 mb-0.5">฿{{ formatNumber(card.value) }}</div>
               <div v-if="card.client_name" class="text-xs text-slate-400 mb-2 truncate">{{ card.client_name }}</div>
@@ -526,6 +538,8 @@
               <div v-if="card.win_loss_reason" class="mt-1.5 text-[.75rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-2">
                 {{ card.win_loss_reason }}<span v-if="card.stage==='Lost' && card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
               </div>
+              <button v-if="canConfirmSpImport(card)" type="button" @click.stop="openSpImportReview(card)"
+                class="w-full mt-2 text-sm font-bold py-2 px-2 rounded-lg border-0 cursor-pointer bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-50"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจดีลนี้</button>
               <div v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)" class="mt-2" @click.stop>
                 <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200"
                   @click="confirmSpMove(card, spNextStage(card.stage))">▶ {{ spNextLabel(card.stage) }}</button>
@@ -607,7 +621,7 @@
              (ย้ายขึ้นมาจากเหนือกล่อง ① — ยืนยันจากผู้ใช้ 2026-09-23) ป้ายประเภทดีลอ่านจากค่าที่บันทึกไว้ (modal.data) ไม่ใช่ค่าที่กำลังเลือกในฟอร์ม -->
         <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
           <div class="min-w-0">
-            <h3 class="font-bold text-lg text-slate-800 m-0">{{ spForm.id ? 'แก้ไขรายละเอียดงาน' : 'สร้างงาน/ดีลใหม่' }}</h3>
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ spForm.id ? 'รายละเอียดดีล' : 'สร้างงาน/ดีลใหม่' }}</h3>
             <div v-if="spForm.id" class="flex flex-wrap items-center gap-1.5 mt-2">
               <span v-if="spForm.project_code" class="text-xs font-mono font-bold text-purple-700 bg-purple-50 rounded-full px-2.5 py-1">{{ spForm.project_code }}</span>
               <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :style="spStageClass(spForm.stage)">{{ spStageLabel(spForm.stage, spForm.source_type) }}</span>
@@ -631,6 +645,18 @@
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
         <div class="flex-1 overflow-y-auto p-5">
+
+          <!-- ใบเสนอราคาเก่าที่นำเข้า ยังรอตรวจ (ยืนยันจากผู้ใช้ 2026-09-30) — ตรวจแล้ว = เลื่อนสถานะ / ลบ / กดยืนยันว่ายังเป็นใบเสนอราคา
+               กดบันทึกฟอร์มเฉยๆ ไม่นับ เพื่อแยกดีลที่ยังเป็น PI จริง ออกจากดีลที่ยังไม่มีใครดู -->
+          <!-- กล่องกระชับ: หัวข้อ + คำอธิบายบรรทัดเดียว ปุ่มชิดขวา (ปรับตามผู้ใช้ 2026-09-30 — เดิมใหญ่/กว้างเกิน) -->
+          <div v-if="spImportReviewBox" class="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div class="flex-1 min-w-[240px]">
+              <div class="text-sm font-bold text-amber-900">ใบเสนอราคาเก่าที่นำเข้า — รอตรวจ</div>
+              <div class="text-sm text-slate-600">ตรวจว่าตอนนี้ดีลนี้อยู่สถานะไหน แล้วเลือกบอกระบบ</div>
+            </div>
+            <button type="button" @click="openSpImportReview(modal.data)"
+              class="shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจดีลนี้</button>
+          </div>
 
           <!-- ฟอร์มแบ่งเป็นกล่องมีเลขลำดับ 1–5 ตามหลัก CRM: ลูกค้า → ดีล → ประเภท/มูลค่า → รายละเอียดสินค้า → แผนติดตาม (ยืนยันจากผู้ใช้ 2026-09-23)
                เลือกลูกค้าก่อน เพื่อเติม "ประเภทลูกค้า" ให้อัตโนมัติ / ประเภทดีลอยู่ก่อนมูลค่า-โอกาส-วันคาดปิด เพราะเป็นตัวกำหนดตัวเลขเหล่านั้น
@@ -1157,6 +1183,66 @@
       </div>
     </div>
 
+    <!-- SP: ตรวจดีลย้อนหลัง (Guided review — ยืนยันจากผู้ใช้ 2026-10-01) — sale เลือกสถานะจริงตอนนี้ / ไม่ใช่งานจริง = ลบ / ไม่ใช่งานของฉัน = โอนให้ sale คนอื่นเอง -->
+    <div v-if="modal.type==='sp-import-review'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden flex flex-col" style="max-height:92vh">
+        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">ตรวจดีลย้อนหลัง</h3>
+            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span> · {{ modal.data.title }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <!-- 2 ขั้น: เลือกสถานะ → (ไม่ใช่งานของฉัน) เลือก sale ที่รับ — ปุ่มชื่อ sale แทน dropdown ที่ซ่อนอยู่ล่างจอ (ปรับตามผู้ใช้ 2026-10-01) -->
+        <div class="p-5 overflow-y-auto">
+          <template v-if="!spReviewTransferOpen">
+            <!-- หัวข้อส่วน (ตัวหนา) + คำถาม (เทา) — ปรับตามผู้ใช้ 2026-10-01 ให้อ่านง่าย -->
+            <div class="mb-2">
+              <div class="text-base font-bold text-slate-800">สถานะของดีล</div>
+              <div class="text-sm text-slate-500">ตอนนี้ดีลนี้อยู่สถานะไหน?</div>
+            </div>
+            <!-- สถานะเรียงคอลัมน์เดียวตามลำดับ stage จริง บนลงล่าง (ปรับตามผู้ใช้ 2026-10-01 — 2 คอลัมน์อ่านลำดับไม่ออก) -->
+            <div class="grid grid-cols-1 gap-2">
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="spImportReviewSaving" @click="spReviewChoose('Send PI')">ยังส่ง PI — รอลูกค้าตอบ<span class="block text-sm font-normal text-slate-500">สถานะเดิม ไม่เปลี่ยน</span></button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="spImportReviewSaving" @click="spReviewChoose('Negotiating')">กำลังต่อรอง / เจรจา</button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="spImportReviewSaving" @click="spReviewChoose('Deal Signed')">ปิดดีลได้แล้ว<span class="block text-sm font-normal text-slate-500">ต้องใส่เหตุผล</span></button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="spImportReviewSaving" @click="spReviewChoose('Delivered')">ส่งสินค้าแล้ว<span class="block text-sm font-normal text-slate-500">ต้องใส่เหตุผล</span></button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="spImportReviewSaving" @click="spReviewChoose('Lost')">ไม่สำเร็จ<span class="block text-sm font-normal text-slate-500">ต้องใส่เหตุผลและผู้ชนะ</span></button>
+            </div>
+            <!-- แยก 2 ส่วนชัดเจน: บน = สถานะของดีล / ล่าง = ดีลไม่ถูกต้อง (ปรับตามผู้ใช้ 2026-10-01 — คำว่า "หรือ" อย่างเดียวแยกไม่ออก) -->
+            <div class="mt-4 pt-4 border-t-2 border-slate-200 mb-2">
+              <div class="text-base font-bold text-slate-800">ดีลที่ไม่ถูกต้อง</div>
+              <div class="text-sm text-slate-500">ไม่ใช่ดีลที่ต้องติดตาม — เลือกข้อนี้แทนการเลือกสถานะด้านบน</div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="spImportReviewSaving" @click="spReviewChoose('delete')">ไม่ใช่งานจริง<span class="block text-sm font-normal text-slate-500">ลบดีลนี้</span></button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="spImportReviewSaving" @click="spReviewTransferOpen = true">ไม่ใช่งานของฉัน<span class="block text-sm font-normal text-slate-500">โอนให้ Sale คนอื่น</span></button>
+            </div>
+          </template>
+          <template v-else>
+            <button type="button" @click="spReviewTransferOpen = false; spReviewTransferTo = ''" class="text-sm font-semibold text-teal-700 hover:text-teal-800 bg-transparent border-0 p-0 cursor-pointer mb-3">← กลับไปเลือกสถานะ</button>
+            <div class="text-base font-bold text-slate-800 mb-2">โอนดีลนี้ให้ Sale คนไหน?</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button v-for="u in reviewSales.filter(u => Number(u.id) !== Number(modal.data.sale_id))" :key="u.id" type="button" @click="spReviewTransferTo = u.id"
+                class="flex items-center gap-2 text-left px-3.5 py-2.5 rounded-xl border-2 text-base font-semibold cursor-pointer"
+                :class="Number(spReviewTransferTo) === Number(u.id) ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400'">
+                <img v-if="u.photo_url" :src="u.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"/>
+                <span v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" :style="{background: u.avatar_color || '#64748b'}">{{ avatarInitials(u.full_name) }}</span>
+                <span class="flex-1 min-w-0 truncate">{{ u.full_name }}</span>
+                <span v-if="Number(spReviewTransferTo) === Number(u.id)" class="shrink-0">✓</span>
+              </button>
+            </div>
+            <div v-if="!reviewSales.length" class="text-sm text-slate-500">กำลังโหลดรายชื่อ Sale…</div>
+            <button type="button" @click="spReviewTransfer" :disabled="!spReviewTransferTo || spImportReviewSaving"
+              class="w-full mt-4 px-4 py-3 rounded-xl text-base font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer disabled:opacity-50">โอนดีลนี้</button>
+          </template>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+    </div>
+
     <!-- SP: Win/Loss Modal -->
     <div v-if="modal.type==='sp-win-loss'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
       <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
@@ -1165,7 +1251,7 @@
           <div class="flex items-center gap-2.5">
             <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold"
               :class="spWinLossForm.stage==='Deal Signed' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'">
-              {{ spWinLossForm.stage==='Deal Signed' ? '✓ ปิดดีลได้' : '✕ ไม่สำเร็จ' }}
+              {{ spWinLossForm.stage==='Deal Signed' ? (spWinLossForm.then_delivered ? '✓ ปิดดีลได้ — ส่งสินค้าแล้ว' : '✓ ปิดดีลได้') : '✕ ไม่สำเร็จ' }}
             </span>
             <h3 class="font-bold text-[1.1rem] m-0 text-slate-800">บันทึกผลดีล</h3>
           </div>
@@ -1434,7 +1520,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=63"></script>
+<script src="shared/app.js?v=64"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1453,6 +1539,10 @@ createApp({
       spSaleStats: [],
       spFilter: { assigned_to: '', source_type: '', period: 'all', priority: '', product_category: '', brand: '', client_q: '', value_min: '', value_max: '', segment: '', specialization: '' },
       spLoading: false,
+      spImportReviewSaving: false,
+      spReviewTransferOpen: false,   // หน้าต่างตรวจดีลย้อนหลัง: เปิดส่วนโอนให้ sale คนอื่น (2026-10-01)
+      spReviewTransferTo: '',
+      reviewSales: [],               // รายชื่อ sale ให้เลือกโอน (โหลดครั้งแรกที่เปิดหน้าต่างตรวจ)
 spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:'', expected_close:'', next_action:'', next_followup_date:'', deal_type_id:'', competitor_ids:[], notes:'' },
       spFormHistory: [],
       dealTypes: [], // master ประเภทดีล จาก api/pipeline_items.php?action=deal_types
@@ -1478,6 +1568,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       spQuotationModal: { show: false, data: null },
       spQuotationLoading: false,
       spOpenFilterDropdown: null, // null | 'source' | 'period' | 'sort' — controls header/toolbar custom dropdowns (ยืนยันจากผู้ใช้ 2026-09-21 ใช้หลักการเดียวกับ bid-pipeline.html)
+      spImportPendingOnly: false, // ตัวกรองข้อมูลย้อนหลังที่ยังไม่ตรวจ (2026-09-30)
       spSearch: '', // ค้นหา client-side ทันที (ไม่ยิง API) — คนละส่วนกับ spFilter.client_q ที่อยู่ในตัวกรองเพิ่มเติม (server-side)
       spSortBy: 'close_asc', // เรียงลำดับข้อมูลทั้ง 3 มุมมอง (Kanban/การ์ด/ตาราง) ด้วยตัวแปรเดียวกัน
       spActiveStatusTab: 'all',
@@ -1486,6 +1577,10 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     };
   },
   computed: {
+    // จำนวนดีลย้อนหลังที่ยังไม่ตรวจ (จากข้อมูลที่โหลดอยู่ — sale เห็นเฉพาะของตัวเอง)
+    spImportPendingCount() {
+      return Object.values(this.spKanban || {}).flat().filter(c => c && Number(c.import_pending) === 1).length;
+    },
     // ลูกค้าที่เลือกมี Sale คนอื่นเป็นผู้ดูแล (ไม่ใช่ลูกค้าส่วนกลาง และไม่ใช่ sale ของดีลนี้)
     spAccountOwnedByOther() {
       const owner = Number(this.spForm?.account_owner_id || 0);
@@ -1531,6 +1626,11 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
     isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
     isSale()       { return this.currentUser?.role === 'sale'; },
+    // ดีลนำเข้าย้อนหลังที่ยังรอตรวจ + ยังอยู่ขั้นส่งใบเสนอราคา → แสดงปุ่มยืนยัน "ยังเป็นใบเสนอราคาอยู่" (ยืนยันจากผู้ใช้ 2026-09-30)
+    // เฉพาะ sale / ธุรการขาย (role ที่นับเป็นคนตรวจ — API ตรวจเจ้าของดีลซ้ำ)
+    spImportReviewBox() {
+      return this.canConfirmSpImport(this.modal?.type === 'sp-form' ? this.modal.data : null);
+    },
 
     // สีธีมของหน้านี้: ใช้ teal เดียวกับ bid-pipeline.html ทั้งหมด ไม่แยกตาม role อีกต่อไป
     // (เดิมแยกเขียว/น้ำเงินตาม sale/secretary แต่ผู้ใช้ชี้ว่าทำให้สีไม่ consistent ข้ามหน้าเมื่อเทียบกับ bid-pipeline.html ที่ใช้ teal เดียวทุก role — ยืนยันแก้ 2026-09-21)
@@ -1687,6 +1787,9 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     spSearch() {
       if ($.fn.dataTable.isDataTable('#spTable')) $('#spTable').DataTable().draw();
     },
+    spImportPendingOnly() {
+      if ($.fn.dataTable.isDataTable('#spTable')) $('#spTable').DataTable().draw();
+    },
     // เรียงตาม — มุมมอง Kanban/การ์ด reactive อยู่แล้วผ่าน computed แต่ตาราง DataTables ต้องสั่ง order() เองเพราะไม่ reactive
     spSortBy() {
       if ($.fn.dataTable.isDataTable('#spTable')) $('#spTable').DataTable().order(this.spTableSortOrder).draw();
@@ -1780,6 +1883,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       });
     },
     spMatchesSearch(card) {
+      if (this.spImportPendingOnly && Number(card.import_pending) !== 1) return false;
       const q = this.spSearch.trim().toLowerCase();
       if (!q) return true;
       return [card.title, card.client_name, card.project_code].some(v => (v || '').toLowerCase().includes(q));
@@ -1868,6 +1972,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
           render: (d, type, card) => {
             let html = '';
             if (card.project_code) html += `<div class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-0.5">${self.esc(card.project_code)}</div>`;
+            if (Number(card.import_pending) === 1) html += ` <span class="inline-block px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</span>`;
             html += `<div class="font-bold text-sm text-slate-800 leading-snug">${self.esc(card.title)}</div>`;
             if (card.client_name) html += `<div class="text-[.82rem] text-slate-500">${self.esc(card.client_name)}</div>`;
             return html;
@@ -1934,7 +2039,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
           if (card.stage === 'Deal Signed') {
             html += `<button class="sp-delivered-btn text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0 cursor-pointer whitespace-nowrap">ส่งสินค้าแล้ว</button>`;
           }
-          html += `<button class="sp-edit-btn text-xs font-semibold px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer">แก้ไข</button>`;
+          html += `<button class="sp-edit-btn text-xs font-semibold px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer whitespace-nowrap">ดู / แก้ไข</button>`;
           // ลบได้ทั้ง sale เจ้าของงานและ secretary/admin — backend (api/pipeline_items.php's deleteItem()) เช็ค assigned_to ให้อยู่แล้วสำหรับ role sale
           html += `<button class="sp-delete-btn text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 border-0 cursor-pointer">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
@@ -2059,6 +2164,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spWinLossForm = {
         id: card.id, stage, title: card.title, reason: '', note: '', value: card.value || '',
         winner_competitor_id: '', winning_price: '', deal_competitor_ids: [],
+        then_delivered: false,   // ดีลย้อนหลังเลือก "ส่งสินค้าแล้ว" → ปิดดีลแล้วเลื่อนต่อ (2026-10-01)
       };
       this.modal = { type: 'sp-win-loss', data: card };
       // คู่แข่งที่ระบุไว้ในดีลนี้ → ขึ้นก่อนในตัวเลือกผู้ชนะ
@@ -2090,10 +2196,81 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         payload.winning_price = f.winning_price === '' ? null : f.winning_price;
       }
       const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + this.spWinLossForm.id, payload);
+      // ดีลย้อนหลังเลือก "ส่งสินค้าแล้ว": บันทึกปิดดีลก่อน (มีเหตุผล) แล้วเลื่อนต่อ — ประวัติครบ ส่ง PI → ปิดดีล → ส่งสินค้า
+      if (res.success && f.then_delivered) await apiCall('PUT', 'api/pipeline_items.php?id=' + f.id, { stage: 'Delivered' });
       if (res.success) {
         this.closeModal();
         this.loadSpKanban();
         await this.showAlert('บันทึกสำเร็จ', 'success');
+      } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    // ปุ่ม "ตรวจแล้ว — ยังเป็นใบเสนอราคาอยู่" ของดีลนำเข้าย้อนหลัง (ยืนยันจากผู้ใช้ 2026-09-30)
+    // ดีลนำเข้ารอตรวจ + ยังอยู่ Send PI → กดยืนยันได้ — sale เจ้าของดีล / ธุรการขาย / admin (API ตรวจซ้ำ)
+    canConfirmSpImport(card) {
+      if (!card || Number(card.import_pending) !== 1 || card.stage !== 'Send PI') return false;
+      if (['salesadmin', 'admin'].includes(this.currentUser?.role)) return true;
+      return this.isSale && Number(card.sale_id) === Number(this.currentUser?.id);
+    },
+
+    // หน้าต่าง "ตรวจดีลย้อนหลัง" — ถามสถานะจริงตอนนี้ (ยืนยันจากผู้ใช้ 2026-10-01)
+    async openSpImportReview(card) {
+      if (!card) return;
+      this.spReviewTransferOpen = false;
+      this.spReviewTransferTo = '';
+      this.modal = { type: 'sp-import-review', data: card };
+      if (!this.reviewSales.length) {
+        const res = await apiCall('GET', 'api/users.php?action=sales');
+        if (res.success) this.reviewSales = res.data;
+      }
+    },
+
+    // เลือกคำตอบ: สถานะเดิม = ยืนยัน / ต่อรอง = เลื่อนทันที / ปิดดีล-ส่งสินค้า-ไม่สำเร็จ = หน้าต่างเหตุผลเดิม / ลบ = ถามยืนยันก่อน
+    async spReviewChoose(choice) {
+      const card = this.modal.data;
+      // ตัวเลือกที่บันทึกทันที ถามยืนยันก่อน — กดผิดแล้วย้อนกลับเองไม่ได้ (ยืนยันจากผู้ใช้ 2026-10-01)
+      // ปิดดีล/ส่งสินค้า/ไม่สำเร็จ เปิดหน้าต่างใส่เหตุผลก่อน (ยกเลิกได้ในหน้าต่างนั้น) / ลบ ถามยืนยันใน deleteSpItem อยู่แล้ว
+      if (choice === 'Send PI' && !(await this.showConfirm('ยืนยันสถานะเดิม?', `"${card.title}" ยังส่ง PI — รอลูกค้าตอบ (ไม่เปลี่ยนสถานะ)`, 'ยืนยัน ยังส่ง PI อยู่'))) return;
+      if (choice === 'Negotiating' && !(await this.showConfirm('เปลี่ยนเป็น ต่อรอง / เจรจา?', `"${card.title}" จะเปลี่ยนสถานะเป็น ต่อรอง / เจรจา`, 'ยืนยัน ต่อรอง / เจรจา'))) return;
+      if (choice === 'Send PI') { await this.confirmSpImportReview(card); return; }
+      if (choice === 'delete') { this.closeModal(); await this.deleteSpItem(card); return; }
+      if (choice === 'Negotiating') {
+        this.spImportReviewSaving = true;
+        const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + card.id, { stage: 'Negotiating' });
+        this.spImportReviewSaving = false;
+        if (res.success) { this.closeModal(); this.loadSpKanban(); await this.showAlert('เลื่อนเป็น ต่อรอง/เจรจา แล้ว', 'success'); }
+        else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+        return;
+      }
+      // Deal Signed / Delivered / Lost → หน้าต่างบันทึกผลเดิม (บังคับเหตุผล) — ส่งสินค้าแล้ว = ปิดดีลแล้วเลื่อนต่อ
+      await this.openSpWinLoss(card, choice === 'Lost' ? 'Lost' : 'Deal Signed');
+      this.spWinLossForm.then_delivered = choice === 'Delivered';
+    },
+
+    async spReviewTransfer() {
+      const card = this.modal.data;
+      const to = this.reviewSales.find(u => Number(u.id) === Number(this.spReviewTransferTo));
+      const ok = await this.showConfirm('โอนดีลนี้?', `"${card.title}" จะย้ายไปเป็นของ ${to?.full_name || ''}`, 'ยืนยัน โอนดีล');
+      if (!ok) return;
+      this.spImportReviewSaving = true;
+      const res = await apiCall('POST', `api/pipeline_items.php?action=transfer_import&id=${card.id}`, { assigned_to: Number(this.spReviewTransferTo) });
+      this.spImportReviewSaving = false;
+      if (res.success) { this.closeModal(); this.loadSpKanban(); await this.showAlert('โอนดีลแล้ว', 'success'); }
+      else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    // กดได้ทั้งบนการ์ด (ส่ง card มา) และในฟอร์มแก้ไข (ใช้การ์ดที่เปิดฟอร์มอยู่)
+    async confirmSpImportReview(card = this.modal.data) {
+      const d = card;
+      if (!d?.id) return;
+      this.spImportReviewSaving = true;
+      const res = await apiCall('POST', `api/pipeline_items.php?action=confirm_import_review&id=${d.id}`, {});
+      this.spImportReviewSaving = false;
+      if (res.success) {
+        d.import_pending = 0;   // ป้ายรอตรวจหายทันที (การ์ดเดียวกับที่เปิดฟอร์ม)
+        if (this.modal.type === 'sp-import-review') this.closeModal();
+        this.loadSpKanban();
+        await this.showAlert('บันทึกว่าตรวจแล้ว — ยังเป็นใบเสนอราคาอยู่', 'success');
       } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 

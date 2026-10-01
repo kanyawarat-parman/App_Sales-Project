@@ -36,6 +36,7 @@ const PAGE_LABELS = {
   'kpi-settings.html': 'ตั้งเกณฑ์วัดผล KPI',
   'competitors.html': 'คู่แข่ง',
   'win-loss-reasons.html': 'เหตุผลปิดงาน (ชนะ/แพ้)',
+  'usage-report.html': 'การใช้งานระบบ',
   'users.html': 'ผู้ใช้งาน',
   'import.html': 'นำเข้าข้อมูล',
   'holidays.html': 'วันหยุด',
@@ -524,6 +525,10 @@ const AppNav = {
         }
         // วิเคราะห์ผลแพ้/ชนะ + คู่แข่ง — ทุก role เห็น แต่ sale เห็นเฉพาะงานของตัวเอง (API บังคับ) ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-25)
         g.push({ href:'win-loss-analysis.html', page:'win-loss-analysis', label:'วิเคราะห์ผลแพ้/ชนะ', icon:'win_loss_analysis' });
+        // รายงานการใช้งานระบบ (Adoption Dashboard) — manager + admin เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-30)
+        if (this.isManager || this.isAdmin) {
+          g.push({ href:'usage-report.html', page:'usage-report', label:'การใช้งานระบบ', icon:'analytics' });
+        }
         if (this.isAdmin) {
           g.push({ href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' });
           // รายชื่อคู่แข่ง (master) — admin เท่านั้นเป็นคนเพิ่ม/แก้ไข/ซ่อน ตามมาตรฐาน CRM, sale เลือกจากรายการในฟอร์มดีลอย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-24)
@@ -574,6 +579,8 @@ const AppNav = {
       if (n.ref_type === 'erp_pending') window.location.href = 'accounts.html?tab=erp_pending';
       // แจ้งเตือนงานประมูล (มอบหมายใหม่ / ย้ายผู้รับผิดชอบ / ข้อความจากธุรการ) → หน้างานที่ได้รับ (ยืนยันจากผู้ใช้ 2026-09-28 ว่าไม่ต้องเปิดรายละเอียด)
       if (n.ref_type === 'assignment') window.location.href = 'my-assignments.html';
+      // ดีลขายตรงที่ถูกโอนมาให้ (ไม่ใช่งานของฉัน — ตรวจข้อมูลย้อนหลัง 2026-10-01) → หน้างานขายตรง
+      if (n.ref_type === 'pipeline_item') window.location.href = 'sales-pipeline.html';
     },
     async markAllRead() {
       await apiCall('POST', 'api/notifications.php?action=read_all');

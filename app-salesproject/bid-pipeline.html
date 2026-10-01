@@ -366,6 +366,12 @@
               <input v-model="filter.search" type="text" placeholder="ค้นหาชื่อโครงการ, หน่วยงาน, รหัสงาน..."
                 class="flex-1 border-0 outline-none text-sm bg-transparent">
             </div>
+            <!-- งานประมูลย้อนหลังที่ยังไม่ตรวจ (ใบเสนอราคาเก่า HIST-QT) — sale ต้องเลือกลูกค้าหรือเปลี่ยนสถานะ (รายงานการใช้งาน — 2026-09-30) -->
+            <button v-if="importPendingCount || importPendingOnly" type="button" @click="importPendingOnly = !importPendingOnly"
+              class="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold border-0 cursor-pointer shrink-0"
+              :class="importPendingOnly ? 'bg-amber-500 text-white' : 'bg-amber-50 ring-1 ring-amber-200 text-amber-800 hover:bg-amber-100'">
+              ข้อมูลย้อนหลังที่ยังไม่ตรวจ ({{ importPendingCount }})
+            </button>
             <button @click="modal = {type:'adv-filter'}"
               class="inline-flex items-center gap-1.5 border border-slate-200 rounded-full px-3 py-2 text-sm font-semibold bg-white text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors shrink-0"
               :class="{'!border-teal-400 !text-teal-700 !bg-teal-50': advFilterCount>0}">
@@ -452,6 +458,7 @@
                 <!-- รหัสงานกลาง (project_code) + เลขโครงการ e-GP (project_no) -->
                 <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
                   <span v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ card.project_code }}</span>
+                  <span v-if="Number(card.import_pending) === 1" class="px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</span>
                   <span class="text-[.68rem] text-slate-400 font-mono">{{ card.project_no }}</span>
                 </div>
                 <!-- Project name -->
@@ -480,6 +487,12 @@
                   class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-1">
                   {{ card.win_loss_reason }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
                 </div>
+                <!-- งานย้อนหลังรอตรวจ: ปุ่มยืนยันบนการ์ดเลย ไม่ต้องเปิดรายละเอียด (ยืนยันจากผู้ใช้ 2026-09-30) -->
+                <button v-if="canConfirmBidImport(card)" type="button" @click.stop="openBidImportReview(card)"
+                  class="w-full mt-2 text-sm font-bold px-2 py-2 rounded-lg bg-teal-700 text-white hover:bg-teal-800 border-0 cursor-pointer disabled:opacity-50"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจงานนี้</button>
+                <!-- ปุ่มดูรายละเอียดชัดเจน (เดิมต้องคลิกที่การ์ด ผู้ใช้ไม่รู้) อยู่ก่อนปุ่มส่งต่อ — ยืนยันจากผู้ใช้ 2026-09-30 -->
+                <button type="button" @click.stop="openDetail(card.project_code)"
+                  class="w-full mt-2 text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200">ดูรายละเอียด</button>
                 <!-- Action buttons -->
                 <div v-if="canMove(card.status)" class="flex gap-1 mt-2" @click.stop>
                   <!-- Prev button -->
@@ -513,6 +526,7 @@
             <!-- รหัสงานกลาง (project_code) + เลขโครงการ e-GP (project_no) + badge สถานะ (จำเป็นเฉพาะมุมมองนี้ เพราะรวมหลายสถานะไว้ในลิสต์เดียว) -->
             <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
               <span v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ card.project_code }}</span>
+              <span v-if="Number(card.import_pending) === 1" class="px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</span>
               <span class="text-[.68rem] text-slate-400 font-mono">{{ card.project_no }}</span>
               <span class="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadge(card.status)">{{ card.status }}</span>
             </div>
@@ -542,6 +556,12 @@
               class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-1">
               {{ card.win_loss_reason }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
             </div>
+            <!-- งานย้อนหลังรอตรวจ: ปุ่มยืนยันบนการ์ดเลย ไม่ต้องเปิดรายละเอียด (ยืนยันจากผู้ใช้ 2026-09-30) -->
+            <button v-if="canConfirmBidImport(card)" type="button" @click.stop="openBidImportReview(card)"
+              class="w-full mt-2 text-sm font-bold px-2 py-2 rounded-lg bg-teal-700 text-white hover:bg-teal-800 border-0 cursor-pointer disabled:opacity-50"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจงานนี้</button>
+            <!-- ปุ่มดูรายละเอียดชัดเจน (เดิมต้องคลิกที่การ์ด ผู้ใช้ไม่รู้) อยู่ก่อนปุ่มส่งต่อ — ยืนยันจากผู้ใช้ 2026-09-30 -->
+            <button type="button" @click.stop="openDetail(card.project_code)"
+              class="w-full mt-2 text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200">ดูรายละเอียด</button>
             <!-- Action buttons -->
             <div v-if="canMove(card.status)" class="flex gap-1 mt-2" @click.stop>
               <button v-if="prevStage(card.status)"
@@ -592,6 +612,17 @@
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
         </div>
         <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+          <!-- งานย้อนหลังที่นำเข้า (นำเข้าที่ชนะการประมูล) ยังรอตรวจ (ยืนยันจากผู้ใช้ 2026-09-30)
+               ตรวจแล้ว = เลื่อนสถานะ หรือกดยืนยันว่ารอเลื่อนสถานะถัดไป — บันทึกหมายเหตุ/เลือกลูกค้าเฉยๆ ไม่นับ -->
+          <!-- กล่องกระชับ: หัวข้อ + คำอธิบายบรรทัดเดียว ปุ่มชิดขวา (ปรับตามผู้ใช้ 2026-09-30) -->
+          <div v-if="bidImportReviewBox" class="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div class="flex-1 min-w-[220px]">
+              <div class="text-sm font-bold text-amber-900">งานย้อนหลังที่นำเข้า — รอตรวจ</div>
+              <div class="text-sm text-slate-600">ตรวจว่าตอนนี้งานนี้อยู่สถานะไหน แล้วเลือกบอกระบบ</div>
+            </div>
+            <button type="button" @click="openBidImportReview(detailCard)"
+              class="shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจงานนี้</button>
+          </div>
           <div class="flex gap-2 flex-wrap mb-4">
             <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
             <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
@@ -898,6 +929,61 @@
         </div>
       </div>
 
+      <!-- ตรวจงานประมูลย้อนหลัง (Guided review — ยืนยันจากผู้ใช้ 2026-10-01) — sale เลือกสถานะจริงตอนนี้ / ไม่ใช่งานของฉัน = โอนให้ sale คนอื่นเอง -->
+      <div v-if="modal.type==='import-review'" class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">ตรวจงานประมูลย้อนหลัง</h3>
+            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span> · {{ modal.data.project_name }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <!-- 2 ขั้น: เลือกสถานะ → (ไม่ใช่งานของฉัน) เลือก sale ที่รับ — ปุ่มชื่อ sale แทน dropdown ที่ซ่อนอยู่ล่างจอ (ปรับตามผู้ใช้ 2026-10-01) -->
+        <div class="p-5 overflow-y-auto">
+          <template v-if="!bidReviewTransferOpen">
+            <!-- หัวข้อส่วน (ตัวหนา) + คำถาม (เทา) — ปรับตามผู้ใช้ 2026-10-01 ให้อ่านง่าย -->
+            <div class="mb-2">
+              <div class="text-base font-bold text-slate-800">สถานะของงาน</div>
+              <div class="text-sm text-slate-500">ตอนนี้งานนี้อยู่สถานะไหน?</div>
+            </div>
+            <!-- สถานะเรียงคอลัมน์เดียวตามลำดับ stage จริง บนลงล่าง (ปรับตามผู้ใช้ 2026-10-01 — 2 คอลัมน์อ่านลำดับไม่ออก) -->
+            <div class="grid grid-cols-1 gap-2">
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="bidImportReviewSaving" @click="bidReviewChoose('ชนะการประมูล')">ยังชนะการประมูล — รอส่งมอบ<span class="block text-sm font-normal text-slate-500">สถานะเดิม ไม่เปลี่ยน</span></button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="bidImportReviewSaving" @click="bidReviewChoose('ส่งมอบแล้ว')">ส่งมอบแล้ว</button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="bidImportReviewSaving" @click="bidReviewChoose('ยกเลิก')">ยกเลิก</button>
+            </div>
+            <!-- แยก 2 ส่วนชัดเจน: บน = สถานะของงาน / ล่าง = งานไม่ถูกต้อง (ปรับตามผู้ใช้ 2026-10-01 — คำว่า "หรือ" อย่างเดียวแยกไม่ออก) -->
+            <div class="mt-4 pt-4 border-t-2 border-slate-200 mb-2">
+              <div class="text-base font-bold text-slate-800">งานที่ไม่ถูกต้อง</div>
+              <div class="text-sm text-slate-500">ไม่ใช่งานที่ต้องติดตาม — เลือกข้อนี้แทนการเลือกสถานะด้านบน</div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="bidImportReviewSaving" @click="bidReviewTransferOpen = true">ไม่ใช่งานของฉัน<span class="block text-sm font-normal text-slate-500">โอนให้ Sale คนอื่น</span></button>
+            </div>
+          </template>
+          <template v-else>
+            <button type="button" @click="bidReviewTransferOpen = false; bidReviewTransferTo = ''" class="text-sm font-semibold text-teal-700 hover:text-teal-800 bg-transparent border-0 p-0 cursor-pointer mb-3">← กลับไปเลือกสถานะ</button>
+            <div class="text-base font-bold text-slate-800 mb-2">โอนงานนี้ให้ Sale คนไหน?</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button v-for="u in reviewSales.filter(u => Number(u.id) !== Number(modal.data.sale_id))" :key="u.id" type="button" @click="bidReviewTransferTo = u.id"
+                class="flex items-center gap-2 text-left px-3.5 py-2.5 rounded-xl border-2 text-base font-semibold cursor-pointer"
+                :class="Number(bidReviewTransferTo) === Number(u.id) ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400'">
+                <img v-if="u.photo_url" :src="u.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"/>
+                <span v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" :style="{background: u.avatar_color || '#64748b'}">{{ avatarInitials(u.full_name) }}</span>
+                <span class="flex-1 min-w-0 truncate">{{ u.full_name }}</span>
+                <span v-if="Number(bidReviewTransferTo) === Number(u.id)" class="shrink-0">✓</span>
+              </button>
+            </div>
+            <div v-if="!reviewSales.length" class="text-sm text-slate-500">กำลังโหลดรายชื่อ Sale…</div>
+            <button type="button" @click="bidReviewTransfer" :disabled="!bidReviewTransferTo || bidImportReviewSaving"
+              class="w-full mt-4 px-4 py-3 rounded-xl text-base font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer disabled:opacity-50">โอนงานนี้</button>
+          </template>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
       <!-- Win/Loss Modal -->
       <div v-if="modal.type==='win-loss'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
         <!-- หัวขาวเหมือน modal อื่นในระบบ — ใช้ป้าย ✓ ชนะ / ✕ แพ้ บอกผลแทนการทาสีทั้งแถบ (ปรับตามผู้ใช้ 2026-09-25) -->
@@ -1193,7 +1279,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=63"></script>
+<script src="shared/app.js?v=64"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1234,6 +1320,7 @@ createApp({
       docs: null,
       docsLoading: false,
       kanban: {},
+      importPendingOnly: false,   // ตัวกรองงานย้อนหลังที่ยังไม่ตรวจ (2026-09-30)
       stats: {},
       perSale: [],
       salesUsers: [],
@@ -1250,6 +1337,10 @@ createApp({
       competitors: [],    // master คู่แข่ง จาก api/competitors.php — ใช้เป็นตัวเลือก "ผู้ชนะการประมูล"
       editingUnitName: false,
       savingUnitName: false,
+      bidImportReviewSaving: false,
+      bidReviewTransferOpen: false,   // หน้าต่างตรวจงานย้อนหลัง: เปิดส่วนโอนให้ sale คนอื่น (2026-10-01)
+      bidReviewTransferTo: '',
+      reviewSales: [],                // รายชื่อ sale ให้เลือกโอน (โหลดครั้งแรกที่เปิดหน้าต่างตรวจ)   // ปุ่ม "ตรวจแล้ว — รอเลื่อนสถานะถัดไป" (2026-09-30)
       linkingAccount: false,      // กำลังเลือกลูกค้าให้งานที่ยังไม่ผูก (2026-09-29)
       linkAccountChoice: null,    // { account_id } | { new_account }
       changeAccountConfirmed: false,   // ยืนยันเปลี่ยนลูกค้าที่ผูกแล้ว (ถามครั้งเดียว)
@@ -1272,12 +1363,19 @@ createApp({
     'filter.search'() {
       if ($.fn.dataTable.isDataTable('#bidPipelineTable')) $('#bidPipelineTable').DataTable().draw();
     },
+    importPendingOnly() {
+      if ($.fn.dataTable.isDataTable('#bidPipelineTable')) $('#bidPipelineTable').DataTable().draw();
+    },
     // เรียงตาม — มุมมอง Kanban/การ์ด reactive อยู่แล้วผ่าน computed แต่ตาราง DataTables ต้องสั่ง order() เองเพราะไม่ reactive (ยืนยันจากผู้ใช้ 2026-09-20)
     sortBy() {
       if ($.fn.dataTable.isDataTable('#bidPipelineTable')) $('#bidPipelineTable').DataTable().order(this.tableSortOrder).draw();
     },
   },
   computed: {
+    // จำนวนงานประมูลย้อนหลังที่ยังไม่ตรวจ (จากข้อมูลที่โหลดอยู่ — sale เห็นเฉพาะของตัวเอง)
+    importPendingCount() {
+      return Object.values(this.kanban || {}).flat().filter(c => c && Number(c.import_pending) === 1).length;
+    },
     tabItems() {
       return [
         { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
@@ -1300,6 +1398,15 @@ createApp({
     },
     isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
     isSale()    { return this.currentUser?.role === 'sale'; },
+    // การ์ดของงานที่เปิดรายละเอียดอยู่ (ถือ import_pending จาก kanban)
+    detailCard() {
+      const code = this.modal?.type === 'detail' ? this.modal.data?.project_code : null;
+      return code ? Object.values(this.kanban || {}).flat().find(c => c && c.project_code === code) : null;
+    },
+    // งานย้อนหลังรอตรวจ + ยังชนะการประมูล → แสดงปุ่มยืนยัน "รอเลื่อนสถานะถัดไป" — sale เจ้าของงาน / ธุรการขาย (API ตรวจซ้ำ)
+    bidImportReviewBox() {
+      return this.canConfirmBidImport(this.detailCard);
+    },
 
     periodOptions() {
       return [
@@ -1589,6 +1696,7 @@ createApp({
           render: (d, type, card) => {
             let html = '<div class="flex items-center gap-1.5 mb-0.5 flex-wrap">';
             if (card.project_code) html += `<span class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">${self.esc(card.project_code)}</span>`;
+            if (Number(card.import_pending) === 1) html += ` <span class="px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</span>`;
             html += `<span class="text-[.68rem] text-slate-400 font-mono">${self.esc(card.project_no)}</span></div>`;
             html += `<div class="font-semibold text-sm leading-snug text-slate-800">${self.esc(card.project_name)}</div>`;
             return html;
@@ -1736,6 +1844,68 @@ createApp({
       await this.showAlert(wasLinked ? 'เปลี่ยนลูกค้าแล้ว' : 'ผูกลูกค้าแล้ว', 'success');
     },
 
+    // งานย้อนหลังรอตรวจ + ยังชนะการประมูล → กดยืนยันได้ — sale เจ้าของงาน / ธุรการขาย / admin (API ตรวจซ้ำ)
+    canConfirmBidImport(card) {
+      if (!card || Number(card.import_pending) !== 1 || card.status !== 'ชนะการประมูล') return false;
+      if (['salesadmin', 'admin'].includes(this.currentUser?.role)) return true;
+      return this.isSale && Number(card.sale_id) === Number(this.currentUser?.id);   // การ์ด kanban ใช้ sale_id = เจ้าของงาน
+    },
+
+    // ปุ่ม "ตรวจแล้ว — รอเลื่อนสถานะถัดไป" ของงานประมูลย้อนหลัง (ยืนยันจากผู้ใช้ 2026-09-30)
+    // หน้าต่าง "ตรวจงานประมูลย้อนหลัง" — ถามสถานะจริงตอนนี้ (ยืนยันจากผู้ใช้ 2026-10-01)
+    async openBidImportReview(card) {
+      if (!card) return;
+      this.bidReviewTransferOpen = false;
+      this.bidReviewTransferTo = '';
+      this.previousModal = null;   // ปิดแล้วไม่ย้อนกลับไปหน้าต่างรายละเอียด
+      this.modal = { type: 'import-review', data: card };
+      if (!this.reviewSales.length) {
+        const res = await apiCall('GET', 'api/users.php?action=sales');
+        if (res.success) this.reviewSales = res.data;
+      }
+    },
+
+    // ยังชนะ = ยืนยัน / ส่งมอบแล้ว-ยกเลิก = เลื่อนสถานะ (ยกเลิกถามยืนยันก่อน)
+    // ถามยืนยันก่อนบันทึกทุกตัวเลือก — กดผิดแล้วย้อนกลับเองไม่ได้ (ยืนยันจากผู้ใช้ 2026-10-01)
+    async bidReviewChoose(status) {
+      const card = this.modal.data;
+      const confirmText = {
+        'ชนะการประมูล': ['ยืนยันสถานะเดิม?', `"${card.project_name}" ยังชนะการประมูล — รอส่งมอบ (ไม่เปลี่ยนสถานะ)`, 'ยืนยัน ยังชนะอยู่'],
+        'ส่งมอบแล้ว':   ['เปลี่ยนเป็น ส่งมอบแล้ว?', `"${card.project_name}" จะเปลี่ยนสถานะเป็น ส่งมอบแล้ว`, 'ยืนยัน ส่งมอบแล้ว'],
+        'ยกเลิก':       ['ยกเลิกงานนี้?', `"${card.project_name}" จะเปลี่ยนสถานะเป็น ยกเลิก`, 'ยืนยัน ยกเลิกงาน'],
+      }[status];
+      if (!(await this.showConfirm(...confirmText))) return;
+      if (status === 'ชนะการประมูล') { await this.confirmBidImportReview(card); return; }
+      this.closeModal();
+      await this.moveCard(card, status);
+    },
+
+    async bidReviewTransfer() {
+      const card = this.modal.data;
+      const to = this.reviewSales.find(u => Number(u.id) === Number(this.bidReviewTransferTo));
+      const ok = await this.showConfirm('โอนงานนี้?', `"${card.project_name}" จะย้ายไปเป็นของ ${to?.full_name || ''}`, 'ยืนยัน โอนงาน');
+      if (!ok) return;
+      this.bidImportReviewSaving = true;
+      const res = await apiCall('POST', 'api/assignments.php?action=transfer_import', { project_code: card.project_code, assigned_to: Number(this.bidReviewTransferTo) });
+      this.bidImportReviewSaving = false;
+      if (res.success) { this.closeModal(); this.loadData(); await this.showAlert('โอนงานแล้ว', 'success'); }
+      else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    // กดได้ทั้งบนการ์ด (ส่ง card มา) และในหน้าต่างรายละเอียด (ใช้การ์ดของงานที่เปิดอยู่)
+    async confirmBidImportReview(card = this.detailCard) {
+      if (!card) return;
+      this.bidImportReviewSaving = true;
+      const res = await apiCall('POST', 'api/assignments.php?action=confirm_import_review', { project_code: card.project_code });
+      this.bidImportReviewSaving = false;
+      if (res.success) {
+        if (card) card.import_pending = 0;   // ป้ายรอตรวจหายทันที
+        if (this.modal.type === 'import-review') this.closeModal();
+        this.loadData();
+        await this.showAlert('บันทึกว่าตรวจแล้ว — รอเลื่อนสถานะถัดไป', 'success');
+      } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
     async onDuplicatePick(d) {
       this.dupList = null;
       if (this.dupContext === 'link') {
@@ -1789,6 +1959,7 @@ createApp({
     // ช่องค้นหาด่วน — กรอง client-side ทับข้อมูลที่กรองไว้แล้ว (Sales/ช่วงเวลา/ตัวกรองเพิ่มเติม/แสดงงานปิด/แท็บสถานะ) อีกชั้นเดียว
     // ค้นได้ 4 ฟิลด์: ชื่อโครงการ, ชื่อหน่วยงาน, รหัสงานกลาง, เลขที่โครงการ e-GP (ยืนยันจากผู้ใช้ 2026-09-20)
     matchesSearch(card) {
+      if (this.importPendingOnly && Number(card.import_pending) !== 1) return false;
       const q = this.filter.search.trim().toLowerCase();
       if (!q) return true;
       return [card.project_name, card.unit_name, card.project_code, card.project_no]

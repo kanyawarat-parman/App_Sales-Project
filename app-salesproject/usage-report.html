@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>การใช้งานระบบ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="usage-report" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
+          การใช้งานระบบ
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <!-- รายงานการใช้งานแยกตาม role (Adoption Dashboard — ยืนยันจากผู้ใช้ 2026-09-30) manager + admin เท่านั้น -->
+        <div class="text-sm text-slate-500 leading-relaxed mb-4 max-w-[900px]">
+          <div>ดูว่าแต่ละคนเข้ามาใช้และทำงานในระบบจริงแค่ไหน — <b class="text-slate-700">งานที่ทำ</b> นับในช่วงที่เลือก · <b class="text-slate-700">งานค้าง</b> นับ ณ ตอนนี้ (ตัวเลขสีแดงกดดูรายการได้)</div>
+          <div v-if="data">ดีลค้าง = ดีลขายตรงที่ยังไม่ปิดและไม่มีคนอัปเดตเกิน {{ data.config.usage_stale_days }} วัน (นับตั้งแต่ {{ formatDateThai(data.config.adoption_start_date) }} · ดีลนำเข้าย้อนหลังเริ่มนับหลังตรวจแล้ว) · ไม่ได้เข้าใช้ = เกิน {{ data.config.usage_inactive_days }} วัน</div>
+        </div>
+
+        <!-- ช่วงเวลา + Export -->
+        <div class="flex items-center gap-2 flex-wrap mb-4">
+          <span class="text-sm font-semibold text-slate-600">ช่วงเวลา:</span>
+          <button v-for="d in [7, 30]" :key="d" type="button" @click="days = d; load()"
+            class="px-4 py-2 rounded-full text-sm font-semibold border-0 cursor-pointer"
+            :class="days === d ? 'bg-teal-700 text-white' : 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50'">{{ d }} วันล่าสุด</button>
+          <button v-if="data" @click="exportReport" class="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export Excel
+          </button>
+        </div>
+
+        <div v-if="loading && !data" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+        <template v-if="data">
+          <!-- สรุป: เข้าใช้กี่คน ต่อ role -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div v-for="r in roleTabs.slice(0, 3)" :key="r.key" class="bg-white rounded-2xl ring-1 ring-slate-100 shadow-sm p-4">
+              <div class="text-sm text-slate-500">{{ r.label }} ที่เข้าใช้ใน {{ days }} วัน</div>
+              <div class="text-2xl font-bold text-slate-800 mt-1">
+                {{ data.overview[r.key]?.active || 0 }} <span class="text-base font-semibold text-slate-400">จาก {{ data.overview[r.key]?.total || 0 }} คน</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="flex gap-6 px-5 pt-3 border-b border-slate-100 text-[15px] overflow-x-auto">
+              <button v-for="t in roleTabs" :key="t.key" type="button" @click="tab = t.key"
+                class="pb-2.5 bg-transparent border-0 border-b-2 cursor-pointer font-semibold whitespace-nowrap"
+                :class="tab === t.key ? 'border-teal-700 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'">{{ t.label }}</button>
+            </div>
+
+            <!-- ── Sale ── -->
+            <div v-if="tab === 'sale'" class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm min-w-[1100px]">
+                <thead>
+                  <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500">
+                    <th class="px-4 py-3 text-left" rowspan="2">Sale</th>
+                    <th class="px-3 py-3 text-left" rowspan="2">เข้าใช้ล่าสุด</th>
+                    <th class="px-3 py-3 text-center" rowspan="2">วันที่เข้าใช้</th>
+                    <th class="px-3 pt-3 pb-1 text-center border-l border-slate-200" colspan="5">งานที่ทำ ({{ days }} วัน)</th>
+                    <th class="px-3 pt-3 pb-1 text-center border-l border-slate-200 text-rose-600" colspan="4">งานค้าง (ตอนนี้)</th>
+                  </tr>
+                  <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
+                    <th class="px-3 pb-2 text-center border-l border-slate-200">ดีลใหม่</th>
+                    <th class="px-3 pb-2 text-center">อัปเดตดีล</th>
+                    <th class="px-3 pb-2 text-center">อัปเดตงานประมูล</th>
+                    <th class="px-3 pb-2 text-center">ลูกค้า/ผู้ติดต่อใหม่</th>
+                    <th class="px-3 pb-2 text-center">ตรวจข้อมูลย้อนหลัง</th>
+                    <th class="px-3 pb-2 text-center border-l border-slate-200">ดีลค้าง</th>
+                    <th class="px-3 pb-2 text-center">นัดติดตามเลยกำหนด</th>
+                    <th class="px-3 pb-2 text-center">ประมูลเกิน SLA</th>
+                    <th class="px-3 pb-2 text-center">ยังไม่รับงาน</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="u in data.rows.sale" :key="u.id" class="border-b border-slate-100">
+                    <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">{{ u.full_name }}</td>
+                    <td class="px-3 py-3 whitespace-nowrap"><span v-html="lastSeenHtml(u)"></span></td>
+                    <td class="px-3 py-3 text-center font-bold">{{ u.active_days }}</td>
+                    <td class="px-3 py-3 text-center border-l border-slate-100">{{ u.new_deals }}</td>
+                    <td class="px-3 py-3 text-center">{{ u.deal_moves }}</td>
+                    <td class="px-3 py-3 text-center">{{ u.bid_moves }}</td>
+                    <td class="px-3 py-3 text-center">{{ u.new_accounts + u.new_contacts }}</td>
+                    <td class="px-3 py-3 text-center">{{ u.reviews_done }}</td>
+                    <td v-for="k in ['stale_deals','overdue_followups','sla_over','not_accepted']" :key="k" class="px-3 py-3 text-center" :class="k === 'stale_deals' ? 'border-l border-slate-100' : ''">
+                      <button v-if="u[k]" type="button" @click="openDetail(u, k)" class="px-2.5 py-1 rounded-lg font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border-0 cursor-pointer">{{ u[k] }}</button>
+                      <span v-else class="text-slate-300">0</span>
+                    </td>
+                  </tr>
+                </tbody>
+                <!-- ยอดรวมทั้งทีม (Grand total — ยืนยันจากผู้ใช้ 2026-09-30) -->
+                <tfoot v-if="saleTotals">
+                  <tr class="bg-slate-50 font-bold border-t-2 border-slate-200">
+                    <td class="px-4 py-3 text-slate-800 whitespace-nowrap">รวมทั้งทีม ({{ saleTotals.people }} คน)</td>
+                    <td class="px-3 py-3 whitespace-nowrap text-slate-600">เข้าใช้ {{ saleTotals.active }} คน</td>
+                    <td class="px-3 py-3 text-center text-slate-400">—</td>
+                    <td class="px-3 py-3 text-center border-l border-slate-200">{{ saleTotals.new_deals }}</td>
+                    <td class="px-3 py-3 text-center">{{ saleTotals.deal_moves }}</td>
+                    <td class="px-3 py-3 text-center">{{ saleTotals.bid_moves }}</td>
+                    <td class="px-3 py-3 text-center">{{ saleTotals.new_accounts + saleTotals.new_contacts }}</td>
+                    <td class="px-3 py-3 text-center">{{ saleTotals.reviews_done }}</td>
+                    <td v-for="k in ['stale_deals','overdue_followups','sla_over','not_accepted']" :key="'t' + k" class="px-3 py-3 text-center"
+                      :class="[k === 'stale_deals' ? 'border-l border-slate-200' : '', saleTotals[k] ? 'text-rose-700' : 'text-slate-400']">{{ saleTotals[k] }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <!-- ── ธุรการขาย ── -->
+            <div v-if="tab === 'salesadmin'">
+              <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-sm min-w-[820px]">
+                  <thead>
+                    <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
+                      <th class="px-4 py-3 text-left">ธุรการขาย</th>
+                      <th class="px-3 py-3 text-left">เข้าใช้ล่าสุด</th>
+                      <th class="px-3 py-3 text-center">วันที่เข้าใช้</th>
+                      <th class="px-3 py-3 text-center border-l border-slate-200">ตัดสินใจประกาศ</th>
+                      <th class="px-3 py-3 text-center">มอบหมายงาน</th>
+                      <th class="px-3 py-3 text-center">ผูกรหัส ERP</th>
+                      <th class="px-3 py-3 text-center">ตรวจลูกค้าซ้ำ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="u in data.rows.salesadmin" :key="u.id" class="border-b border-slate-100">
+                      <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">{{ u.full_name }}</td>
+                      <td class="px-3 py-3 whitespace-nowrap"><span v-html="lastSeenHtml(u)"></span></td>
+                      <td class="px-3 py-3 text-center font-bold">{{ u.active_days }}</td>
+                      <td class="px-3 py-3 text-center border-l border-slate-100">{{ u.decisions }}</td>
+                      <td class="px-3 py-3 text-center">{{ u.assigned }}</td>
+                      <td class="px-3 py-3 text-center">{{ u.erp_linked }}</td>
+                      <td class="px-3 py-3 text-center">{{ u.dup_reviewed }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="px-5 py-4 border-t border-slate-100">
+                <div class="text-sm font-semibold text-rose-600 mb-2">งานค้างของธุรการขาย (ตอนนี้ — ทั้งทีม)</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div v-for="b in salesadminBacklogItems" :key="b.key" class="p-3 rounded-xl ring-1" :class="data.salesadmin_backlog[b.key] ? 'ring-rose-200 bg-rose-50' : 'ring-slate-200 bg-slate-50'">
+                    <div class="text-sm text-slate-600">{{ b.label }}</div>
+                    <div class="text-2xl font-bold mt-0.5" :class="data.salesadmin_backlog[b.key] ? 'text-rose-700' : 'text-slate-400'">{{ data.salesadmin_backlog[b.key] }}</div>
+                    <div class="text-xs text-slate-500 mt-0.5">{{ b.where }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Manager ── -->
+            <div v-if="tab === 'manager'" class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm min-w-[640px]">
+                <thead>
+                  <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
+                    <th class="px-4 py-3 text-left">Manager</th>
+                    <th class="px-3 py-3 text-left">เข้าใช้ล่าสุด</th>
+                    <th class="px-3 py-3 text-center">วันที่เข้าใช้</th>
+                    <th class="px-3 py-3 text-center border-l border-slate-200">เปิดดูรายงาน</th>
+                    <th class="px-3 py-3 text-center">ตั้งเป้าหมาย</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="u in data.rows.manager" :key="u.id" class="border-b border-slate-100">
+                    <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">{{ u.full_name }}</td>
+                    <td class="px-3 py-3 whitespace-nowrap"><span v-html="lastSeenHtml(u)"></span></td>
+                    <td class="px-3 py-3 text-center font-bold">{{ u.active_days }}</td>
+                    <td class="px-3 py-3 text-center border-l border-slate-100">{{ u.report_views }}</td>
+                    <td class="px-3 py-3 text-center">{{ u.targets_set }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- ── ตรวจข้อมูลย้อนหลัง ── -->
+            <div v-if="tab === 'import'">
+              <div class="px-5 py-3 text-sm text-slate-500 border-b border-slate-100">
+                ใบเสนอราคาเก่าที่นำเข้าเป็นดีลขายตรงและงานประมูล — Sale ต้องเข้าไปตรวจ (ขายตรง "ตรวจแล้ว" = เลื่อนสถานะ · กดยืนยันว่ายังเป็นใบเสนอราคา · หรือลบดีลที่ไม่ใช่งานจริง — กดบันทึกเฉยๆ ไม่นับ / งานประมูล = เลื่อนสถานะ · กดยืนยันว่าตรวจแล้ว รอเลื่อนสถานะถัดไป)
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-sm min-w-[900px]">
+                  <thead>
+                    <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
+                      <th class="px-4 py-3 text-left">Sale</th>
+                      <th class="px-3 py-3 text-center">ขายตรง ตรวจแล้ว / ทั้งหมด</th>
+                      <th class="px-3 py-3 text-center">งานประมูล ตรวจแล้ว / ทั้งหมด</th>
+                      <th class="px-3 py-3 text-left w-[260px]">ความคืบหน้า</th>
+                      <th class="px-3 py-3 text-center">ยังไม่ตรวจ</th>
+                      <th class="px-3 py-3 text-center">ตรวจใน {{ days }} วัน</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="u in importRows" :key="u.id" class="border-b border-slate-100">
+                      <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">{{ u.full_name }}</td>
+                      <td class="px-3 py-3 text-center">{{ u.import_direct_reviewed }} / {{ u.import_direct_total }}<span v-if="u.import_direct_reviewed" class="block text-xs text-slate-500">{{ importBreakdown(u.import_direct_moved, u.import_direct_confirmed, u.import_direct_deleted) }}</span></td>
+                      <td class="px-3 py-3 text-center">{{ u.import_bid_reviewed }} / {{ u.import_bid_total }}<span v-if="u.import_bid_reviewed" class="block text-xs text-slate-500">{{ bidImportBreakdown(u.import_bid_moved, u.import_bid_confirmed) }}</span></td>
+                      <td class="px-3 py-3">
+                        <div class="flex items-center gap-2">
+                          <div class="flex-1 h-2.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full rounded-full bg-teal-600" :style="{ width: u.pct + '%' }"></div></div>
+                          <span class="text-sm font-bold text-slate-700 w-12 text-right">{{ u.pct }}%</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-3 text-center">
+                        <button v-if="u.pending" type="button" @click="openDetail(u, 'import_pending')" class="px-2.5 py-1 rounded-lg font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border-0 cursor-pointer">{{ u.pending }}</button>
+                        <span v-else class="text-emerald-600 font-semibold">ครบแล้ว</span>
+                      </td>
+                      <td class="px-3 py-3 text-center">{{ u.reviews_done }}</td>
+                    </tr>
+                  </tbody>
+                  <tfoot v-if="importTotals">
+                    <tr class="bg-slate-50 font-bold border-t-2 border-slate-200">
+                      <td class="px-4 py-3 text-slate-800 whitespace-nowrap">รวมทั้งทีม</td>
+                      <td class="px-3 py-3 text-center">{{ importTotals.direct_reviewed }} / {{ importTotals.direct_total }}<span v-if="importTotals.direct_reviewed" class="block text-xs font-normal text-slate-500">{{ importBreakdown(importTotals.direct_moved, importTotals.direct_confirmed, importTotals.direct_deleted) }}</span></td>
+                      <td class="px-3 py-3 text-center">{{ importTotals.bid_reviewed }} / {{ importTotals.bid_total }}<span v-if="importTotals.bid_reviewed" class="block text-xs font-normal text-slate-500">{{ bidImportBreakdown(importTotals.bid_moved, importTotals.bid_confirmed) }}</span></td>
+                      <td class="px-3 py-3">
+                        <div class="flex items-center gap-2">
+                          <div class="flex-1 h-2.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full rounded-full bg-teal-700" :style="{ width: importTotals.pct + '%' }"></div></div>
+                          <span class="text-sm text-slate-800 w-12 text-right">{{ importTotals.pct }}%</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-3 text-center" :class="importTotals.pending ? 'text-rose-700' : 'text-emerald-600'">{{ importTotals.pending }}</td>
+                      <td class="px-3 py-3 text-center">{{ importTotals.reviews_done }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <!-- ── แนวโน้มรายสัปดาห์ ── -->
+            <div v-if="tab === 'trend'">
+              <div class="px-5 py-3 text-sm text-slate-500 border-b border-slate-100">
+                8 สัปดาห์ล่าสุด (เริ่มวันจันทร์) — จำนวนคนที่เข้าใช้เริ่มนับตั้งแต่วันที่ขึ้นระบบบันทึกการใช้งาน สัปดาห์ก่อนหน้านั้นจึงเป็น 0
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-sm min-w-[760px]">
+                  <thead>
+                    <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
+                      <th class="px-4 py-3 text-left">สัปดาห์เริ่ม</th>
+                      <th class="px-3 py-3 text-center">Sale เข้าใช้</th>
+                      <th class="px-3 py-3 text-center">ธุรการเข้าใช้</th>
+                      <th class="px-3 py-3 text-center">Manager เข้าใช้</th>
+                      <th class="px-3 py-3 text-center border-l border-slate-200">อัปเดตสถานะงาน</th>
+                      <th class="px-3 py-3 text-center">ตรวจข้อมูลย้อนหลัง</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="w in data.trend" :key="w.week_start" class="border-b border-slate-100">
+                      <td class="px-4 py-3 whitespace-nowrap">{{ formatDateThai(w.week_start) }}</td>
+                      <td class="px-3 py-3 text-center">{{ w.active.sale || 0 }}</td>
+                      <td class="px-3 py-3 text-center">{{ w.active.salesadmin || 0 }}</td>
+                      <td class="px-3 py-3 text-center">{{ w.active.manager || 0 }}</td>
+                      <td class="px-3 py-3 text-center border-l border-slate-100 font-bold">{{ w.status_updates }}</td>
+                      <td class="px-3 py-3 text-center">{{ w.import_reviews }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </template>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- รายการงานค้าง / ข้อมูลย้อนหลังที่ยังไม่ตรวจ ของ sale 1 คน -->
+    <div v-if="detail" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="detail = null">
+      <div class="bg-white rounded-2xl w-full max-w-[900px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
+          <div>
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ detailTitles[detail.type] }}</h3>
+            <div class="text-sm text-slate-500 mt-0.5">{{ detail.user.full_name }} · {{ detail.rows ? detail.rows.length + ' รายการ' : 'กำลังโหลด...' }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="detail = null">×</button>
+        </div>
+        <div class="overflow-auto flex-1">
+          <table v-if="detail.rows" class="w-full border-collapse text-sm min-w-[720px]">
+            <thead>
+              <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
+                <th class="px-4 py-3 text-left">รหัสงาน</th>
+                <th class="px-3 py-3 text-left">ชื่องาน / ลูกค้า</th>
+                <th class="px-3 py-3 text-left">สถานะ</th>
+                <th class="px-3 py-3 text-right">มูลค่า</th>
+                <th class="px-3 py-3 text-left">{{ detailSinceLabel[detail.type] }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in detail.rows" :key="r.project_code" class="border-b border-slate-100">
+                <td class="px-4 py-2.5"><span class="font-mono text-xs text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 whitespace-nowrap">{{ r.project_code }}</span></td>
+                <td class="px-3 py-2.5"><div class="text-slate-800">{{ r.title }}</div><div class="text-xs text-slate-500">{{ r.client_name }}</div></td>
+                <td class="px-3 py-2.5 whitespace-nowrap text-slate-600">{{ r.stage }}</td>
+                <td class="px-3 py-2.5 text-right whitespace-nowrap">{{ r.value ? formatPrice(r.value) : '-' }}</td>
+                <td class="px-3 py-2.5 whitespace-nowrap text-slate-600">{{ formatDateThai(r.since) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="flex justify-center py-12"><div class="spinner w-8 h-8"></div></div>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=64"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      data: null,
+      days: 7,
+      tab: 'sale',
+      detail: null,   // { user, type, rows }
+      roleTabs: [
+        { key: 'sale', label: 'Sale' }, { key: 'salesadmin', label: 'ธุรการขาย' }, { key: 'manager', label: 'Manager' },
+        { key: 'import', label: 'ตรวจข้อมูลย้อนหลัง' }, { key: 'trend', label: 'แนวโน้มรายสัปดาห์' },
+      ],
+      salesadminBacklogItems: [
+        { key: 'ann_pending', label: 'ประกาศรอตัดสินใจ', where: 'หน้า ประกาศวันนี้' },
+        { key: 'decided_not_assigned', label: 'ตัดสินใจเข้าแล้ว ยังไม่มอบหมาย', where: 'หน้า ประกาศวันนี้' },
+        { key: 'erp_pending', label: 'งานชนะรอเปิดหน้าบัญชี', where: 'หน้าลูกค้า แท็บรอเปิดหน้าบัญชี' },
+        { key: 'similar_pairs', label: 'คู่ลูกค้าชื่อคล้ายยังไม่ตรวจ', where: 'หน้าลูกค้า แท็บชื่อคล้ายกัน' },
+      ],
+      detailTitles: {
+        stale_deals: 'ดีลค้าง', overdue_followups: 'นัดติดตามเลยกำหนด', sla_over: 'งานประมูลเกิน SLA',
+        not_accepted: 'งานประมูลที่ยังไม่รับงาน', import_pending: 'ข้อมูลย้อนหลังที่ยังไม่ตรวจ',
+      },
+      detailSinceLabel: {
+        stale_deals: 'อัปเดตล่าสุด', overdue_followups: 'วันนัดติดตาม', sla_over: 'กำหนด SLA',
+        not_accepted: 'มอบหมายเมื่อ', import_pending: 'นำเข้าเมื่อ',
+      },
+    };
+  },
+  computed: {
+    // ยอดรวมทั้งทีม Sale (แท็บ Sale + Export)
+    saleTotals() {
+      const rows = this.data?.rows.sale || [];
+      if (!rows.length) return null;
+      const keys = ['new_deals','deal_moves','bid_moves','new_accounts','new_contacts','reviews_done','stale_deals','overdue_followups','sla_over','not_accepted',
+                    'import_direct_total','import_direct_reviewed','import_direct_deleted','import_direct_moved','import_direct_confirmed','import_bid_total','import_bid_reviewed','import_bid_moved','import_bid_confirmed'];
+      const t = { people: rows.length, active: rows.filter(u => u.active_days > 0).length };
+      keys.forEach(k => { t[k] = rows.reduce((sum, u) => sum + Number(u[k] || 0), 0); });
+      return t;
+    },
+    // ยอดรวมแท็บตรวจข้อมูลย้อนหลัง
+    importTotals() {
+      const t = this.saleTotals;
+      if (!t || !(t.import_direct_total + t.import_bid_total)) return null;
+      const total = t.import_direct_total + t.import_bid_total;
+      const done = t.import_direct_reviewed + t.import_bid_reviewed;
+      return { direct_reviewed: t.import_direct_reviewed, direct_total: t.import_direct_total, direct_deleted: t.import_direct_deleted, direct_moved: t.import_direct_moved, direct_confirmed: t.import_direct_confirmed, bid_reviewed: t.import_bid_reviewed, bid_moved: t.import_bid_moved, bid_confirmed: t.import_bid_confirmed, bid_total: t.import_bid_total,
+               pending: total - done, pct: Math.round(done * 100 / total), reviews_done: t.reviews_done };
+    },
+    importRows() {
+      return (this.data?.rows.sale || []).map(u => {
+        const total = u.import_direct_total + u.import_bid_total;
+        const done = u.import_direct_reviewed + u.import_bid_reviewed;
+        return { ...u, pending: total - done, pct: total ? Math.round(done * 100 / total) : 100 };
+      }).filter(u => u.import_direct_total + u.import_bid_total > 0);
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      // manager + admin เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-30 — API บังคับซ้ำ)
+      if (!['manager', 'admin'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.load();
+  },
+  methods: {
+    ...SharedMethods,
+
+    // วิธีตรวจดีลขายตรงนำเข้า เช่น "เลื่อน 40 · ยืนยัน PI 20 · ลบ 10" (ไม่แสดงวิธีที่เป็น 0)
+    importBreakdown(moved, confirmed, deleted) {
+      const parts = [];
+      if (moved) parts.push(`เลื่อน ${moved}`);
+      if (confirmed) parts.push(`ยืนยัน PI ${confirmed}`);
+      if (deleted) parts.push(`ลบ ${deleted}`);
+      return parts.join(' · ');
+    },
+
+    bidImportBreakdown(moved, confirmed) {
+      const parts = [];
+      if (moved) parts.push(`เลื่อน ${moved}`);
+      if (confirmed) parts.push(`ยืนยันแล้ว ${confirmed}`);
+      return parts.join(' · ');
+    },
+
+    async load() {
+      this.loading = true;
+      const res = await apiCall('GET', `api/usage_report.php?action=summary&days=${this.days}`);
+      if (res.success) this.data = res.data;
+      else await this.showAlert(res.message || 'โหลดรายงานไม่สำเร็จ', 'error');
+      this.loading = false;
+    },
+
+    // เข้าใช้ล่าสุด: วันนี้ / X วันก่อน + ป้ายเตือนเมื่อเกินเกณฑ์
+    lastSeenHtml(u) {
+      if (!u.last_seen) return '<span class="text-rose-600 font-semibold">ยังไม่เคยเข้าใช้</span>';
+      const limit = Number(this.data.config.usage_inactive_days);
+      const time = u.last_seen.substring(11, 16);
+      const text = u.days_since_seen === 0 ? `วันนี้ ${time}` : u.days_since_seen === 1 ? `เมื่อวาน ${time}` : `${u.days_since_seen} วันก่อน`;
+      return u.days_since_seen >= limit
+        ? `<span class="text-rose-600 font-semibold">⚠️ ${text}</span> <span class="ml-1 px-1.5 py-0.5 rounded text-xs font-bold bg-rose-100 text-rose-700">ไม่ได้เข้าใช้ ${u.days_since_seen} วัน</span>`
+        : `<span class="text-slate-700">${text}</span>`;
+    },
+
+    async openDetail(u, type) {
+      this.detail = { user: u, type, rows: null };
+      const res = await apiCall('GET', `api/usage_report.php?action=detail&user_id=${u.id}&type=${type}`);
+      if (!res.success) { this.detail = null; await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      this.detail.rows = res.data;
+    },
+
+    exportReport() {
+      const d = this.data;
+      const seen = u => u.last_seen ? this.formatDateThai(u.last_seen) : 'ยังไม่เคยเข้าใช้';
+      const rows = [
+        ...d.rows.sale.map(u => ['Sale', u.full_name, seen(u), u.active_days, u.new_deals, u.deal_moves, u.bid_moves, u.new_accounts + u.new_contacts,
+          u.reviews_done, u.stale_deals, u.overdue_followups, u.sla_over, u.not_accepted,
+          `${u.import_direct_reviewed + u.import_bid_reviewed}/${u.import_direct_total + u.import_bid_total}`]),
+        ...(this.saleTotals ? [((t) => ['Sale', `รวมทั้งทีม (${t.people} คน)`, `เข้าใช้ ${t.active} คน`, '', t.new_deals, t.deal_moves, t.bid_moves,
+          t.new_accounts + t.new_contacts, t.reviews_done, t.stale_deals, t.overdue_followups, t.sla_over, t.not_accepted,
+          `${t.import_direct_reviewed + t.import_bid_reviewed}/${t.import_direct_total + t.import_bid_total}`])(this.saleTotals)] : []),
+        ...d.rows.salesadmin.map(u => ['ธุรการขาย', u.full_name, seen(u), u.active_days, `ตัดสินใจ ${u.decisions}`, `มอบหมาย ${u.assigned}`, `ผูก ERP ${u.erp_linked}`, `ตรวจซ้ำ ${u.dup_reviewed}`, '', '', '', '', '', '']),
+        ...d.rows.manager.map(u => ['Manager', u.full_name, seen(u), u.active_days, `ดูรายงาน ${u.report_views}`, `ตั้งเป้า ${u.targets_set}`, '', '', '', '', '', '', '', '']),
+      ];
+      const headers = ['Role', 'ชื่อ', 'เข้าใช้ล่าสุด', `วันที่เข้าใช้ (${this.days} วัน)`, 'ดีลใหม่', 'อัปเดตดีล', 'อัปเดตงานประมูล', 'ลูกค้า/ผู้ติดต่อใหม่',
+        'ตรวจข้อมูลย้อนหลัง', 'ดีลค้าง', 'นัดติดตามเลยกำหนด', 'ประมูลเกิน SLA', 'ยังไม่รับงาน', 'ข้อมูลย้อนหลัง ตรวจแล้ว/ทั้งหมด'];
+      this.exportExcel(`การใช้งานระบบ_${this.days}วัน_${new Date().toISOString().substring(0, 10)}`, headers, rows);
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

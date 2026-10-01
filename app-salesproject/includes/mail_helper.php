@@ -121,7 +121,8 @@ function buildAssignmentEmailHtml(array $ann, string $saleName, string $priority
     $prioColor = $prioMap[$priority] ?? '#2563eb';
     $notesHtml = $notes ? htmlspecialchars($notes) : '<span style="color:#94a3b8">ไม่มี</span>';
     $appUrl   = defined('APP_URL') ? APP_URL : 'http://localhost:8081';
-    $saleEnc  = htmlspecialchars($saleName);
+    // ชื่อผู้ใช้ในระบบมักขึ้นต้นด้วย "คุณ" อยู่แล้ว — เติมเฉพาะเมื่อยังไม่มี กัน "สวัสดีคุณ คุณ..." (แก้ 2026-10-01)
+    $saleEnc  = htmlspecialchars(preg_match('/^คุณ/u', trim($saleName)) ? trim($saleName) : 'คุณ' . trim($saleName));
 
     return <<<HTML
 <!DOCTYPE html>
@@ -140,7 +141,7 @@ function buildAssignmentEmailHtml(array $ann, string $saleName, string $priority
 
       <!-- Body -->
       <tr><td style="padding:28px 32px">
-        <p style="margin:0 0 20px;font-size:15px;color:#374151">สวัสดีคุณ <strong>{$saleEnc}</strong>,</p>
+        <p style="margin:0 0 20px;font-size:15px;color:#374151">สวัสดี <strong>{$saleEnc}</strong></p>
         <p style="margin:0 0 24px;font-size:15px;color:#374151;line-height:1.6">
           มีโครงการประมูลใหม่ที่ได้รับมอบหมายให้ดำเนินการ กรุณาเข้าระบบเพื่อดูรายละเอียดและดำเนินการต่อ
         </p>
@@ -207,4 +208,98 @@ function buildAssignmentEmailHtml(array $ann, string $saleName, string $priority
 </body>
 </html>
 HTML;
+}
+
+/**
+ * อีเมลแจ้ง sale ที่รับโอนงาน/ดีลย้อนหลัง ("ไม่ใช่งานของฉัน" ในหน้าต่างตรวจข้อมูลย้อนหลัง — ยืนยันจากผู้ใช้ 2026-10-01)
+ * $info: kind ('งาน'|'ดีล'), project_code, title, client, value, status, from_name, page (หน้าที่ลิงก์ไป)
+ */
+function buildTransferEmailHtml(string $toName, array $info): string {
+    $e = fn($v) => htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8');
+    $kind   = $e($info['kind'] ?? 'งาน');
+    $code   = $e($info['project_code'] ?? '-');
+    $title  = $e($info['title'] ?? '-');
+    $client = $e(($info['client'] ?? '') ?: '-');
+    $value  = !empty($info['value']) ? number_format((float)$info['value'], 0, '.', ',') . ' บาท' : 'ไม่ระบุ';
+    $status = $e($info['status'] ?? '-');
+    $from   = $e($info['from_name'] ?? '-');
+    // ชื่อผู้ใช้ในระบบมักขึ้นต้นด้วย "คุณ" อยู่แล้ว — เติมเฉพาะเมื่อยังไม่มี กัน "คุณคุณ..."
+    $to     = $e(preg_match('/^คุณ/u', trim($toName)) ? trim($toName) : 'คุณ' . trim($toName));
+    $url    = rtrim(defined('APP_URL') ? APP_URL : 'http://localhost:8081', '/') . '/' . $e($info['page'] ?? 'dashboard.html');
+
+    return <<<HTML
+<!DOCTYPE html>
+<html lang="th">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f2f5f9;font-family:'Sarabun','Noto Sans Thai',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0">
+  <tr><td align="center" style="padding:32px 16px">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,40,80,.08)">
+      <tr><td style="background:linear-gradient(135deg,#115e59,#0f766e);padding:28px 32px">
+        <p style="margin:0;color:#99f6e4;font-size:13px;font-weight:600;letter-spacing:1px">SALES PROJECT</p>
+        <h1 style="margin:6px 0 0;color:#fff;font-size:20px;font-weight:700">มี{$kind}โอนมาให้คุณดูแล</h1>
+      </td></tr>
+      <tr><td style="padding:28px 32px">
+        <p style="margin:0 0 16px;font-size:15px;color:#374151">สวัสดี <strong>{$to}</strong></p>
+        <p style="margin:0 0 24px;font-size:15px;color:#374151;line-height:1.6">
+          <strong>{$from}</strong> โอน{$kind}นี้มาให้คุณดูแล เพราะไม่ใช่{$kind}ของผู้โอน
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:20px">
+          <tr><td style="padding:20px 22px">
+            <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#7e22ce;font-family:monospace">{$code}</p>
+            <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#1e293b;line-height:1.5">{$title}</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td width="50%" style="padding-bottom:12px;vertical-align:top">
+                  <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;font-weight:600">ลูกค้า / หน่วยงาน</p>
+                  <p style="margin:0;font-size:14px;color:#374151;font-weight:600">{$client}</p>
+                </td>
+                <td width="50%" style="padding-bottom:12px;vertical-align:top">
+                  <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;font-weight:600">มูลค่า</p>
+                  <p style="margin:0;font-size:14px;color:#16a34a;font-weight:700">{$value}</p>
+                </td>
+              </tr>
+              <tr><td colspan="2" style="vertical-align:top">
+                <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;font-weight:600">สถานะ</p>
+                <p style="margin:0;font-size:14px;color:#374151;font-weight:600">{$status}</p>
+              </td></tr>
+            </table>
+          </td></tr>
+        </table>
+        <p style="margin:0 0 24px;font-size:15px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;line-height:1.6">
+          {$kind}นี้เป็นข้อมูลย้อนหลังจากใบเสนอราคาเดิม กรุณาเข้าระบบแล้วกด "ตรวจ{$kind}นี้" เพื่อบอกสถานะปัจจุบัน
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr><td align="center">
+            <a href="{$url}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:13px 32px;border-radius:10px;font-size:15px;font-weight:700">เข้าสู่ระบบ</a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:18px 32px;background:#f8fafc;border-top:1px solid #e2e8f0">
+        <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center">อีเมลนี้ส่งโดยอัตโนมัติจากระบบ — กรุณาอย่าตอบกลับ</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>
+HTML;
+}
+
+/**
+ * ส่งอีเมลแจ้งโอนงาน/ดีล ตามการตั้งค่าแจ้งเตือนของผู้รับ (เปิดแจ้งเตือน + ช่องทาง email/both — เหมือนอีเมลมอบหมายงานใหม่)
+ * เรียกหลัง respondThenContinue() เท่านั้น (SMTP ช้าไม่ทำให้หน้าจอค้าง) / ส่งไม่สำเร็จไม่กระทบการโอน
+ */
+function sendTransferEmail(PDO $db, int $toUserId, array $info): bool {
+    try {
+        $stmt = $db->prepare('SELECT full_name, email, notify_channel, notify_enabled FROM users WHERE id = ?');
+        $stmt->execute([$toUserId]);
+        $to = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$to || !$to['notify_enabled'] || !in_array($to['notify_channel'], ['email', 'both'], true) || empty($to['email'])) return false;
+        $subject = "มี{$info['kind']}โอนมาให้คุณ: " . mb_substr((string)($info['title'] ?? ''), 0, 60);
+        return sendEmail($to['email'], $to['full_name'], $subject, buildTransferEmailHtml($to['full_name'], $info));
+    } catch (Throwable $e) {
+        error_log('sendTransferEmail: ' . $e->getMessage());
+        return false;
+    }
 }

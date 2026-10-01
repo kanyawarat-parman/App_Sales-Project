@@ -7,6 +7,8 @@ require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../includes/phone_helper.php';
 require_once __DIR__ . '/../includes/account_helper.php';
+require_once __DIR__ . '/../includes/usage_helper.php';
+require_once __DIR__ . '/../includes/mail_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -39,7 +41,13 @@ try {
         };
     } elseif ($method === 'POST') {
         $body = json_decode(file_get_contents('php://input'), true) ?? [];
-        createItem($db, $user, $body);
+        if (($_GET['action'] ?? '') === 'confirm_import_review') {
+            confirmImportReview($db, $user, (int)($_GET['id'] ?? 0));
+        } elseif (($_GET['action'] ?? '') === 'transfer_import') {
+            transferImportDeal($db, $user, (int)($_GET['id'] ?? 0), (int)($body['assigned_to'] ?? 0));
+        } else {
+            createItem($db, $user, $body);
+        }
     } elseif ($method === 'PUT') {
         $id   = (int)($_GET['id'] ?? 0);
         $body = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -101,7 +109,9 @@ function fetchPipelineRows(PDO $db, string $where, array $params): array {
                pi.order_date, pi.delivered_date,
                pi.account_id, a.name AS account_name, a.account_type AS account_type,
                u.id AS sale_id, u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url,
-               pi.created_at, pi.updated_at
+               pi.created_at, pi.updated_at,
+               -- ข้อมูลย้อนหลังที่ยังไม่ตรวจ: 1 = นำเข้าแล้วยังไม่มีคนบันทึก/ย้ายสถานะ (ป้ายรอตรวจ — 2026-09-30)
+               IF(EXISTS(SELECT 1 FROM quotation_import_log q WHERE q.pipeline_item_id = pi.id AND q.reviewed_at IS NULL AND pi.stage = 'Send PI'), 1, 0) AS import_pending
         FROM pipeline_items pi
         JOIN users u ON u.id = pi.assigned_to
         LEFT JOIN accounts a ON a.id = pi.account_id
@@ -699,7 +709,7 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
 
     // Ownership check
-    $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id, source_type FROM pipeline_items WHERE id = ?");
+    $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id, source_type, announcement_id FROM pipeline_items WHERE id = ?");
     $owner->execute([$id]);
     $row = $owner->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
@@ -812,7 +822,32 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
         notifyErpPendingIfNeeded($db, $id, $user);
     }
 
+    // ข้อมูลย้อนหลัง "ตรวจแล้ว" (รายงานการใช้งาน — ยืนยันจากผู้ใช้ 2026-09-30)
+    // ต้องเลื่อนสถานะเท่านั้น — กดบันทึกฟอร์มเฉยๆ ไม่นับ
+    // - ขายตรงที่นำเข้าจากใบเสนอราคา (เริ่มที่ Send PI): ยังเป็นใบเสนอราคาจริง → ปุ่มยืนยัน confirmImportReview / ไม่ใช่งานจริง → ลบดีล
+    // - งานประมูล mirror (นำเข้าที่ชนะการประมูล): ยังรอส่งมอบ → ปุ่มยืนยันใน bid-pipeline (api/assignments.php confirm_import_review)
+    if (isset($body['stage']) && $body['stage'] !== $row['stage']) {
+        markImportReviewed($db, $user, $id, $row['source_type'] === 'ebidding' ? (int)$row['announcement_id'] : null);
+    }
     echo json_encode(['success' => true, 'message' => 'อัปเดตสำเร็จ'], JSON_UNESCAPED_UNICODE);
+}
+
+// ─── POST confirm_import_review ──────────────────────────────────────────────
+// ปุ่ม "ตรวจแล้ว — ยังเป็นใบเสนอราคาอยู่" ของดีลขายตรงที่นำเข้าย้อนหลัง (ยืนยันจากผู้ใช้ 2026-09-30)
+// แยกดีลที่ยังเป็น PI จริง ออกจากดีลที่ยังไม่มีใครตรวจ — เฉพาะ sale เจ้าของดีล / ธุรการขาย / admin
+function confirmImportReview(PDO $db, array $user, int $id): void {
+    if (!$id) jsonError(400, 'กรุณาระบุ id');
+    if (!in_array($user['role'], ['sale', 'salesadmin', 'admin'], true)) jsonError(403, 'เฉพาะ Sale เจ้าของดีล ธุรการขาย หรือ admin');
+    $stmt = $db->prepare("SELECT pi.assigned_to, pi.stage, pi.source_type, q.reviewed_at
+                          FROM pipeline_items pi JOIN quotation_import_log q ON q.pipeline_item_id = pi.id WHERE pi.id = ?");
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row || $row['source_type'] === 'ebidding') jsonError(404, 'ดีลนี้ไม่ใช่ข้อมูลย้อนหลังที่นำเข้า');
+    if ($user['role'] === 'sale' && $row['assigned_to'] != $user['id']) jsonError(403, 'ไม่มีสิทธิ์');
+    if ($row['reviewed_at'] !== null) jsonError(400, 'ดีลนี้ตรวจแล้ว');
+    if ($row['stage'] !== 'Send PI') jsonError(400, 'ยืนยันได้เฉพาะดีลที่ยังอยู่ขั้นส่งใบเสนอราคา');
+    markImportReviewed($db, $user, $id, null, ['sale', 'salesadmin', 'admin']);
+    echo json_encode(['success' => true, 'message' => 'บันทึกว่าตรวจแล้ว'], JSON_UNESCAPED_UNICODE);
 }
 
 // ─── DELETE ──────────────────────────────────────────────────────────────────
@@ -824,8 +859,50 @@ function deleteItem(PDO $db, array $user, int $id): void {
         $row = $check->fetch();
         if (!$row || $row['assigned_to'] != $user['id']) jsonError(403, 'ไม่มีสิทธิ์');
     }
+    // ลบดีลนำเข้าย้อนหลัง = ตรวจแล้ว (sale ดูแล้วตัดสินว่าไม่ใช่งานจริง — ยืนยันจากผู้ใช้ 2026-09-30) บันทึกผู้ลบ/เวลาก่อนลบ
+    markImportReviewed($db, $user, $id);
     $db->prepare("DELETE FROM pipeline_items WHERE id = ?")->execute([$id]);
     echo json_encode(['success' => true, 'message' => 'ลบสำเร็จ'], JSON_UNESCAPED_UNICODE);
+}
+
+// ─── POST transfer_import ────────────────────────────────────────────────────
+// "ไม่ใช่งานของฉัน" ของดีลขายตรงนำเข้าที่รอตรวจ — โอนให้ sale คนอื่นเอง (ยืนยันจากผู้ใช้ 2026-10-01)
+// นับว่าผู้โอนตรวจแล้ว / บันทึกประวัติ (ขั้นเดิม + หมายเหตุ) / แจ้งเตือนคนรับ — sale เจ้าของดีล / ธุรการขาย / admin
+function transferImportDeal(PDO $db, array $user, int $id, int $newSale): void {
+    if (!$id) jsonError(400, 'กรุณาระบุ id');
+    if (!in_array($user['role'], ['sale', 'salesadmin', 'admin'], true)) jsonError(403, 'ไม่มีสิทธิ์');
+    $stmt = $db->prepare("SELECT pi.assigned_to, pi.stage, pi.source_type, pi.project_code, pi.title, pi.client_name, pi.value, q.reviewed_at, u.full_name AS old_name
+                          FROM pipeline_items pi JOIN quotation_import_log q ON q.pipeline_item_id = pi.id
+                          JOIN users u ON u.id = pi.assigned_to WHERE pi.id = ?");
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row || $row['source_type'] === 'ebidding') jsonError(404, 'ดีลนี้ไม่ใช่ข้อมูลย้อนหลังที่นำเข้า');
+    if ($user['role'] === 'sale' && $row['assigned_to'] != $user['id']) jsonError(403, 'ไม่มีสิทธิ์');
+    if ($row['reviewed_at'] !== null || $row['stage'] !== 'Send PI') jsonError(400, 'ดีลนี้ตรวจแล้ว');
+    if (!$newSale || $newSale === (int)$row['assigned_to']) jsonError(400, 'กรุณาเลือก Sale คนอื่น');
+    $u = $db->prepare("SELECT full_name FROM users WHERE id = ? AND role = 'sale' AND is_active = 1");
+    $u->execute([$newSale]);
+    $newName = $u->fetchColumn();
+    if (!$newName) jsonError(404, 'ไม่พบ Sale ที่เลือก');
+
+    markImportReviewed($db, $user, $id, null, ['sale', 'salesadmin', 'admin']);
+    $db->prepare('UPDATE pipeline_items SET assigned_to = ?, updated_by = ? WHERE id = ?')->execute([$newSale, $user['id'], $id]);
+    $note = "โอนดีลจาก {$row['old_name']} ไป {$newName} (ไม่ใช่งานของผู้โอน — ตรวจข้อมูลย้อนหลัง)";
+    $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+       ->execute([$id, $row['project_code'], $user['id'], $row['stage'], $row['stage'], $note]);
+    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by)
+                  VALUES (?, 'system', 'มีดีลขายตรงโอนมาให้คุณ', ?, 'pipeline_item', ?, ?, ?)")
+       ->execute([$newSale, "{$row['project_code']} {$row['title']} — โอนมาจาก {$row['old_name']}", $id, $user['id'], $user['id']]);
+
+    // ตอบกลับก่อน แล้วส่งอีเมลแจ้งผู้รับโอนเบื้องหลัง ตามการตั้งค่าแจ้งเตือนของผู้รับ (ยืนยันจากผู้ใช้ 2026-10-01)
+    respondThenContinue(null, 'โอนดีลแล้ว');
+    $fromName = $db->prepare('SELECT full_name FROM users WHERE id = ?');
+    $fromName->execute([$user['id']]);
+    sendTransferEmail($db, $newSale, [
+        'kind' => 'ดีล', 'page' => 'sales-pipeline.html', 'project_code' => $row['project_code'], 'title' => $row['title'],
+        'client' => $row['client_name'], 'value' => $row['value'], 'status' => 'ส่ง PI / ใบเสนอราคา',
+        'from_name' => $fromName->fetchColumn() ?: $row['old_name'],
+    ]);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
