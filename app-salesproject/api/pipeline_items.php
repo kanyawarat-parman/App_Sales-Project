@@ -111,7 +111,9 @@ function fetchPipelineRows(PDO $db, string $where, array $params): array {
                u.id AS sale_id, u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url,
                pi.created_at, pi.updated_at,
                -- ข้อมูลย้อนหลังที่ยังไม่ตรวจ: 1 = นำเข้าแล้วยังไม่มีคนบันทึก/ย้ายสถานะ (ป้ายรอตรวจ — 2026-09-30)
-               IF(EXISTS(SELECT 1 FROM quotation_import_log q WHERE q.pipeline_item_id = pi.id AND q.reviewed_at IS NULL AND pi.stage = 'Send PI'), 1, 0) AS import_pending
+               IF(EXISTS(SELECT 1 FROM quotation_import_log q WHERE q.pipeline_item_id = pi.id AND q.reviewed_at IS NULL AND pi.stage = 'Send PI'), 1, 0) AS import_pending,
+               -- ดีลที่นำเข้าจากใบเสนอราคา ทุกสถานะ (ตัวกรอง ข้อมูลย้อนหลังทั้งหมด — 2026-10-01)
+               IF(EXISTS(SELECT 1 FROM quotation_import_log q WHERE q.pipeline_item_id = pi.id), 1, 0) AS is_import
         FROM pipeline_items pi
         JOIN users u ON u.id = pi.assigned_to
         LEFT JOIN accounts a ON a.id = pi.account_id

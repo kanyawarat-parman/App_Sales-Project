@@ -45,6 +45,8 @@ switch ($method) {
             case 'confirm_import_review': confirmBidImportReview($db, $user); break;
             // "ไม่ใช่งานของฉัน" ของงานย้อนหลัง — sale เจ้าของงานโอนให้ sale คนอื่นเอง (ยืนยันจากผู้ใช้ 2026-10-01) — ตรวจสิทธิ์ในฟังก์ชัน
             case 'transfer_import': transferBidImport($db, $user); break;
+            // เปลี่ยนประเภท งานประมูลย้อนหลัง → ขายตรง (Change Record Type — ยืนยันจากผู้ใช้ 2026-10-01) — ตรวจสิทธิ์ในฟังก์ชัน
+            case 'convert_to_direct': convertBidImportToDirect($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -279,6 +281,59 @@ function transferBidImport(PDO $db, array $user): void {
     $info->execute([$user['id'], $body['project_code']]);
     $row = $info->fetch(PDO::FETCH_ASSOC);
     if ($row) sendTransferEmail($db, $newSale, $row + ['kind' => 'งาน', 'page' => 'bid-pipeline.html']);
+}
+
+// เปลี่ยนประเภท งานประมูลย้อนหลัง (นำเข้าจากใบเสนอราคา) → ดีลขายตรง (Change Record Type แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-01)
+// - ใช้ดีลเดิม (pipeline_items mirror) เปลี่ยน source_type เป็น self_sourced — รหัสงาน/ลูกค้า/มูลค่า/sale เจ้าของ/ประวัติเดิม คงอยู่
+// - สถานะ → Send PI + กลับเป็น "รอตรวจ" (reviewed ล้าง) ให้ sale เลื่อนเองที่หน้าขายตรง — ล้างผลแพ้/ชนะ (ไม่ใช่ขั้นที่มีผล)
+// - ประวัติ 1 แถว (Field History): สถานะงานประมูลเดิม → Send PI + หมายเหตุ / ใบเสนอราคาย้ายไปผูกกับดีล
+// - ลบงานมอบหมาย + ประวัติงานประมูล (ซ้ำกับประวัติดีลอยู่แล้ว) + ประกาศย้อนหลังที่สร้างตอนนำเข้า — ไม่ให้ไปนับในงานประมูล/แดชบอร์ด
+// เฉพาะงานย้อนหลัง (มีใน quotation_import_log + ประกาศ legacy_quotation) / ทุกสถานะ / sale เจ้าของงาน, ธุรการขาย, admin — body: project_code
+function convertBidImportToDirect(PDO $db, array $user): void {
+    if (!in_array($user['role'], ['sale', 'salesadmin', 'admin'], true)) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    $body = getJsonBody();
+    $stmt = $db->prepare("SELECT pa.id AS assignment_id, pa.project_code, pa.announcement_id, pa.assigned_to, pa.status, pa.priority,
+                                 pi.id AS pipeline_item_id, ann.source_type AS ann_source, ann.account_id AS ann_account_id
+                          FROM project_assignments pa
+                          JOIN quotation_import_log q ON q.project_assignment_id = pa.id
+                          JOIN announcements ann ON ann.id = pa.announcement_id
+                          LEFT JOIN pipeline_items pi ON pi.project_code = pa.project_code AND pi.source_type = 'ebidding'
+                          WHERE pa.project_code = ?");
+    $stmt->execute([$body['project_code'] ?? '']);
+    $job = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$job || $job['ann_source'] !== 'legacy_quotation') jsonResponse(false, null, 'เปลี่ยนประเภทได้เฉพาะงานย้อนหลังที่นำเข้าจากใบเสนอราคา', 400);
+    if ($user['role'] === 'sale' && (int)$job['assigned_to'] !== (int)$user['id']) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    if (!$job['pipeline_item_id']) jsonResponse(false, null, 'ไม่พบดีลของงานนี้', 404);
+
+    $priorityMap = ['เร่งด่วน' => 'High', 'ปกติ' => 'Medium', 'ต่ำ' => 'Low'];
+    $piId = (int)$job['pipeline_item_id'];
+    $ownTx = !$db->inTransaction();   // เปิด transaction เองเฉพาะเมื่อยังไม่มี (เหมือน mergeAccounts)
+    if ($ownTx) $db->beginTransaction();
+    try {
+        $db->prepare("UPDATE pipeline_items SET source_type = 'self_sourced', announcement_id = NULL, stage = 'Send PI', priority = ?,
+                             sla_deadline = NULL, sla_status = NULL,
+                             win_loss_reason_id = NULL, win_loss_reason = NULL, win_loss_note = NULL, winner_competitor_id = NULL, winning_price = NULL,
+                             account_id = COALESCE(account_id, ?), updated_by = ?
+                      WHERE id = ?")
+           ->execute([$priorityMap[$job['priority']] ?? 'Medium', $job['ann_account_id'], $user['id'], $piId]);   // ลูกค้าที่ผูกไว้ที่ประกาศ ย้ายมาที่ดีลก่อนลบประกาศ
+        $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+           ->execute([$piId, $job['project_code'], $user['id'], $job['status'], 'Send PI', 'เปลี่ยนประเภท งานประมูล → ขายตรง']);
+        $db->prepare("UPDATE quotation_import_log SET pipeline_item_id = ?, project_assignment_id = NULL, ref_type = 'pipeline_item',
+                             reviewed_by = NULL, reviewed_at = NULL
+                      WHERE project_assignment_id = ?")
+           ->execute([$piId, $job['assignment_id']]);
+        $db->prepare('DELETE FROM assignment_history WHERE assignment_id = ?')->execute([$job['assignment_id']]);
+        $db->prepare('DELETE FROM project_assignments WHERE id = ?')->execute([$job['assignment_id']]);
+        $db->prepare('DELETE FROM announcement_view_logs WHERE announcement_id = ?')->execute([$job['announcement_id']]);
+        $db->prepare("DELETE FROM announcements WHERE id = ? AND source_type = 'legacy_quotation'
+                      AND NOT EXISTS (SELECT 1 FROM project_assignments x WHERE x.announcement_id = announcements.id)")
+           ->execute([$job['announcement_id']]);
+        if ($ownTx) $db->commit();
+    } catch (Throwable $e) {
+        if ($ownTx) $db->rollBack();
+        throw $e;
+    }
+    jsonResponse(true, ['pipeline_item_id' => $piId], 'เปลี่ยนเป็นงานขายตรงแล้ว');
 }
 
 function createAssignment(PDO $db, array $user): void {
@@ -1111,7 +1166,10 @@ function fetchKanbanBuckets(PDO $db, array $where, array $params): array {
                -- งานประมูลย้อนหลังที่ยังไม่ตรวจ (ป้ายรอตรวจ — 2026-09-30)
                IF(EXISTS(SELECT 1 FROM quotation_import_log q JOIN project_assignments pa2 ON pa2.id = q.project_assignment_id
                          WHERE pa2.announcement_id = pi.announcement_id AND pa2.assigned_to = pi.assigned_to AND q.reviewed_at IS NULL
-                           AND pa2.status = 'ชนะการประมูล'), 1, 0) AS import_pending
+                           AND pa2.status = 'ชนะการประมูล'), 1, 0) AS import_pending,
+               -- งานย้อนหลังที่นำเข้าจากใบเสนอราคา ทุกสถานะ (ตัวกรอง ข้อมูลย้อนหลังทั้งหมด — 2026-10-01)
+               IF(EXISTS(SELECT 1 FROM quotation_import_log q JOIN project_assignments pa3 ON pa3.id = q.project_assignment_id
+                         WHERE pa3.announcement_id = pi.announcement_id AND pa3.assigned_to = pi.assigned_to), 1, 0) AS is_import
         FROM pipeline_items pi
         JOIN announcements a ON a.id = pi.announcement_id
         JOIN users u1 ON u1.id = pi.assigned_to

@@ -361,17 +361,21 @@
           <!-- ค้นหา + ตัวกรองเพิ่มเติม + แสดงงานปิด + เรียงตาม: ทั้งหมดนี้คือ "กรองข้อมูลที่โหลด/เลือกสถานะไว้แล้วให้แคบลงอีก" คนละจุดประสงค์กับ Sales/ช่วงเวลา (ยิง API) ที่ย้ายขึ้นแถวหัวข้อไปแล้ว
                จึงจัดกลุ่มอยู่แถวเดียวกัน — ช่องค้นหากรอง client-side ทันที (matchesSearch()) ส่วน "ตัวกรอง" ยิง API แยกต่างหาก (ยืนยันจากผู้ใช้ 2026-09-20) -->
           <div class="px-5 pt-4 pb-3 flex items-center gap-2 flex-wrap border-b border-slate-100">
-            <div class="flex-1 min-w-[180px] flex items-center gap-2">
-              <svg class="w-4 h-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <!-- ช่องค้นหามีกรอบชัด ตัวอักษร 16px + ปุ่มล้าง ✕ (ออกแบบใหม่ตามผู้ใช้ 2026-10-01 — เดิมไม่มีกรอบ ผู้ใช้ไม่รู้ว่าค้นหาได้) -->
+            <div class="relative flex-1 min-w-[260px]">
+              <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input v-model="filter.search" type="text" placeholder="ค้นหาชื่อโครงการ, หน่วยงาน, รหัสงาน..."
-                class="flex-1 border-0 outline-none text-sm bg-transparent">
+                class="w-full border-2 border-slate-200 rounded-xl pl-11 pr-10 py-2 text-base outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white placeholder:text-slate-400">
+              <button v-if="filter.search" type="button" @click="filter.search = ''" title="ล้างคำค้น" aria-label="ล้างคำค้น"
+                class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 bg-transparent border-0 cursor-pointer text-lg leading-none">✕</button>
             </div>
-            <!-- งานประมูลย้อนหลังที่ยังไม่ตรวจ (ใบเสนอราคาเก่า HIST-QT) — sale ต้องเลือกลูกค้าหรือเปลี่ยนสถานะ (รายงานการใช้งาน — 2026-09-30) -->
-            <button v-if="importPendingCount || importPendingOnly" type="button" @click="importPendingOnly = !importPendingOnly"
-              class="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold border-0 cursor-pointer shrink-0"
-              :class="importPendingOnly ? 'bg-amber-500 text-white' : 'bg-amber-50 ring-1 ring-amber-200 text-amber-800 hover:bg-amber-100'">
-              ข้อมูลย้อนหลังที่ยังไม่ตรวจ ({{ importPendingCount }})
-            </button>
+            <!-- ปุ่มคู่ ข้อมูลย้อนหลัง: ทั้งหมด (ทุกสถานะ — ไว้ดูรายละเอียด/เปลี่ยนประเภท) | ยังไม่ตรวจ — กดซ้ำ = ยกเลิกตัวกรอง (ยืนยันจากผู้ใช้ 2026-10-01) -->
+            <div v-if="importAllCount || importFilter" class="inline-flex rounded-full overflow-hidden ring-1 ring-amber-300 shrink-0">
+              <button type="button" @click="importFilter = importFilter === 'all' ? '' : 'all'" class="inline-flex items-center gap-1 px-3.5 py-2 text-sm font-semibold border-0 cursor-pointer"
+                :class="importFilter === 'all' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'">ข้อมูลย้อนหลังทั้งหมด ({{ importAllCount }})</button>
+              <button type="button" @click="importFilter = importFilter === 'pending' ? '' : 'pending'" class="inline-flex items-center gap-1 px-3.5 py-2 text-sm font-semibold border-0 cursor-pointer border-l border-amber-300"
+                :class="importFilter === 'pending' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'">ยังไม่ตรวจ ({{ importPendingCount }})</button>
+            </div>
             <button @click="modal = {type:'adv-filter'}"
               class="inline-flex items-center gap-1.5 border border-slate-200 rounded-full px-3 py-2 text-sm font-semibold bg-white text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors shrink-0"
               :class="{'!border-teal-400 !text-teal-700 !bg-teal-50': advFilterCount>0}">
@@ -822,7 +826,11 @@
             </div>
           </div>
         </div>
-        <div class="px-5 py-4 border-t border-slate-100 flex justify-end">
+        <!-- เปลี่ยนประเภท งานประมูลย้อนหลัง → ขายตรง ได้ทุกสถานะ (Change Record Type — ยืนยันจากผู้ใช้ 2026-10-01) -->
+        <div class="px-5 py-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+          <button v-if="canConvertToDirect" type="button" @click="convertBidToDirect(modal.data)" :disabled="bidImportReviewSaving"
+            class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-teal-600 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer disabled:opacity-50">เปลี่ยนเป็นงานขายตรง</button>
+          <span v-else></span>
           <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
         </div>
       </div>
@@ -959,6 +967,7 @@
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="bidImportReviewSaving" @click="bidReviewTransferOpen = true">ไม่ใช่งานของฉัน<span class="block text-sm font-normal text-slate-500">โอนให้ Sale คนอื่น</span></button>
+            <button type="button" class="w-full h-full text-left px-3.5 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-teal-600 hover:bg-teal-50 text-base font-semibold text-slate-800 cursor-pointer disabled:opacity-50" :disabled="bidImportReviewSaving" @click="convertBidToDirect(modal.data)">เป็นงานขายตรง<span class="block text-sm font-normal text-slate-500">เปลี่ยนประเภท ไปหน้างานขายตรง</span></button>
             </div>
           </template>
           <template v-else>
@@ -1320,7 +1329,7 @@ createApp({
       docs: null,
       docsLoading: false,
       kanban: {},
-      importPendingOnly: false,   // ตัวกรองงานย้อนหลังที่ยังไม่ตรวจ (2026-09-30)
+      importFilter: '',           // ตัวกรองข้อมูลย้อนหลัง: '' = ไม่กรอง / 'all' = นำเข้าทั้งหมด / 'pending' = ยังไม่ตรวจ (2026-10-01)
       stats: {},
       perSale: [],
       salesUsers: [],
@@ -1363,7 +1372,7 @@ createApp({
     'filter.search'() {
       if ($.fn.dataTable.isDataTable('#bidPipelineTable')) $('#bidPipelineTable').DataTable().draw();
     },
-    importPendingOnly() {
+    importFilter() {
       if ($.fn.dataTable.isDataTable('#bidPipelineTable')) $('#bidPipelineTable').DataTable().draw();
     },
     // เรียงตาม — มุมมอง Kanban/การ์ด reactive อยู่แล้วผ่าน computed แต่ตาราง DataTables ต้องสั่ง order() เองเพราะไม่ reactive (ยืนยันจากผู้ใช้ 2026-09-20)
@@ -1375,6 +1384,10 @@ createApp({
     // จำนวนงานประมูลย้อนหลังที่ยังไม่ตรวจ (จากข้อมูลที่โหลดอยู่ — sale เห็นเฉพาะของตัวเอง)
     importPendingCount() {
       return Object.values(this.kanban || {}).flat().filter(c => c && Number(c.import_pending) === 1).length;
+    },
+    // จำนวนงานย้อนหลังที่นำเข้าทั้งหมด ทุกสถานะ (ปุ่ม "ข้อมูลย้อนหลังทั้งหมด")
+    importAllCount() {
+      return Object.values(this.kanban || {}).flat().filter(c => c && Number(c.is_import) === 1).length;
     },
     tabItems() {
       return [
@@ -1398,6 +1411,13 @@ createApp({
     },
     isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
     isSale()    { return this.currentUser?.role === 'sale'; },
+    // ปุ่ม "เปลี่ยนเป็นงานขายตรง" — งานย้อนหลังที่นำเข้า ทุกสถานะ / sale เจ้าของงาน, ธุรการ, admin (API ตรวจซ้ำ)
+    canConvertToDirect() {
+      const d = this.modal?.type === 'detail' ? this.modal.data : null;
+      if (!d || d.source_type !== 'legacy_quotation') return false;
+      if (['salesadmin', 'admin'].includes(this.currentUser?.role)) return true;
+      return this.isSale && Number(d.assigned_to) === Number(this.currentUser?.id);
+    },
     // การ์ดของงานที่เปิดรายละเอียดอยู่ (ถือ import_pending จาก kanban)
     detailCard() {
       const code = this.modal?.type === 'detail' ? this.modal.data?.project_code : null;
@@ -1880,6 +1900,22 @@ createApp({
       await this.moveCard(card, status);
     },
 
+    // เปลี่ยนประเภท งานประมูลย้อนหลัง → ดีลขายตรง (ยืนยันจากผู้ใช้ 2026-10-01) — ไปอยู่ "ส่ง PI" + รอตรวจ ให้ sale เลื่อนเองที่หน้าขายตรง
+    async convertBidToDirect(job) {
+      if (!job?.project_code) return;
+      const ok = await this.showConfirm('เปลี่ยนเป็นงานขายตรง?',
+        `"${job.project_name}" จะย้ายไปหน้างานขายตรง สถานะ ส่ง PI / ใบเสนอราคา ให้เลื่อนสถานะเองที่หน้างานขายตรง`, 'ยืนยัน เปลี่ยนเป็นงานขายตรง');
+      if (!ok) return;
+      this.bidImportReviewSaving = true;
+      const res = await apiCall('POST', 'api/assignments.php?action=convert_to_direct', { project_code: job.project_code });
+      this.bidImportReviewSaving = false;
+      if (res.success) {
+        this.closeModal();
+        this.loadData();
+        await this.showAlert('เปลี่ยนเป็นงานขายตรงแล้ว — ตรวจและเลื่อนสถานะต่อได้ที่หน้า งานขายตรง', 'success');
+      } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
     async bidReviewTransfer() {
       const card = this.modal.data;
       const to = this.reviewSales.find(u => Number(u.id) === Number(this.bidReviewTransferTo));
@@ -1959,7 +1995,8 @@ createApp({
     // ช่องค้นหาด่วน — กรอง client-side ทับข้อมูลที่กรองไว้แล้ว (Sales/ช่วงเวลา/ตัวกรองเพิ่มเติม/แสดงงานปิด/แท็บสถานะ) อีกชั้นเดียว
     // ค้นได้ 4 ฟิลด์: ชื่อโครงการ, ชื่อหน่วยงาน, รหัสงานกลาง, เลขที่โครงการ e-GP (ยืนยันจากผู้ใช้ 2026-09-20)
     matchesSearch(card) {
-      if (this.importPendingOnly && Number(card.import_pending) !== 1) return false;
+      if (this.importFilter === 'pending' && Number(card.import_pending) !== 1) return false;
+      if (this.importFilter === 'all' && Number(card.is_import) !== 1) return false;
       const q = this.filter.search.trim().toLowerCase();
       if (!q) return true;
       return [card.project_name, card.unit_name, card.project_code, card.project_no]
