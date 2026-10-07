@@ -962,6 +962,18 @@
                 <input v-model="spForm.expected_close" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
               </div>
               <div class="text-xs text-slate-500 sm:self-end sm:pb-3">โอกาสปิดดีลและวันคาดปิด ใช้คำนวณยอดคาดการณ์ (Weighted Pipeline) — งานวาง Spec ควรใส่วันคาดปิดตามจริง</div>
+              <!-- วันคาดส่งมอบ: แสดงเมื่อปิดดีลแล้ว / ส่งสินค้าแล้ว — แก้ได้ถ้าลูกค้าเลื่อน ระบบบันทึกประวัติการเลื่อน (2026-10-07) -->
+              <div v-if="['Deal Signed','Delivered'].includes(spForm.stage)">
+                <label class="block text-sm font-semibold text-slate-700 mb-1">วันที่คาดว่าจะส่งมอบ <span v-if="spForm.stage === 'Deal Signed' && modal.data?.stage !== 'Deal Signed'" class="text-red-500">*</span></label>
+                <input v-model="spForm.expected_delivery_date" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+              </div>
+              <!-- วันที่ส่งสินค้าจริง: ขั้นส่งสินค้าแล้ว — แก้ได้ ระบบบันทึกประวัติ (2026-10-07) -->
+              <div v-if="spForm.stage === 'Delivered'">
+                <label class="block text-sm font-semibold text-slate-700 mb-1">วันที่ส่งสินค้าจริง <span v-if="modal.data?.stage !== 'Delivered'" class="text-red-500">*</span></label>
+                <input v-model="spForm.delivered_date" type="date" :max="todayIso()" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+              </div>
+              <div v-if="spForm.stage === 'Delivered'" class="text-xs text-slate-500 sm:self-end sm:pb-3">ตั้งต้นเป็นวันนี้ แก้เป็นวันที่ส่งของจริงได้ (ห้ามเกินวันนี้) — ยอดรายได้รายเดือนนับตามวันนี้</div>
+              <div v-if="['Deal Signed','Delivered'].includes(spForm.stage)" class="text-xs text-slate-500 sm:self-end sm:pb-3">ใส่วันโดยประมาณได้ ถ้ายังไม่แน่นอน — ฝ่ายจัดส่งใช้วางแผนล่วงหน้าก่อนออก SO · ลูกค้าเลื่อน แก้ได้ที่นี่ ระบบบันทึกประวัติให้</div>
             </div>
           </section>
 
@@ -1247,6 +1259,28 @@
       </div>
     </div>
 
+    <!-- SP: บันทึกส่งสินค้าแล้ว — ใส่วันที่ส่งจริง (ยืนยันจากผู้ใช้ 2026-10-07) ใช้แทนกล่องยืนยันเลื่อนขั้นเดิม -->
+    <div v-if="modal.type==='sp-delivered'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden">
+        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">ส่งสินค้าแล้ว</h3>
+            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span> · {{ modal.data.title }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <label class="block text-sm font-semibold text-slate-700 mb-1">วันที่ส่งสินค้าจริง <span class="text-red-500">*</span></label>
+          <input v-model="spDeliveredForm.date" type="date" :max="todayIso()" class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          <div class="text-xs text-slate-500 mt-1">ตั้งต้นเป็นวันนี้ แก้เป็นวันที่ส่งของจริงได้ (ห้ามเกินวันนี้) — ยอดรายได้รายเดือนนับตามวันนี้</div>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 border-0 cursor-pointer disabled:opacity-50" :disabled="spDeliveredForm.saving" @click="submitSpDelivered">✓ ยืนยันส่งสินค้าแล้ว</button>
+        </div>
+      </div>
+    </div>
+
     <!-- SP: Win/Loss Modal -->
     <div v-if="modal.type==='sp-win-loss'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
       <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
@@ -1286,6 +1320,18 @@
             <div class="text-xs font-bold text-slate-500 mb-2">มูลค่า</div>
             <label class="block text-sm font-semibold text-slate-600 mb-1">มูลค่าที่ปิดได้ (บาท)</label>
             <input v-model="spWinLossForm.value" type="number" min="0" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="0">
+            <!-- วันที่คาดว่าจะส่งมอบ — บังคับตอนปิดดีลได้ ให้ฝ่ายจัดส่ง forecast ก่อนออก SO (Expected Delivery Date — ยืนยันจากผู้ใช้ 2026-10-07)
+                 ยกเว้นเลือก "ส่งสินค้าแล้ว" (ส่งไปแล้ว) → ถามวันที่ส่งจริงแทน -->
+            <template v-if="!spWinLossForm.then_delivered">
+              <label class="block text-sm font-semibold text-slate-600 mb-1 mt-3">วันที่คาดว่าจะส่งมอบ <span class="text-red-500">*</span></label>
+              <input v-model="spWinLossForm.expected_delivery_date" type="date" class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <div class="text-xs text-slate-500 mt-1">ใส่วันโดยประมาณได้ ถ้ายังไม่แน่นอน — ฝ่ายจัดส่งใช้วางแผนล่วงหน้าก่อนออก SO</div>
+            </template>
+            <template v-else>
+              <label class="block text-sm font-semibold text-slate-600 mb-1 mt-3">วันที่ส่งสินค้าจริง <span class="text-red-500">*</span></label>
+              <input v-model="spWinLossForm.delivered_date" type="date" :max="todayIso()" class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <div class="text-xs text-slate-500 mt-1">ตั้งต้นเป็นวันนี้ แก้เป็นวันที่ส่งของจริงได้ (ห้ามเกินวันนี้) — ยอดรายได้รายเดือนนับตามวันนี้</div>
+            </template>
           </div>
           <!-- Lost: แพ้ให้ใคร — คู่แข่งที่ระบุไว้ในดีลนี้ขึ้นก่อน (มีโอกาสเป็นผู้ชนะมากที่สุด) ไม่มี "ไม่มีคู่แข่ง" เพราะไม่สำเร็จ = มีผู้ชนะ/ไม่ทราบ -->
           <div v-if="spWinLossForm.stage==='Lost'" class="mb-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
@@ -1305,8 +1351,11 @@
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่คู่แข่งเสนอ (บาท) <span v-if="spLostRequiresPrice" class="text-red-500">*</span></label>
-                <input v-model="spWinLossForm.winning_price" type="number" min="0" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ถ้าทราบจากลูกค้า">
+                <!-- ราคาคู่แข่งไม่บังคับในงานขายตรง (มาตรฐาน CRM + ความจริงที่ลูกค้าเอกชนมักไม่บอกราคา — ยืนยันจากผู้ใช้ 2026-10-02)
+                     ติดตามคุณภาพข้อมูลผ่านรายงานการใช้งาน "ดีลแพ้ใส่ราคา" แทนการบังคับ / งานประมูลยังบังคับ (ราคาผู้ชนะเปิดเผยใน e-GP) -->
+                <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่คู่แข่งเสนอ (บาท)</label>
+                <input v-model="spWinLossForm.winning_price" type="number" min="0" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ถ้าลูกค้าบอก">
+                <div class="text-xs text-slate-500 mt-1">ใส่ถ้าลูกค้าบอก แม้เป็นราคาประมาณ — ช่วยวิเคราะห์ว่าเราแพงกว่าคู่แข่งเท่าไร</div>
               </div>
               <div>
                 <label class="block text-sm font-semibold text-slate-600 mb-1">มูลค่าที่เราเสนอ (บาท) <span v-if="spLostRequiresPrice" class="text-red-500">*</span></label>
@@ -1524,7 +1573,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=64"></script>
+<script src="shared/app.js?v=65"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1544,6 +1593,7 @@ createApp({
       spFilter: { assigned_to: '', source_type: '', period: 'all', priority: '', product_category: '', brand: '', client_q: '', value_min: '', value_max: '', segment: '', specialization: '' },
       spLoading: false,
       spImportReviewSaving: false,
+      spDeliveredForm: { date: '', saving: false },   // หน้าต่างบันทึกส่งสินค้าแล้ว (2026-10-07)
       spReviewTransferOpen: false,   // หน้าต่างตรวจดีลย้อนหลัง: เปิดส่วนโอนให้ sale คนอื่น (2026-10-01)
       spReviewTransferTo: '',
       reviewSales: [],               // รายชื่อ sale ให้เลือกโอน (โหลดครั้งแรกที่เปิดหน้าต่างตรวจ)
@@ -1791,6 +1841,11 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     },
   },
   watch: {
+    // ฟอร์มเลือกขั้นส่งสินค้าแล้ว ยังไม่มีวันส่งจริง → ตั้งต้นเป็นวันนี้ (แก้ได้)
+    'spForm.stage'(v) {
+      // เฉพาะตอนเปลี่ยนเข้าขั้นนี้ — เปิดดีลที่ส่งไปแล้วแต่ไม่มีวันที่ ไม่เติมให้ (ไม่งั้นบันทึกแล้ววันส่งกลายเป็นวันนี้)
+      if (v === 'Delivered' && this.modal?.data?.stage !== 'Delivered' && !this.spForm.delivered_date) this.spForm.delivered_date = this.todayIso();
+    },
     // ช่องค้นหาด่วน — กรอง client-side ทันทีที่พิมพ์ ต้องสั่ง redraw DataTable เองเพราะ ext.search ไม่ reactive (มุมมอง Kanban/การ์ด reactive อยู่แล้วผ่าน computed)
     spSearch() {
       if ($.fn.dataTable.isDataTable('#spTable')) $('#spTable').DataTable().draw();
@@ -2146,11 +2201,30 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
 
     async confirmSpMove(card, toStage) {
       if (!toStage) return;
+      // ส่งสินค้าแล้ว → หน้าต่างใส่วันที่ส่งจริง (ใช้แทนกล่องยืนยัน — ยืนยันจากผู้ใช้ 2026-10-07)
+      if (toStage === 'Delivered') { this.spDeliveredForm = { date: this.todayIso(), saving: false }; this.modal = { type: 'sp-delivered', data: card }; return; }
       const stageInfo = this.spStages.find(s => s.key === toStage);
       const ok = await this.showConfirm('เลื่อนขั้นตอน', `"${card.title}" จะถูกเลื่อนไปที่ → ${stageInfo?.thLabel || toStage}`, 'ยืนยัน เลื่อนขั้นตอน');
       if (!ok) return;
       const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + card.id, { stage: toStage });
       if (res.success) { this.loadSpKanban(); await this.showAlert('เลื่อนขั้นตอนสำเร็จ', 'success'); }
+      else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    // วันนี้ (YYYY-MM-DD ตามเวลาเครื่อง) — ค่าตั้งต้นและเพดานของวันที่ส่งจริง
+    todayIso() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+
+    async submitSpDelivered() {
+      const f = this.spDeliveredForm, card = this.modal.data;
+      if (!f.date) { await this.showAlert('กรุณาระบุวันที่ส่งสินค้าจริง', 'error'); return; }
+      if (f.date > this.todayIso()) { await this.showAlert('วันที่ส่งสินค้าจริงต้องไม่เกินวันนี้', 'error'); return; }
+      f.saving = true;
+      const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + card.id, { stage: 'Delivered', delivered_date: f.date });
+      f.saving = false;
+      if (res.success) { this.closeModal(); this.loadSpKanban(); await this.showAlert('บันทึกส่งสินค้าแล้ว', 'success'); }
       else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 
@@ -2173,6 +2247,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spWinLossForm = {
         id: card.id, stage, title: card.title, reason: '', note: '', value: card.value || '',
         winner_competitor_id: '', winning_price: '', deal_competitor_ids: [],
+        expected_delivery_date: card.expected_delivery_date || '',   // วันคาดส่งมอบ (บังคับตอนปิดดีลได้ — 2026-10-07)
+        delivered_date: this.todayIso(),                              // วันส่งจริง (กรณีตรวจดีลแล้วเลือก ส่งสินค้าแล้ว — 2026-10-07)
         then_delivered: false,   // ดีลย้อนหลังเลือก "ส่งสินค้าแล้ว" → ปิดดีลแล้วเลื่อนต่อ (2026-10-01)
       };
       this.modal = { type: 'sp-win-loss', data: card };
@@ -2189,9 +2265,11 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       if (this.spNoteRequired && !String(f.note || '').trim()) {
         await this.showAlert(`กรุณากรอกรายละเอียดเพิ่มเติม (เหตุผล "${this.spSelectedReason.win_loss_reason_name}" ต้องระบุว่าเพราะอะไร)`, 'error'); return;
       }
+      if (f.stage === 'Deal Signed' && !f.then_delivered && !f.expected_delivery_date) { await this.showAlert('กรุณาระบุวันที่คาดว่าจะส่งมอบ (ใส่วันประมาณได้)', 'error'); return; }
+      if (f.then_delivered && !f.delivered_date) { await this.showAlert('กรุณาระบุวันที่ส่งสินค้าจริง', 'error'); return; }
+      if (f.then_delivered && f.delivered_date > this.todayIso()) { await this.showAlert('วันที่ส่งสินค้าจริงต้องไม่เกินวันนี้', 'error'); return; }
       if (f.stage === 'Lost') {
         if (!f.winner_competitor_id) { await this.showAlert('กรุณาเลือกผู้ชนะ (ถ้าไม่รู้หรือไม่มีผู้ชนะ ให้เลือก "ยังไม่ทราบ")', 'error'); return; }
-        if (this.spLostRequiresPrice && !(Number(f.winning_price) > 0)) { await this.showAlert('กรุณากรอกราคาที่คู่แข่ง (ผู้ชนะ) เสนอ', 'error'); return; }
         if (this.spLostRequiresPrice && !(Number(f.value) > 0)) { await this.showAlert('กรุณากรอกมูลค่าที่เราเสนอ', 'error'); return; }
       }
       const payload = {
@@ -2200,13 +2278,15 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         win_loss_note:      f.note,
       };
       if (f.value) payload.value = f.value;
+      // ส่งสินค้าแล้ว: วันคาดส่ง = วันส่งจริง (ส่งไปแล้ว ไม่ต้องคาดการณ์)
+      if (f.stage === 'Deal Signed') payload.expected_delivery_date = f.then_delivered ? f.delivered_date : f.expected_delivery_date;
       if (f.stage === 'Lost') {
         payload.winner_competitor_id = f.winner_competitor_id || null;
         payload.winning_price = f.winning_price === '' ? null : f.winning_price;
       }
       const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + this.spWinLossForm.id, payload);
       // ดีลย้อนหลังเลือก "ส่งสินค้าแล้ว": บันทึกปิดดีลก่อน (มีเหตุผล) แล้วเลื่อนต่อ — ประวัติครบ ส่ง PI → ปิดดีล → ส่งสินค้า
-      if (res.success && f.then_delivered) await apiCall('PUT', 'api/pipeline_items.php?id=' + f.id, { stage: 'Delivered' });
+      if (res.success && f.then_delivered) await apiCall('PUT', 'api/pipeline_items.php?id=' + f.id, { stage: 'Delivered', delivered_date: f.delivered_date });
       if (res.success) {
         this.closeModal();
         this.loadSpKanban();
@@ -2301,6 +2381,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
           fee_structure: card.fee_structure || '', specialization: card.specialization || '',
           value: card.value || '', win_probability: card.win_probability != null ? Math.round(card.win_probability * 100) : 20,
           expected_close: card.expected_close || '',
+          expected_delivery_date: card.expected_delivery_date || '',
+          delivered_date: card.delivered_date || '',
           next_action: card.next_action || '', notes: card.notes || '',
           next_followup_date: card.next_followup_date || '', deal_type_id: card.deal_type_id || 'normal', competitor_ids: [],
         };
@@ -2455,10 +2537,17 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
           return;
         }
       }
+      // เปลี่ยนเป็นปิดดีลแล้วต้องมีวันคาดส่งมอบ (API ตรวจซ้ำ) — ดีลที่ปิดไปก่อนมีกฎ แก้ฟอร์มได้โดยไม่บังคับย้อนหลัง
+      const wasDealSigned = this.modal?.data?.stage === 'Deal Signed';
+      if (this.spForm.stage === 'Deal Signed' && !wasDealSigned && !this.spForm.expected_delivery_date) { await this.showAlert('กรุณาระบุวันที่คาดว่าจะส่งมอบ (ใส่วันประมาณได้)', 'error'); return; }
+      if (this.spForm.stage === 'Delivered' && this.modal?.data?.stage !== 'Delivered' && !this.spForm.delivered_date) { await this.showAlert('กรุณาระบุวันที่ส่งสินค้าจริง', 'error'); return; }
+      if (this.spForm.stage === 'Delivered' && this.spForm.delivered_date > this.todayIso()) { await this.showAlert('วันที่ส่งสินค้าจริงต้องไม่เกินวันนี้', 'error'); return; }
       // แหล่งที่มาไม่เลือกไว้ให้ก่อนเช่นกัน — ช่องสุดท้ายของกล่อง ④ จึงเช็คต่อจาก requiredDealFields (ยืนยันจากผู้ใช้ 2026-09-23)
       if (!this.spForm.source_type) { await this.showAlert('กรุณาเลือกแหล่งที่มาของงาน', 'error'); return; }
 
       const payload = { ...this.spForm };
+      if (!['Deal Signed', 'Delivered'].includes(payload.stage)) delete payload.expected_delivery_date;   // ขั้นที่ยังไม่ปิด ไม่ส่ง (ไม่ล้างค่าเดิม)
+      if (payload.stage !== 'Delivered' || !payload.delivered_date) delete payload.delivered_date;   // ดีลส่งเก่าที่ไม่มีวันที่ ไม่ส่งค่าว่างไปล้าง
       delete payload.contact_name; delete payload.contact_phone; delete payload.contact_position;
       if (payload.account_id) payload.deal_contacts = this.spDealContactsPayload();
       if (!payload.assigned_to) payload.assigned_to = this.currentUser.id;

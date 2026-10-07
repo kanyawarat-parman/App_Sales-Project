@@ -541,6 +541,18 @@
                 <label class="block text-sm font-semibold text-slate-600">รายละเอียดเพิ่มเติม <span v-if="statusNoteRequired" class="text-red-500">*</span></label>
                 <textarea v-model="statusForm.win_loss_note" rows="3" placeholder="เช่น จุดแข็งที่ทำให้ชนะ / ราคาต่างจากคู่แข่ง..." class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
               </div>
+              <!-- วันที่คาดว่าจะส่งมอบ — บังคับตอนเปลี่ยนเป็นชนะการประมูล (Expected Delivery Date — ยืนยันจากผู้ใช้ 2026-10-07) -->
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">วันที่คาดว่าจะส่งมอบ <span v-if="statusForm.orig_status !== 'ชนะการประมูล'" class="text-red-500">*</span></label>
+                <input type="date" v-model="statusForm.expected_delivery_date" class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <div class="text-xs text-slate-500">ดูจากสัญญา / TOR ใส่วันโดยประมาณได้ — ฝ่ายจัดส่งใช้วางแผนล่วงหน้าก่อนออก SO</div>
+              </div>
+            </div>
+            <!-- วันที่ส่งมอบจริง — เปลี่ยนเป็นส่งมอบแล้ว (ตั้งต้นวันนี้ แก้ได้ ห้ามเกินวันนี้ — ยืนยันจากผู้ใช้ 2026-10-07) -->
+            <div v-if="statusForm.status==='ส่งมอบแล้ว'" class="flex flex-col gap-1 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+              <label class="block text-sm font-semibold text-slate-600">วันที่ส่งมอบจริง <span v-if="statusForm.orig_status !== 'ส่งมอบแล้ว'" class="text-red-500">*</span></label>
+              <input type="date" v-model="statusForm.delivered_date" :max="todayIso()" class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+              <div class="text-xs text-slate-500">ตั้งต้นเป็นวันนี้ แก้เป็นวันที่ส่งมอบจริงได้ (ห้ามเกินวันนี้) — ยอดรายได้รายเดือนนับตามวันนี้</div>
             </div>
             <!-- ปิดช่องโหว่: เดิมเลือก "แพ้การประมูล" จากหน้านี้ได้โดยไม่ต้องระบุเหตุผล — ตอนนี้ใช้กติกาเดียวกับ bid-pipeline.html
                  (เหตุผลจาก master win_loss_reasons + ผู้ชนะจาก master คู่แข่ง เมื่อเหตุผลนั้นบังคับ) ยืนยันจากผู้ใช้ 2026-09-25 — API เช็คซ้ำ -->
@@ -601,7 +613,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=64"></script>
+<script src="shared/app.js?v=65"></script>
 <script>
 const { createApp } = Vue;
 
@@ -774,6 +786,9 @@ createApp({
         win_loss_note:   assignment.win_loss_note || '',
         winner_competitor_id: assignment.winner_competitor_id || '',
         winning_price:   assignment.winning_price || '',
+        expected_delivery_date: assignment.expected_delivery_date || '',   // วันคาดส่งมอบ (บังคับตอนชนะ — 2026-10-07)
+        orig_status:     assignment.status,
+        delivered_date:  assignment.delivered_date || (assignment.status === 'ส่งมอบแล้ว' ? '' : this.todayIso()),   // วันส่งมอบจริง (2026-10-07)
       };
       this.modal = { type: 'status', data: assignment };
       if (!this.winLossReasons.length) this.loadWinLossMasters();
@@ -789,8 +804,24 @@ createApp({
       if (c.success) this.competitors = c.data;
     },
 
+    // วันนี้ (YYYY-MM-DD ตามเวลาเครื่อง) — ค่าตั้งต้นและเพดานของวันที่ส่งมอบจริง
+    todayIso() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+
     async submitStatusUpdate() {
       const payload = { ...this.statusForm };
+      delete payload.orig_status;
+      if (payload.status !== 'ชนะการประมูล') delete payload.expected_delivery_date;   // ไม่ได้ชนะ ไม่ส่ง (ไม่ล้างค่าเดิม)
+      if (payload.status !== 'ส่งมอบแล้ว' || (this.statusForm.orig_status === 'ส่งมอบแล้ว' && !payload.delivered_date)) delete payload.delivered_date;   // งานส่งมอบเก่าไม่มีวันที่ — ไม่บังคับย้อนหลัง
+      if (payload.status === 'ส่งมอบแล้ว' && this.statusForm.orig_status !== 'ส่งมอบแล้ว') {
+        if (!payload.delivered_date) { await this.showAlert('กรุณาระบุวันที่ส่งมอบจริง', 'error'); return; }
+        if (payload.delivered_date > this.todayIso()) { await this.showAlert('วันที่ส่งมอบจริงต้องไม่เกินวันนี้', 'error'); return; }
+      }
+      if (payload.status === 'ชนะการประมูล' && this.statusForm.orig_status !== 'ชนะการประมูล' && !payload.expected_delivery_date) {
+        await this.showAlert('กรุณาระบุวันที่คาดว่าจะส่งมอบ (ดูจากสัญญา/TOR ใส่วันประมาณได้)', 'error'); return;
+      }
       if (payload.win_loss_reason_id) payload.win_loss_reason_id = Number(payload.win_loss_reason_id);
       if (payload.status === 'ชนะการประมูล') {
         if (!payload.win_loss_reason_id) { await this.showAlert('กรุณาเลือกเหตุผลที่ชนะ', 'error'); return; }

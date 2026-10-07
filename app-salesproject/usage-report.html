@@ -62,17 +62,11 @@
               <button v-for="t in roleTabs" :key="t.key" type="button" @click="tab = t.key"
                 class="pb-2.5 bg-transparent border-0 border-b-2 cursor-pointer font-semibold whitespace-nowrap"
                 :class="tab === t.key ? 'border-teal-700 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'">{{ t.label }}</button>
+              <!-- คำอธิบายตัวเลขของแท็บที่เปิดอยู่ — ลิงก์เดียว ไม่รบกวนหัวตาราง (ยืนยันจากผู้ใช้ 2026-10-02 แทนไอคอน i ทุกคอลัมน์) -->
+              <button type="button" @click="colHelpOpen = true"
+                class="ml-auto pb-2.5 bg-transparent border-0 cursor-pointer text-sm text-slate-500 hover:text-teal-700 whitespace-nowrap">ⓘ ตัวเลขแต่ละช่องคืออะไร?</button>
             </div>
 
-                  <!-- กล่องคำอธิบายหัวคอลัมน์ "ตัวเลขนี้มาจากไหน" — กดไอคอน i ที่หัวคอลัมน์ (ยืนยันจากผู้ใช้ 2026-10-02) กดที่อื่น/เลื่อนจอ = ปิด -->
-      <div v-if="colHelp.key" @click.stop class="fixed z-50 w-72 max-w-[calc(100vw-32px)] bg-white rounded-xl shadow-xl ring-1 ring-slate-200 p-3.5 text-left"
-        :style="{ top: colHelp.top + 'px', left: colHelp.left + 'px' }">
-        <div class="flex items-start justify-between gap-2 mb-1">
-          <div class="text-sm font-bold text-slate-800">{{ colHelpText[colHelp.key]?.[0] }}</div>
-          <button type="button" @click="colHelp = { key: '' }" class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-lg leading-none cursor-pointer" aria-label="ปิด">×</button>
-        </div>
-        <div class="text-sm text-slate-600 leading-relaxed font-normal">{{ colHelpText[colHelp.key]?.[1] }}</div>
-      </div>
 
             <!-- ── Sale ── -->
             <div v-if="tab === 'sale'" class="overflow-x-auto">
@@ -80,21 +74,22 @@
                 <thead>
                   <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500">
                     <th class="px-4 py-3 text-left" rowspan="2">Sale</th>
-                    <th class="px-3 py-3 text-left" rowspan="2">เข้าใช้ล่าสุด<button type="button" @click.stop="toggleColHelp('last_seen', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'last_seen' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 py-3 text-center" rowspan="2">วันที่เข้าใช้<button type="button" @click.stop="toggleColHelp('active_days', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'active_days' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pt-3 pb-1 text-center border-l border-slate-200" colspan="5">งานที่ทำ ({{ days }} วัน)</th>
+                    <th class="px-3 py-3 text-left" rowspan="2">เข้าใช้ล่าสุด</th>
+                    <th class="px-3 py-3 text-center" rowspan="2">วันที่เข้าใช้</th>
+                    <th class="px-3 pt-3 pb-1 text-center border-l border-slate-200" colspan="6">งานที่ทำ ({{ days }} วัน)</th>
                     <th class="px-3 pt-3 pb-1 text-center border-l border-slate-200 text-rose-600" colspan="4">งานค้าง (ตอนนี้)</th>
                   </tr>
                   <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
-                    <th class="px-3 pb-2 text-center border-l border-slate-200">ดีลใหม่<button type="button" @click.stop="toggleColHelp('new_deals', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'new_deals' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center">อัปเดตดีล<button type="button" @click.stop="toggleColHelp('deal_moves', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'deal_moves' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center">อัปเดตงานประมูล<button type="button" @click.stop="toggleColHelp('bid_moves', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'bid_moves' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center">ลูกค้า/ผู้ติดต่อใหม่<button type="button" @click.stop="toggleColHelp('new_people', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'new_people' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center">ตรวจข้อมูลย้อนหลัง<button type="button" @click.stop="toggleColHelp('reviews_done', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'reviews_done' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center border-l border-slate-200">ดีลค้าง<button type="button" @click.stop="toggleColHelp('stale_deals', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'stale_deals' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center">นัดติดตามเลยกำหนด<button type="button" @click.stop="toggleColHelp('overdue_followups', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'overdue_followups' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center">ประมูลเกิน SLA<button type="button" @click.stop="toggleColHelp('sla_over', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'sla_over' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 pb-2 text-center">ยังไม่รับงาน<button type="button" @click.stop="toggleColHelp('not_accepted', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'not_accepted' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
+                    <th class="px-3 pb-2 text-center border-l border-slate-200">ดีลใหม่</th>
+                    <th class="px-3 pb-2 text-center">อัปเดตดีล</th>
+                    <th class="px-3 pb-2 text-center">อัปเดตงานประมูล</th>
+                    <th class="px-3 pb-2 text-center">ลูกค้า/ผู้ติดต่อใหม่</th>
+                    <th class="px-3 pb-2 text-center">ตรวจข้อมูลย้อนหลัง</th>
+                    <th class="px-3 pb-2 text-center">ดีลแพ้ใส่ราคา</th>
+                    <th class="px-3 pb-2 text-center border-l border-slate-200">ดีลค้าง</th>
+                    <th class="px-3 pb-2 text-center">นัดติดตามเลยกำหนด</th>
+                    <th class="px-3 pb-2 text-center">ประมูลเกิน SLA</th>
+                    <th class="px-3 pb-2 text-center">ยังไม่รับงาน</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -107,6 +102,7 @@
                     <td class="px-3 py-3 text-center">{{ u.bid_moves }}</td>
                     <td class="px-3 py-3 text-center">{{ u.new_accounts + u.new_contacts }}</td>
                     <td class="px-3 py-3 text-center">{{ u.reviews_done }}</td>
+                    <td class="px-3 py-3 text-center whitespace-nowrap" :class="u.lost_total ? '' : 'text-slate-300'">{{ lostPricedText(u.lost_priced, u.lost_total) }}</td>
                     <td v-for="k in ['stale_deals','overdue_followups','sla_over','not_accepted']" :key="k" class="px-3 py-3 text-center" :class="k === 'stale_deals' ? 'border-l border-slate-100' : ''">
                       <button v-if="u[k]" type="button" @click="openDetail(u, k)" class="px-2.5 py-1 rounded-lg font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border-0 cursor-pointer">{{ u[k] }}</button>
                       <span v-else class="text-slate-300">0</span>
@@ -124,6 +120,7 @@
                     <td class="px-3 py-3 text-center">{{ saleTotals.bid_moves }}</td>
                     <td class="px-3 py-3 text-center">{{ saleTotals.new_accounts + saleTotals.new_contacts }}</td>
                     <td class="px-3 py-3 text-center">{{ saleTotals.reviews_done }}</td>
+                    <td class="px-3 py-3 text-center whitespace-nowrap">{{ lostPricedText(saleTotals.lost_priced, saleTotals.lost_total) }}</td>
                     <td v-for="k in ['stale_deals','overdue_followups','sla_over','not_accepted']" :key="'t' + k" class="px-3 py-3 text-center"
                       :class="[k === 'stale_deals' ? 'border-l border-slate-200' : '', saleTotals[k] ? 'text-rose-700' : 'text-slate-400']">{{ saleTotals[k] }}</td>
                   </tr>
@@ -138,12 +135,12 @@
                   <thead>
                     <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
                       <th class="px-4 py-3 text-left">ธุรการขาย</th>
-                      <th class="px-3 py-3 text-left">เข้าใช้ล่าสุด<button type="button" @click.stop="toggleColHelp('last_seen', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'last_seen' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">วันที่เข้าใช้<button type="button" @click.stop="toggleColHelp('active_days', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'active_days' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center border-l border-slate-200">ตัดสินใจประกาศ<button type="button" @click.stop="toggleColHelp('decisions', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'decisions' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">มอบหมายงาน<button type="button" @click.stop="toggleColHelp('assigned', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'assigned' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">ผูกรหัส ERP<button type="button" @click.stop="toggleColHelp('erp_linked', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'erp_linked' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">ตรวจลูกค้าซ้ำ<button type="button" @click.stop="toggleColHelp('dup_reviewed', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'dup_reviewed' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
+                      <th class="px-3 py-3 text-left">เข้าใช้ล่าสุด</th>
+                      <th class="px-3 py-3 text-center">วันที่เข้าใช้</th>
+                      <th class="px-3 py-3 text-center border-l border-slate-200">ตัดสินใจประกาศ</th>
+                      <th class="px-3 py-3 text-center">มอบหมายงาน</th>
+                      <th class="px-3 py-3 text-center">ผูกรหัส ERP</th>
+                      <th class="px-3 py-3 text-center">ตรวจลูกค้าซ้ำ</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -177,10 +174,10 @@
                 <thead>
                   <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
                     <th class="px-4 py-3 text-left">Manager</th>
-                    <th class="px-3 py-3 text-left">เข้าใช้ล่าสุด<button type="button" @click.stop="toggleColHelp('last_seen', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'last_seen' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 py-3 text-center">วันที่เข้าใช้<button type="button" @click.stop="toggleColHelp('active_days', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'active_days' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 py-3 text-center border-l border-slate-200">เปิดดูรายงาน<button type="button" @click.stop="toggleColHelp('report_views', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'report_views' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                    <th class="px-3 py-3 text-center">ตั้งเป้าหมาย<button type="button" @click.stop="toggleColHelp('targets_set', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'targets_set' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
+                    <th class="px-3 py-3 text-left">เข้าใช้ล่าสุด</th>
+                    <th class="px-3 py-3 text-center">วันที่เข้าใช้</th>
+                    <th class="px-3 py-3 text-center border-l border-slate-200">เปิดดูรายงาน</th>
+                    <th class="px-3 py-3 text-center">ตั้งเป้าหมาย</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -205,11 +202,11 @@
                   <thead>
                     <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
                       <th class="px-4 py-3 text-left">Sale</th>
-                      <th class="px-3 py-3 text-center">ขายตรง ตรวจแล้ว / ทั้งหมด<button type="button" @click.stop="toggleColHelp('imp_direct', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'imp_direct' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">งานประมูล ตรวจแล้ว / ทั้งหมด<button type="button" @click.stop="toggleColHelp('imp_bid', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'imp_bid' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-left w-[260px]">ความคืบหน้า<button type="button" @click.stop="toggleColHelp('imp_progress', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'imp_progress' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">ยังไม่ตรวจ<button type="button" @click.stop="toggleColHelp('imp_pending', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'imp_pending' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">ตรวจใน {{ days }} วัน<button type="button" @click.stop="toggleColHelp('imp_done', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'imp_done' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
+                      <th class="px-3 py-3 text-center">ขายตรง ตรวจแล้ว / ทั้งหมด</th>
+                      <th class="px-3 py-3 text-center">งานประมูล ตรวจแล้ว / ทั้งหมด</th>
+                      <th class="px-3 py-3 text-left w-[260px]">ความคืบหน้า</th>
+                      <th class="px-3 py-3 text-center">ยังไม่ตรวจ</th>
+                      <th class="px-3 py-3 text-center">ตรวจใน {{ days }} วัน</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -259,11 +256,11 @@
                   <thead>
                     <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 border-b-2 border-slate-200">
                       <th class="px-4 py-3 text-left">สัปดาห์เริ่ม</th>
-                      <th class="px-3 py-3 text-center">Sale เข้าใช้<button type="button" @click.stop="toggleColHelp('tr_sale', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'tr_sale' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">ธุรการเข้าใช้<button type="button" @click.stop="toggleColHelp('tr_admin', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'tr_admin' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">Manager เข้าใช้<button type="button" @click.stop="toggleColHelp('tr_mgr', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'tr_mgr' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center border-l border-slate-200">อัปเดตสถานะงาน<button type="button" @click.stop="toggleColHelp('tr_updates', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'tr_updates' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
-                      <th class="px-3 py-3 text-center">ตรวจข้อมูลย้อนหลัง<button type="button" @click.stop="toggleColHelp('tr_reviews', $event)" title="ตัวเลขนี้มาจากไหน" aria-label="ตัวเลขนี้มาจากไหน" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-[-2px] rounded-full text-[.65rem] font-bold leading-none border-0 cursor-pointer" :class="colHelp.key === 'tr_reviews' ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-teal-100 hover:text-teal-700'">i</button></th>
+                      <th class="px-3 py-3 text-center">Sale เข้าใช้</th>
+                      <th class="px-3 py-3 text-center">ธุรการเข้าใช้</th>
+                      <th class="px-3 py-3 text-center">Manager เข้าใช้</th>
+                      <th class="px-3 py-3 text-center border-l border-slate-200">อัปเดตสถานะงาน</th>
+                      <th class="px-3 py-3 text-center">ตรวจข้อมูลย้อนหลัง</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -287,6 +284,28 @@
     <app-modal ref="appModal"></app-modal>
 
     <!-- รายการงานค้าง / ข้อมูลย้อนหลังที่ยังไม่ตรวจ ของ sale 1 คน -->
+    <!-- หน้าต่าง "ตัวเลขในแท็บนี้มาจากไหน" — คำอธิบายทุกคอลัมน์ของแท็บที่เปิดอยู่ (ยืนยันจากผู้ใช้ 2026-10-02) -->
+    <div v-if="colHelpOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="colHelpOpen = false">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">ตัวเลขในแท็บ {{ roleTabs.find(t => t.key === tab)?.label }} มาจากไหน</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="colHelpOpen = false">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4">
+          <template v-for="g in colHelpGroups[tab]" :key="g.title || 'main'">
+            <div v-if="g.title" class="text-sm font-bold mt-4 mb-1 first:mt-0" :class="g.danger ? 'text-rose-600' : 'text-slate-500'">{{ g.title }}</div>
+            <div v-for="k in g.keys" :key="k" class="grid grid-cols-[150px_1fr] gap-3 py-2 border-b border-slate-100 last:border-0">
+              <div class="text-sm font-semibold text-slate-800">{{ colHelpText[k][0] }}</div>
+              <div class="text-sm text-slate-600 leading-relaxed">{{ colHelpText[k][1] }}</div>
+            </div>
+          </template>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="colHelpOpen = false">ปิด</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="detail" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="detail = null">
       <div class="bg-white rounded-2xl w-full max-w-[900px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
         <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
@@ -325,7 +344,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=64"></script>
+<script src="shared/app.js?v=65"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -339,7 +358,19 @@ createApp({
       days: 7,
       tab: 'sale',
       detail: null,   // { user, type, rows }
-      colHelp: { key: '', top: 0, left: 0 },   // กล่องคำอธิบายหัวคอลัมน์ที่เปิดอยู่ (2026-10-02)
+      colHelpOpen: false,   // หน้าต่าง "ตัวเลขแต่ละช่องคืออะไร?" ของแท็บที่เปิดอยู่ (2026-10-02)
+      // ลำดับ/กลุ่มคอลัมน์ในหน้าต่างคำอธิบาย ต่อแท็บ — ตรงกับหัวตาราง
+      colHelpGroups: {
+        sale: [{ title: '', keys: ['last_seen', 'active_days'] },
+               { title: 'งานที่ทำ (ในช่วงที่เลือก)', keys: ['new_deals', 'deal_moves', 'bid_moves', 'new_people', 'reviews_done', 'lost_priced'] },
+               { title: 'งานค้าง (ตอนนี้)', danger: true, keys: ['stale_deals', 'overdue_followups', 'sla_over', 'not_accepted'] }],
+        salesadmin: [{ title: '', keys: ['last_seen', 'active_days'] },
+                     { title: 'งานที่ทำ (ในช่วงที่เลือก)', keys: ['decisions', 'assigned', 'erp_linked', 'dup_reviewed'] }],
+        manager: [{ title: '', keys: ['last_seen', 'active_days'] },
+                  { title: 'งานที่ทำ (ในช่วงที่เลือก)', keys: ['report_views', 'targets_set'] }],
+        import: [{ title: '', keys: ['imp_direct', 'imp_bid', 'imp_progress', 'imp_pending', 'imp_done'] }],
+        trend: [{ title: '', keys: ['tr_sale', 'tr_admin', 'tr_mgr', 'tr_updates', 'tr_reviews'] }],
+      },
       roleTabs: [
         { key: 'sale', label: 'Sale' }, { key: 'salesadmin', label: 'ธุรการขาย' }, { key: 'manager', label: 'Manager' },
         { key: 'import', label: 'ตรวจข้อมูลย้อนหลัง' }, { key: 'trend', label: 'แนวโน้มรายสัปดาห์' },
@@ -374,6 +405,7 @@ createApp({
         bid_moves:         ['อัปเดตงานประมูล', 'จำนวนครั้งที่เปลี่ยนสถานะงานประมูลในช่วงที่เลือก'],
         new_people:        ['ลูกค้า/ผู้ติดต่อใหม่', 'ลูกค้า + ผู้ติดต่อที่คนนี้เพิ่มเข้าระบบในช่วงที่เลือก'],
         reviews_done:      ['ตรวจข้อมูลย้อนหลัง', 'จำนวนงานนำเข้าที่คนนี้ตรวจในช่วงที่เลือก (กดยืนยัน / เลื่อนสถานะ / โอน / ลบ)'],
+        lost_priced:       ['ดีลแพ้ใส่ราคา', 'ดีลขายตรงที่บันทึกแพ้ในช่วงที่เลือก ใส่ราคาคู่แข่งกี่ดีล จากทั้งหมดกี่ดีล — ราคาคู่แข่งไม่บังคับ ตัวเลขนี้ช่วยดูว่าใครถามราคาจากลูกค้าน้อย (ใช้วิเคราะห์ว่าเราแพงกว่าคู่แข่งเท่าไร)'],
         stale_deals:       ['ดีลค้าง', `ดีลขายตรงที่ยังไม่ปิด และไม่มีคนแตะเกิน ${stale} วัน (นับตั้งแต่ ${start}) — ดีลนำเข้าย้อนหลังเริ่มนับเมื่อตรวจแล้ว · กดตัวเลขเพื่อดูรายการ`],
         overdue_followups: ['นัดติดตามเลยกำหนด', 'ดีลขายตรงที่ยังไม่ปิด และวันนัดติดตามเลยวันนี้ไปแล้ว · กดตัวเลขเพื่อดูรายการ'],
         sla_over:          ['ประมูลเกิน SLA', 'งานประมูลที่ยังไม่จบ และเลยกำหนดเวลา (SLA) แล้ว · กดตัวเลขเพื่อดูรายการ'],
@@ -400,7 +432,7 @@ createApp({
     saleTotals() {
       const rows = this.data?.rows.sale || [];
       if (!rows.length) return null;
-      const keys = ['new_deals','deal_moves','bid_moves','new_accounts','new_contacts','reviews_done','stale_deals','overdue_followups','sla_over','not_accepted',
+      const keys = ['new_deals','deal_moves','bid_moves','new_accounts','new_contacts','reviews_done','lost_total','lost_priced','stale_deals','overdue_followups','sla_over','not_accepted',
                     'import_direct_total','import_direct_reviewed','import_direct_deleted','import_direct_moved','import_direct_confirmed','import_bid_total','import_bid_reviewed','import_bid_moved','import_bid_confirmed'];
       const t = { people: rows.length, active: rows.filter(u => u.active_days > 0).length };
       keys.forEach(k => { t[k] = rows.reduce((sum, u) => sum + Number(u[k] || 0), 0); });
@@ -424,9 +456,6 @@ createApp({
     },
   },
   async mounted() {
-    // ปิดกล่องคำอธิบายหัวคอลัมน์เมื่อกดที่อื่นหรือเลื่อนจอ (กล่องเป็น fixed ไม่เลื่อนตามตาราง)
-    document.addEventListener('click', () => { this.colHelp = { key: '' }; });
-    window.addEventListener('scroll', () => { if (this.colHelp.key) this.colHelp = { key: '' }; }, true);
     try {
       const res = await apiCall('GET', 'api/auth.php?action=me');
       if (!res.success) { window.location.href = 'login.html'; return; }
@@ -440,14 +469,6 @@ createApp({
   methods: {
     ...SharedMethods,
 
-    // เปิด/ปิดกล่อง "ตัวเลขนี้มาจากไหน" ใต้ไอคอน i — วางตามตำแหน่งปุ่ม ไม่ให้ล้นขอบจอ
-    toggleColHelp(key, ev) {
-      if (this.colHelp.key === key) { this.colHelp = { key: '' }; return; }
-      const r = ev.currentTarget.getBoundingClientRect();
-      const width = Math.min(288, window.innerWidth - 32);
-      const left = Math.max(16, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 16));
-      this.colHelp = { key, top: r.bottom + 8, left };
-    },
 
     // วิธีตรวจดีลขายตรงนำเข้า เช่น "เลื่อน 40 · ยืนยัน PI 20 · ลบ 10" (ไม่แสดงวิธีที่เป็น 0)
     importBreakdown(moved, confirmed, deleted) {
@@ -491,21 +512,27 @@ createApp({
       this.detail.rows = res.data;
     },
 
+    // "ดีลแพ้ใส่ราคา" เช่น 3 / 5 (60%) — ไม่มีดีลแพ้ = —
+    lostPricedText(priced, total) {
+      if (!total) return '—';
+      return `${priced} / ${total} (${Math.round(priced * 100 / total)}%)`;
+    },
+
     exportReport() {
       const d = this.data;
       const seen = u => u.last_seen ? this.formatDateThai(u.last_seen) : 'ยังไม่เคยเข้าใช้';
       const rows = [
         ...d.rows.sale.map(u => ['Sale', u.full_name, seen(u), u.active_days, u.new_deals, u.deal_moves, u.bid_moves, u.new_accounts + u.new_contacts,
-          u.reviews_done, u.stale_deals, u.overdue_followups, u.sla_over, u.not_accepted,
+          u.reviews_done, this.lostPricedText(u.lost_priced, u.lost_total), u.stale_deals, u.overdue_followups, u.sla_over, u.not_accepted,
           `${u.import_direct_reviewed + u.import_bid_reviewed}/${u.import_direct_total + u.import_bid_total}`]),
         ...(this.saleTotals ? [((t) => ['Sale', `รวมทั้งทีม (${t.people} คน)`, `เข้าใช้ ${t.active} คน`, '', t.new_deals, t.deal_moves, t.bid_moves,
-          t.new_accounts + t.new_contacts, t.reviews_done, t.stale_deals, t.overdue_followups, t.sla_over, t.not_accepted,
+          t.new_accounts + t.new_contacts, t.reviews_done, this.lostPricedText(t.lost_priced, t.lost_total), t.stale_deals, t.overdue_followups, t.sla_over, t.not_accepted,
           `${t.import_direct_reviewed + t.import_bid_reviewed}/${t.import_direct_total + t.import_bid_total}`])(this.saleTotals)] : []),
-        ...d.rows.salesadmin.map(u => ['ธุรการขาย', u.full_name, seen(u), u.active_days, `ตัดสินใจ ${u.decisions}`, `มอบหมาย ${u.assigned}`, `ผูก ERP ${u.erp_linked}`, `ตรวจซ้ำ ${u.dup_reviewed}`, '', '', '', '', '', '']),
-        ...d.rows.manager.map(u => ['Manager', u.full_name, seen(u), u.active_days, `ดูรายงาน ${u.report_views}`, `ตั้งเป้า ${u.targets_set}`, '', '', '', '', '', '', '', '']),
+        ...d.rows.salesadmin.map(u => ['ธุรการขาย', u.full_name, seen(u), u.active_days, `ตัดสินใจ ${u.decisions}`, `มอบหมาย ${u.assigned}`, `ผูก ERP ${u.erp_linked}`, `ตรวจซ้ำ ${u.dup_reviewed}`, '', '', '', '', '', '', '']),
+        ...d.rows.manager.map(u => ['Manager', u.full_name, seen(u), u.active_days, `ดูรายงาน ${u.report_views}`, `ตั้งเป้า ${u.targets_set}`, '', '', '', '', '', '', '', '', '']),
       ];
       const headers = ['Role', 'ชื่อ', 'เข้าใช้ล่าสุด', `วันที่เข้าใช้ (${this.days} วัน)`, 'ดีลใหม่', 'อัปเดตดีล', 'อัปเดตงานประมูล', 'ลูกค้า/ผู้ติดต่อใหม่',
-        'ตรวจข้อมูลย้อนหลัง', 'ดีลค้าง', 'นัดติดตามเลยกำหนด', 'ประมูลเกิน SLA', 'ยังไม่รับงาน', 'ข้อมูลย้อนหลัง ตรวจแล้ว/ทั้งหมด'];
+        'ตรวจข้อมูลย้อนหลัง', 'ดีลแพ้ใส่ราคา', 'ดีลค้าง', 'นัดติดตามเลยกำหนด', 'ประมูลเกิน SLA', 'ยังไม่รับงาน', 'ข้อมูลย้อนหลัง ตรวจแล้ว/ทั้งหมด'];
       this.exportExcel(`การใช้งานระบบ_${this.days}วัน_${new Date().toISOString().substring(0, 10)}`, headers, rows);
     },
   },

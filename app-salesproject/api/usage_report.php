@@ -77,6 +77,14 @@ function usageSummary(PDO $db): void {
     $newAccounts = $count('SELECT created_by, COUNT(*) FROM accounts WHERE created_at >= ? GROUP BY created_by', [$from]);
     $newContacts = $count('SELECT created_by, COUNT(*) FROM contacts WHERE created_at >= ? GROUP BY created_by', [$from]);
     $reviewsDone = $count('SELECT reviewed_by, COUNT(*) FROM quotation_import_log WHERE reviewed_at >= ? GROUP BY reviewed_by', [$from]);
+    // ดีลขายตรงที่บันทึกแพ้ในช่วงที่เลือก / ในนั้นใส่ราคาคู่แข่งกี่ดีล — ราคาคู่แข่งไม่บังคับ ใช้ติดตามแทน (ยืนยันจากผู้ใช้ 2026-10-02)
+    $lostPriced = $db->prepare("SELECT pi.assigned_to, COUNT(*) AS total, SUM(pi.winning_price > 0) AS priced
+                                FROM pipeline_items pi
+                                WHERE pi.source_type <> 'ebidding' AND pi.stage = 'Lost'
+                                  AND EXISTS (SELECT 1 FROM pipeline_item_history h WHERE h.pipeline_item_id = pi.id AND h.new_stage = 'Lost' AND h.changed_at >= ?)
+                                GROUP BY pi.assigned_to");
+    $lostPriced->execute([$from]);
+    $lostPriced = $lostPriced->fetchAll(PDO::FETCH_UNIQUE);
 
     // Sale — งานค้าง (ตอนนี้)
     $tracked = usageTrackedDealsSql();
@@ -144,6 +152,7 @@ function usageSummary(PDO $db): void {
             $d = $importDirect[$id] ?? ['total' => 0, 'reviewed' => 0, 'moved' => 0, 'confirmed' => 0]; $b = $importBid[$id] ?? ['total' => 0, 'reviewed' => 0, 'moved' => 0, 'confirmed' => 0];
             $base += ['new_deals' => $newDeals[$id] ?? 0, 'deal_moves' => $dealMoves[$id] ?? 0, 'bid_moves' => $bidMoves[$id] ?? 0,
                       'new_accounts' => $newAccounts[$id] ?? 0, 'new_contacts' => $newContacts[$id] ?? 0, 'reviews_done' => $reviewsDone[$id] ?? 0,
+                      'lost_total' => (int)($lostPriced[$id]['total'] ?? 0), 'lost_priced' => (int)($lostPriced[$id]['priced'] ?? 0),
                       'stale_deals' => $staleDeals[$id] ?? 0, 'overdue_followups' => $overdue[$id] ?? 0,
                       'sla_over' => $slaOver[$id] ?? 0, 'not_accepted' => $notAccepted[$id] ?? 0,
                       'import_direct_deleted' => (int)($importDeleted[$id] ?? 0),

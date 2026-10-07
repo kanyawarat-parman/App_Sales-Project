@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../includes/usage_helper.php';
+require_once __DIR__ . '/../includes/delivery_helper.php';
 require_once __DIR__ . '/../api/line.php';
 
 $user   = requireAuth();
@@ -47,6 +48,10 @@ switch ($method) {
             case 'transfer_import': transferBidImport($db, $user); break;
             // เปลี่ยนประเภท งานประมูลย้อนหลัง → ขายตรง (Change Record Type — ยืนยันจากผู้ใช้ 2026-10-01) — ตรวจสิทธิ์ในฟังก์ชัน
             case 'convert_to_direct': convertBidImportToDirect($db, $user); break;
+            // แก้วันที่คาดว่าจะส่งมอบของงานที่ชนะแล้ว (ลูกค้า/สัญญาเลื่อน — 2026-10-07) — ตรวจสิทธิ์ในฟังก์ชัน
+            case 'update_expected_delivery': updateBidExpectedDelivery($db, $user); break;
+            // แก้วันที่ส่งมอบจริงของงานที่ส่งมอบแล้ว (2026-10-07) — ตรวจสิทธิ์ในฟังก์ชัน
+            case 'update_delivered_date': updateBidDeliveredDate($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -119,7 +124,7 @@ function listAssignments(PDO $db, array $user): void {
 
     $sql = "
         SELECT pi.id, pi.project_code, pi.stage AS status, pi.priority, pi.sla_status, pi.secretary_notes,
-               pi.notes AS sale_notes, pi.value AS bid_amount, pi.sla_deadline,
+               pi.notes AS sale_notes, pi.value AS bid_amount, pi.expected_delivery_date, pi.delivered_date, pi.sla_deadline,
                pi.created_at AS assigned_at, pi.updated_at, pi.line_notified_at,
                a.id AS ann_id, a.project_no, a.project_name, a.unit_name,
                a.announce_date, a.close_date, a.price_median, a.can_bid, a.url, a.keyword_match,
@@ -155,7 +160,7 @@ function getDetail(PDO $db, array $user): void {
         SELECT pi.id, pi.project_code, pi.announcement_id, pi.assigned_to, pi.assigned_by,
                pi.stage AS status, pi.priority, pi.secretary_notes, pi.notes AS sale_notes,
                COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason, pi.win_loss_reason_id,
-               pi.win_loss_note, pi.value AS bid_amount,
+               pi.win_loss_note, pi.value AS bid_amount, pi.expected_delivery_date, pi.delivered_date,
                pi.winner_competitor_id, wc.competitor_name AS winner_name, pi.winning_price,
                pi.sla_deadline, pi.sla_status, pi.line_notified_at, pi.email_notified_at,
                pi.created_at AS assigned_at, pi.updated_at,
@@ -334,6 +339,49 @@ function convertBidImportToDirect(PDO $db, array $user): void {
         throw $e;
     }
     jsonResponse(true, ['pipeline_item_id' => $piId], 'เปลี่ยนเป็นงานขายตรงแล้ว');
+}
+
+// แก้วันที่คาดว่าจะส่งมอบของงานประมูลที่ชนะแล้ว (หน้าต่างดูรายละเอียด — ยืนยันจากผู้ใช้ 2026-10-07) body: project_code, expected_delivery_date
+// เก็บที่ดีลคู่ pipeline_items + ประวัติเมื่อเลื่อน / sale เจ้าของงาน, ธุรการ, admin / เฉพาะงานที่ชนะการประมูล (ยังไม่ส่งมอบ)
+function updateBidExpectedDelivery(PDO $db, array $user): void {
+    if (!in_array($user['role'], ['sale', 'salesadmin', 'admin'], true)) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    $body = getJsonBody();
+    $stmt = $db->prepare("SELECT pa.status, pa.assigned_to, pa.project_code, pi.id AS pi_id, pi.expected_delivery_date
+                          FROM project_assignments pa
+                          JOIN pipeline_items pi ON pi.announcement_id = pa.announcement_id AND pi.assigned_to = pa.assigned_to AND pi.source_type = 'ebidding'
+                          WHERE pa.project_code = ?");
+    $stmt->execute([$body['project_code'] ?? '']);
+    $job = $stmt->fetch();
+    if (!$job) jsonResponse(false, null, 'ไม่พบงาน', 404);
+    if ($user['role'] === 'sale' && (int)$job['assigned_to'] !== (int)$user['id']) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    if ($job['status'] !== 'ชนะการประมูล') jsonResponse(false, null, 'แก้วันคาดส่งมอบได้เฉพาะงานที่ชนะการประมูล (ยังไม่ส่งมอบ)', 400);
+    $new = normalizeExpectedDelivery($body['expected_delivery_date'] ?? null);
+    if (!$new) jsonResponse(false, null, 'กรุณาระบุวันที่คาดว่าจะส่งมอบให้ถูกต้อง', 400);
+    $db->prepare('UPDATE pipeline_items SET expected_delivery_date = ?, updated_by = ? WHERE id = ?')->execute([$new, $user['id'], $job['pi_id']]);
+    logExpectedDeliveryChange($db, (int)$job['pi_id'], $job['project_code'], (int)$user['id'], $job['expected_delivery_date'], $new, $job['status']);
+    jsonResponse(true, ['expected_delivery_date' => $new], 'บันทึกวันคาดส่งมอบแล้ว');
+}
+
+// แก้วันที่ส่งมอบจริงของงานประมูลที่ส่งมอบแล้ว (หน้าต่างดูรายละเอียด — ยืนยันจากผู้ใช้ 2026-10-07) body: project_code, delivered_date
+// เก็บที่ดีลคู่ pipeline_items.delivered_date + ประวัติ / sale เจ้าของงาน, ธุรการ, admin / ห้ามเกินวันนี้
+function updateBidDeliveredDate(PDO $db, array $user): void {
+    if (!in_array($user['role'], ['sale', 'salesadmin', 'admin'], true)) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    $body = getJsonBody();
+    $stmt = $db->prepare("SELECT pa.status, pa.assigned_to, pa.project_code, pi.id AS pi_id, pi.delivered_date
+                          FROM project_assignments pa
+                          JOIN pipeline_items pi ON pi.announcement_id = pa.announcement_id AND pi.assigned_to = pa.assigned_to AND pi.source_type = 'ebidding'
+                          WHERE pa.project_code = ?");
+    $stmt->execute([$body['project_code'] ?? '']);
+    $job = $stmt->fetch();
+    if (!$job) jsonResponse(false, null, 'ไม่พบงาน', 404);
+    if ($user['role'] === 'sale' && (int)$job['assigned_to'] !== (int)$user['id']) jsonResponse(false, null, 'ไม่มีสิทธิ์', 403);
+    if ($job['status'] !== 'ส่งมอบแล้ว') jsonResponse(false, null, 'แก้วันส่งมอบจริงได้เฉพาะงานที่ส่งมอบแล้ว', 400);
+    $new = normalizeDeliveredDate($body['delivered_date'] ?? null);
+    if ($new === 'future') jsonResponse(false, null, 'วันที่ส่งมอบจริงต้องไม่เกินวันนี้', 400);
+    if (!$new) jsonResponse(false, null, 'กรุณาระบุวันที่ส่งมอบจริงให้ถูกต้อง', 400);
+    $db->prepare('UPDATE pipeline_items SET delivered_date = ?, updated_by = ? WHERE id = ?')->execute([$new, $user['id'], $job['pi_id']]);
+    logDeliveredDateChange($db, (int)$job['pi_id'], $job['project_code'], (int)$user['id'], $job['delivered_date'], $new, $job['status']);
+    jsonResponse(true, ['delivered_date' => $new], 'บันทึกวันส่งมอบจริงแล้ว');
 }
 
 function createAssignment(PDO $db, array $user): void {
@@ -678,6 +726,31 @@ function updateAssignment(PDO $db, array $user): void {
         $piFields[] = 'winner_competitor_id = NULL'; $piFields[] = 'winning_price = NULL';
     }
 
+    // วันที่คาดว่าจะส่งมอบ (เก็บที่ดีลคู่ pipeline_items — Expected Delivery Date, ยืนยันจากผู้ใช้ 2026-10-07)
+    // ชนะการประมูล (เข้าจากสถานะอื่น) ต้องมีวันที่ — ฝ่ายจัดส่ง forecast ก่อนออก SO / งานที่ชนะไปก่อนหน้านี้ไม่ย้อนบังคับ
+    $mirrorStmt = $db->prepare("SELECT id, expected_delivery_date, delivered_date FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding' LIMIT 1");
+    $mirrorStmt->execute([$current['announcement_id'], $current['assigned_to']]);
+    $mirrorRow = $mirrorStmt->fetch();
+    $expectedDelivery = $mirrorRow['expected_delivery_date'] ?? null;
+    if (array_key_exists('expected_delivery_date', $body)) {
+        $expectedDelivery = normalizeExpectedDelivery($body['expected_delivery_date']);
+        if ($expectedDelivery === false) jsonResponse(false, null, 'วันที่คาดว่าจะส่งมอบไม่ถูกต้อง', 400);
+        $piFields[] = 'expected_delivery_date = ?'; $piParams[] = $expectedDelivery;
+    }
+    // วันที่ส่งมอบจริง (ยืนยันจากผู้ใช้ 2026-10-07) — เข้าสถานะส่งมอบแล้ว: ใช้วันที่ส่งมา (ห้ามเกินวันนี้) ไม่ส่งมา = วันนี้
+    //   เดิมงานประมูลไม่บันทึกวันส่งมอบเลย รายงานรายได้ใช้วันที่แก้ไขล่าสุดแทน
+    $deliveredDate = $mirrorRow['delivered_date'] ?? null;
+    if (array_key_exists('delivered_date', $body) || (($body['status'] ?? null) === 'ส่งมอบแล้ว' && $current['status'] !== 'ส่งมอบแล้ว')) {
+        $deliveredDate = normalizeDeliveredDate($body['delivered_date'] ?? null);
+        if ($deliveredDate === false)    jsonResponse(false, null, 'วันที่ส่งมอบจริงไม่ถูกต้อง', 400);
+        if ($deliveredDate === 'future') jsonResponse(false, null, 'วันที่ส่งมอบจริงต้องไม่เกินวันนี้', 400);
+        if (!$deliveredDate && ($body['status'] ?? null) === 'ส่งมอบแล้ว') $deliveredDate = date('Y-m-d');
+        $piFields[] = 'delivered_date = ?'; $piParams[] = $deliveredDate;
+    }
+    if (($body['status'] ?? null) === 'ชนะการประมูล' && $current['status'] !== 'ชนะการประมูล' && !$expectedDelivery) {
+        jsonResponse(false, null, 'กรุณาระบุวันที่คาดว่าจะส่งมอบ (ดูจากสัญญา/TOR ใส่วันประมาณได้)', 400);
+    }
+
     if (empty($fields)) jsonResponse(false, null, 'ไม่มีข้อมูลให้อัพเดต', 400);
 
     // ผู้แก้ไขล่าสุด = user ที่ login (กฎการสร้าง Database ข้อ 1 — 2026-09-26) ใส่ทั้งตัวงานและ mirror
@@ -695,6 +768,12 @@ function updateAssignment(PDO $db, array $user): void {
         $piParams[] = $current['assigned_to'];
         $db->prepare("UPDATE pipeline_items SET " . implode(', ', $piFields) . " WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'")
            ->execute($piParams);
+    }
+    if ($mirrorRow && array_key_exists('expected_delivery_date', $body)) {   // เลื่อนวันคาดส่งมอบ → ประวัติดีล (2026-10-07)
+        logExpectedDeliveryChange($db, (int)$mirrorRow['id'], $current['project_code'], (int)$user['id'], $mirrorRow['expected_delivery_date'], $expectedDelivery, $body['status'] ?? $current['status']);
+    }
+    if ($mirrorRow && array_key_exists('delivered_date', $body)) {          // แก้วันส่งมอบจริง → ประวัติดีล (2026-10-07)
+        logDeliveredDateChange($db, (int)$mirrorRow['id'], $current['project_code'], (int)$user['id'], $mirrorRow['delivered_date'], $deliveredDate, $body['status'] ?? $current['status']);
     }
 
     // บันทึก history ถ้าสถานะเปลี่ยน
@@ -746,11 +825,11 @@ function updateAssignment(PDO $db, array $user): void {
                 $db->prepare("
                     INSERT INTO pipeline_items
                         (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
-                         stage, priority, value, win_probability, order_date, created_by, updated_by)
-                    VALUES (?, 'ebidding', ?, ?, ?, ?, ?, 'Deal Signed', 'High', ?, 0.90, CURDATE(), ?, ?)
+                         stage, priority, value, win_probability, order_date, expected_delivery_date, created_by, updated_by)
+                    VALUES (?, 'ebidding', ?, ?, ?, ?, ?, 'Deal Signed', 'High', ?, 0.90, CURDATE(), ?, ?, ?)
                 ")->execute([
                     $projectCode, $current['announcement_id'], $title, $client, $accountId,
-                    $current['assigned_to'], $value, $user['id'], $user['id']
+                    $current['assigned_to'], $value, $expectedDelivery ?: null, $user['id'], $user['id']
                 ]);
                 // Phase 5b: mirror เพิ่งถูกสร้างใหม่ตรงนี้ (ไม่เคยมีมาก่อน) — บันทึกประวัติแรกให้ด้วย
                 $newPiId = (int)$db->lastInsertId();
@@ -1156,7 +1235,7 @@ function fetchKanbanBuckets(PDO $db, array $where, array $params): array {
     $whereStr = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     $sql = "
         SELECT pi.id, pi.project_code, pi.stage AS status, pi.priority, pi.sla_status,
-               pi.value AS bid_amount, COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason,
+               pi.value AS bid_amount, pi.expected_delivery_date, pi.delivered_date, COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason,
                pi.win_loss_reason_id, pi.win_loss_note,
                pi.winner_competitor_id, wc.competitor_name AS winner_name, pi.winning_price,
                pi.sla_deadline, pi.created_at AS assigned_at,

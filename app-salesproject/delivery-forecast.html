@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คาดการณ์ส่งมอบ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="delivery-forecast" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          คาดการณ์ส่งมอบ
+        </h1>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1400px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <!-- คาดการณ์งานส่งมอบ (Expected Delivery forecast — ยืนยันจากผู้ใช้ 2026-10-07)
+             งานที่ได้แล้วแต่ยังไม่ส่ง จัดกลุ่มตามเดือนที่คาดว่าจะส่ง ให้ฝ่ายจัดส่งวางแผนล่วงหน้าก่อนออก SO (กำหนดส่งจริงอยู่ใน SO ของ ERP) -->
+        <div class="text-sm text-slate-500 leading-relaxed mb-4 max-w-[900px]">
+          งานที่ได้แล้วแต่ยังไม่ส่ง (ขายตรงที่ปิดดีลแล้ว + งานประมูลที่ชนะแล้ว) จัดกลุ่มตาม <b class="text-slate-700">วันที่คาดว่าจะส่งมอบ</b> ที่ Sale ระบุตอนปิดดีล —
+          ใช้วางแผนจัดส่งล่วงหน้า ก่อนออก SO (กำหนดส่งจริงดูใน SO ของ ERP)
+        </div>
+
+        <!-- ตัวกรองประเภท + Export + คำอธิบาย -->
+        <div class="flex items-center gap-2 flex-wrap mb-4">
+          <span class="text-sm font-semibold text-slate-600">ประเภทงาน:</span>
+          <button v-for="t in typeOptions" :key="t.key" type="button" @click="typeFilter = t.key"
+            class="px-4 py-2 rounded-full text-sm font-semibold border-0 cursor-pointer"
+            :class="typeFilter === t.key ? 'bg-teal-700 text-white' : 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50'">{{ t.label }}</button>
+          <button type="button" @click="helpOpen = true" class="ml-auto bg-transparent border-0 cursor-pointer text-sm text-slate-500 hover:text-teal-700 whitespace-nowrap">ⓘ ตัวเลขแต่ละช่องคืออะไร?</button>
+          <button v-if="items.length" @click="exportForecast" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export Excel
+          </button>
+        </div>
+
+        <div v-if="loading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+        <template v-else>
+          <!-- สรุปตามกลุ่ม -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            <div v-for="c in summaryCards" :key="c.key" class="bg-white rounded-2xl ring-1 shadow-sm p-4" :class="c.ring">
+              <div class="text-sm" :class="c.labelClass">{{ c.label }}</div>
+              <div class="text-2xl font-bold mt-0.5" :class="c.count ? c.valueClass : 'text-slate-300'">{{ c.count }} <span class="text-sm font-semibold text-slate-400">งาน</span></div>
+              <div class="text-sm font-semibold text-slate-600">{{ c.count ? formatPrice(c.value) : '—' }}</div>
+            </div>
+          </div>
+
+          <div v-if="!filtered.length" class="bg-white rounded-2xl ring-1 ring-slate-100 text-center text-slate-400 text-sm py-16">ไม่มีงานรอส่งมอบ</div>
+
+          <!-- รายการตามกลุ่มเดือน -->
+          <div v-for="g in groups" :key="g.key" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4 overflow-hidden">
+            <div class="px-5 py-3 flex items-center gap-3 border-b border-slate-100" :class="g.headClass">
+              <div class="font-bold" :class="g.titleClass">{{ g.label }}</div>
+              <div class="text-sm text-slate-500">{{ g.rows.length }} งาน · {{ formatPrice(g.value) }}</div>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm min-w-[860px]">
+                <thead>
+                  <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 text-left">
+                    <th class="px-4 py-2.5">คาดว่าจะส่ง</th>
+                    <th class="px-3 py-2.5">รหัสงาน</th>
+                    <th class="px-3 py-2.5">ประเภท</th>
+                    <th class="px-3 py-2.5">ลูกค้า / ชื่องาน</th>
+                    <th class="px-3 py-2.5">หมวดสินค้า</th>
+                    <th class="px-3 py-2.5 text-right">มูลค่า</th>
+                    <th class="px-3 py-2.5">Sale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in g.rows" :key="r.id" class="border-t border-slate-100">
+                    <td class="px-4 py-2.5 whitespace-nowrap font-semibold" :class="g.key === 'overdue' ? 'text-rose-700' : 'text-slate-700'">{{ r.expected_delivery_date ? formatDateThai(r.expected_delivery_date) : '—' }}</td>
+                    <td class="px-3 py-2.5"><span class="font-mono text-xs font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 whitespace-nowrap">{{ r.project_code }}</span></td>
+                    <td class="px-3 py-2.5 whitespace-nowrap">
+                      <span class="px-2 py-0.5 rounded-full text-xs font-bold" :class="r.source_type === 'ebidding' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'">{{ r.source_type === 'ebidding' ? 'งานประมูล' : 'ขายตรง' }}</span>
+                    </td>
+                    <td class="px-3 py-2.5"><div class="font-semibold text-slate-800">{{ r.client_name || '-' }}</div><div class="text-xs text-slate-500 line-clamp-1">{{ r.title }}</div></td>
+                    <td class="px-3 py-2.5 whitespace-nowrap text-slate-600">{{ categoryLabel(r.product_category) }}</td>
+                    <td class="px-3 py-2.5 text-right whitespace-nowrap">{{ r.value ? formatPrice(r.value) : '-' }}</td>
+                    <td class="px-3 py-2.5 whitespace-nowrap text-slate-600">{{ r.sale_name }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+      </main>
+    </div>
+
+    <!-- คำอธิบายตัวเลข (แบบเดียวกับหน้ารายงานการใช้งาน) -->
+    <div v-if="helpOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="helpOpen = false">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">ตัวเลขในหน้านี้มาจากไหน</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="helpOpen = false">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4">
+          <div v-for="h in helpRows" :key="h[0]" class="grid grid-cols-[150px_1fr] gap-3 py-2 border-b border-slate-100 last:border-0">
+            <div class="text-sm font-semibold text-slate-800">{{ h[0] }}</div>
+            <div class="text-sm text-slate-600 leading-relaxed">{{ h[1] }}</div>
+          </div>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="helpOpen = false">ปิด</button>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=65"></script>
+<script>
+const { createApp } = Vue;
+const MONTHS_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+createApp({
+  components: { AppNav },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      items: [],
+      today: '',
+      typeFilter: 'all',
+      helpOpen: false,
+      typeOptions: [{ key: 'all', label: 'ทั้งหมด' }, { key: 'direct', label: 'ขายตรง' }, { key: 'bid', label: 'งานประมูล' }],
+      helpRows: [
+        ['งานที่นับ', 'ขายตรงที่ปิดดีลแล้ว (ยังไม่ส่งสินค้า) + งานประมูลที่ชนะการประมูล (ยังไม่ส่งมอบ) — ส่งแล้วจะหายจากหน้านี้'],
+        ['คาดว่าจะส่ง', 'วันที่ Sale ระบุตอนปิดดีลได้ / ชนะการประมูล (วันโดยประมาณ) — Sale แก้ได้ถ้าลูกค้าเลื่อน ระบบบันทึกประวัติการเลื่อนในดีล'],
+        ['เลยกำหนด', 'วันคาดส่งผ่านไปแล้ว แต่ยังไม่ได้เปลี่ยนเป็นส่งแล้ว — ควรตาม Sale ว่าส่งแล้วหรือเลื่อน'],
+        ['ยังไม่ระบุ', 'งานที่ได้ก่อนเริ่มใช้ช่องนี้ (7 ต.ค. 2569) จึงยังไม่มีวันคาดส่ง — Sale เติมได้ในรายละเอียดงาน'],
+        ['มูลค่า', 'ขายตรง = มูลค่าดีล / งานประมูล = ราคาที่เราเสนอ'],
+        ['กำหนดส่งจริง', 'หลังออก SO ใช้กำหนดส่งใน SO ของ ERP เป็นตัวจริงสำหรับจัดเที่ยว — หน้านี้ใช้คาดการณ์ล่วงหน้าเท่านั้น'],
+      ],
+    };
+  },
+  computed: {
+    filtered() {
+      if (this.typeFilter === 'direct') return this.items.filter(r => r.source_type !== 'ebidding');
+      if (this.typeFilter === 'bid') return this.items.filter(r => r.source_type === 'ebidding');
+      return this.items;
+    },
+    // กลุ่ม: เลยกำหนด / รายเดือน (เดือนนี้ เดือนหน้า ...) / ยังไม่ระบุ
+    groups() {
+      const thisMonth = this.today.substring(0, 7);
+      const map = new Map();
+      const add = (key, label, sort, r, cls = {}) => {
+        if (!map.has(key)) map.set(key, { key, label, sort, rows: [], value: 0, ...cls });
+        const g = map.get(key); g.rows.push(r); g.value += Number(r.value || 0);
+      };
+      for (const r of this.filtered) {
+        const d = r.expected_delivery_date;
+        if (!d) { add('none', 'ยังไม่ระบุวันคาดส่ง', '9999-99', r, { headClass: 'bg-amber-50', titleClass: 'text-amber-800' }); continue; }
+        if (d < this.today) { add('overdue', 'เลยกำหนดแล้ว', '0000-00', r, { headClass: 'bg-rose-50', titleClass: 'text-rose-700' }); continue; }
+        const ym = d.substring(0, 7);
+        const label = MONTHS_TH[Number(ym.substring(5, 7)) - 1] + ' ' + (Number(ym.substring(0, 4)) + 543) + (ym === thisMonth ? ' (เดือนนี้)' : '');
+        add(ym, label, ym, r, { headClass: ym === thisMonth ? 'bg-teal-50' : '', titleClass: ym === thisMonth ? 'text-teal-800' : 'text-slate-800' });
+      }
+      return [...map.values()].sort((a, b) => a.sort.localeCompare(b.sort));
+    },
+    summaryCards() {
+      const thisMonth = this.today.substring(0, 7);
+      const d = new Date(this.today + 'T00:00:00'); d.setMonth(d.getMonth() + 1);
+      const nextMonth = d.toISOString().substring(0, 7);
+      const sum = rows => ({ count: rows.length, value: rows.reduce((s, r) => s + Number(r.value || 0), 0) });
+      const f = this.filtered;
+      return [
+        { key: 'overdue', label: 'เลยกำหนดแล้ว', ...sum(f.filter(r => r.expected_delivery_date && r.expected_delivery_date < this.today)), ring: 'ring-rose-100', labelClass: 'text-rose-600', valueClass: 'text-rose-700' },
+        { key: 'this', label: 'เดือนนี้', ...sum(f.filter(r => r.expected_delivery_date >= this.today && r.expected_delivery_date?.startsWith(thisMonth))), ring: 'ring-teal-100', labelClass: 'text-teal-700', valueClass: 'text-teal-800' },
+        { key: 'next', label: 'เดือนหน้า', ...sum(f.filter(r => r.expected_delivery_date?.startsWith(nextMonth))), ring: 'ring-slate-100', labelClass: 'text-slate-500', valueClass: 'text-slate-800' },
+        { key: 'none', label: 'ยังไม่ระบุวันคาดส่ง', ...sum(f.filter(r => !r.expected_delivery_date)), ring: 'ring-amber-100', labelClass: 'text-amber-700', valueClass: 'text-amber-800' },
+      ];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      // admin / ธุรการขาย / manager (API บังคับซ้ำ)
+      if (!['admin', 'salesadmin', 'manager'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.load();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async load() {
+      this.loading = true;
+      const res = await apiCall('GET', 'api/delivery_forecast.php?action=list');
+      if (res.success) { this.items = res.data.items; this.today = res.data.today; }
+      else await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+      this.loading = false;
+    },
+
+    categoryLabel(c) {
+      return { Steel: 'เหล็ก', Chair: 'เก้าอี้', Wooden: 'ไม้', Other: 'อื่นๆ' }[c] || '-';
+    },
+
+    exportForecast() {
+      const rows = this.groups.flatMap(g => g.rows.map(r => [
+        g.label, r.expected_delivery_date || '', r.project_code, r.source_type === 'ebidding' ? 'งานประมูล' : 'ขายตรง',
+        r.client_name || '', r.title, this.categoryLabel(r.product_category), Number(r.value || 0), r.sale_name,
+      ]));
+      const headers = ['กลุ่ม', 'คาดว่าจะส่ง', 'รหัสงาน', 'ประเภท', 'ลูกค้า', 'ชื่องาน', 'หมวดสินค้า', 'มูลค่า', 'Sale'];
+      this.exportExcel(`คาดการณ์ส่งมอบ_${this.today}`, headers, rows);
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

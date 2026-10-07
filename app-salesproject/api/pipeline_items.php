@@ -9,6 +9,7 @@ require_once __DIR__ . '/../includes/phone_helper.php';
 require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/usage_helper.php';
 require_once __DIR__ . '/../includes/mail_helper.php';
+require_once __DIR__ . '/../includes/delivery_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -106,7 +107,7 @@ function fetchPipelineRows(PDO $db, string $where, array $params): array {
                pi.expected_close, pi.next_action, pi.next_followup_date, pi.notes,
                COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason, pi.win_loss_reason_id, pi.win_loss_note,
                pi.winner_competitor_id, wc.competitor_name AS winner_name, pi.winning_price,
-               pi.order_date, pi.delivered_date,
+               pi.order_date, pi.delivered_date, pi.expected_delivery_date,
                pi.account_id, a.name AS account_name, a.account_type AS account_type,
                u.id AS sale_id, u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url,
                pi.created_at, pi.updated_at,
@@ -499,13 +500,17 @@ function createItem(PDO $db, array $user, array $body): void {
         $projectCode = nextProjectCode($db, 'now', (int)$user['id']);
     }
 
+    // วันที่คาดว่าจะส่งมอบ — บังคับเมื่อสร้างดีลที่ขั้นปิดดีลแล้ว (Expected Delivery Date — ยืนยันจากผู้ใช้ 2026-10-07)
+    $expectedDelivery = expectedDeliveryFromBody($body);
+    if (($body['stage'] ?? 'Interest') === 'Deal Signed' && !$expectedDelivery) jsonError(400, 'กรุณาระบุวันที่คาดว่าจะส่งมอบ (ใส่วันประมาณได้)');
+
     $stmt = $db->prepare("
         INSERT INTO pipeline_items
             (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
              stage, deal_type_id, segment, priority, product_category, brand, fee_structure,
-             specialization, value, win_probability, expected_close, next_action, next_followup_date, notes,
+             specialization, value, win_probability, expected_close, expected_delivery_date, next_action, next_followup_date, notes,
              created_by, updated_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ");
     $stmt->execute([
         $projectCode,
@@ -527,6 +532,7 @@ function createItem(PDO $db, array $user, array $body): void {
         // ใช้ isset แทน !empty — เดิม sale กรอก 0% แล้วถูกเปลี่ยนเป็น 20% เพราะ empty(0) เป็นจริง (default 0.20 เหลือไว้ให้ฝั่ง ebidding เท่านั้น)
         (isset($body['win_probability']) && $body['win_probability'] !== '') ? (float)$body['win_probability'] : 0.20,
         !empty($body['expected_close'])  ? $body['expected_close'] : null,
+        $expectedDelivery,
         $body['next_action']      ?? null,
         !empty($body['next_followup_date']) ? $body['next_followup_date'] : null,
         $body['notes']            ?? null,
@@ -690,10 +696,9 @@ function validateSalesLost(PDO $db, array $body): void {
     if ($winner['competitor_code'] === 'CP-NONE') {
         jsonError(400, 'เลือก "ไม่มีคู่แข่ง" เป็นผู้ชนะไม่ได้ — ถ้าไม่รู้ให้เลือก "ยังไม่ทราบ"');
     }
+    // ราคาคู่แข่งไม่บังคับในงานขายตรง (ลูกค้าเอกชนมักไม่บอก — ยืนยันจากผู้ใช้ 2026-10-02) ติดตามผ่านรายงานการใช้งานแทน
+    // เหตุผลที่ต้องมีราคาเทียบ (requires_winner) ยังบังคับมูลค่าที่เราเสนอ / งานประมูลบังคับราคาผู้ชนะใน api/assignments.php
     if ((int)$r['requires_winner'] === 1) {
-        if (!isset($body['winning_price']) || $body['winning_price'] === '' || (float)$body['winning_price'] <= 0) {
-            jsonError(400, 'กรุณากรอกราคาที่คู่แข่ง (ผู้ชนะ) เสนอ');
-        }
         if (!isset($body['value']) || $body['value'] === '' || (float)$body['value'] <= 0) {
             jsonError(400, 'กรุณากรอกมูลค่าที่เราเสนอ');
         }
@@ -711,7 +716,7 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
 
     // Ownership check
-    $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id, source_type, announcement_id FROM pipeline_items WHERE id = ?");
+    $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id, source_type, announcement_id, expected_delivery_date, delivered_date FROM pipeline_items WHERE id = ?");
     $owner->execute([$id]);
     $row = $owner->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
@@ -721,7 +726,7 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
                 'specialization','value','win_probability','expected_close',
                 'next_action','next_followup_date','notes','win_loss_note',
                 'winner_competitor_id','winning_price',
-                'order_date','delivered_date','title','client_name','source_type','assigned_to','account_id'];
+                'order_date','title','client_name','source_type','assigned_to','account_id'];   // delivered_date ตรวจแยกด้านล่าง (2026-10-07)
 
     $fields = []; $params = [];
     foreach ($allowed as $f) {
@@ -743,8 +748,26 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
         $fields[] = 'win_loss_reason_id = ?'; $params[] = $reasonId;
         $fields[] = 'win_loss_reason = ?';    $params[] = $reasonName;
     }
+    // วันที่คาดว่าจะส่งมอบ (Expected Delivery Date — ยืนยันจากผู้ใช้ 2026-10-07): ส่งมา = บันทึก (ตรวจรูปแบบ) / ว่าง = ล้าง
+    $newExpectedDelivery = $row['expected_delivery_date'];
+    if (array_key_exists('expected_delivery_date', $body)) {
+        $newExpectedDelivery = expectedDeliveryFromBody($body);
+        $fields[] = 'expected_delivery_date = ?'; $params[] = $newExpectedDelivery;
+    }
+    // วันที่ส่งมอบจริง (ยืนยันจากผู้ใช้ 2026-10-07): ส่งมา = ตรวจรูปแบบ + ห้ามเกินวันนี้ / ยอดรายได้รายเดือนนับตามวันนี้
+    $newDelivered = $row['delivered_date'];
+    if (array_key_exists('delivered_date', $body)) {
+        $newDelivered = normalizeDeliveredDate($body['delivered_date']);
+        if ($newDelivered === false)    jsonError(400, 'วันที่ส่งมอบจริงไม่ถูกต้อง');
+        if ($newDelivered === 'future') jsonError(400, 'วันที่ส่งมอบจริงต้องไม่เกินวันนี้');
+        $fields[] = 'delivered_date = ?'; $params[] = $newDelivered;
+    }
     // กติกาบันทึกผลดีลขายตรง (ยืนยันจากผู้ใช้ 2026-09-25) — mirror งานประมูล (ebidding) ใช้กติกาของ api/assignments.php แทน
     $newStage = $body['stage'] ?? null;
+    // ปิดดีลได้ (เข้าขั้น Deal Signed จากขั้นอื่น) ต้องมีวันคาดส่งมอบ — ให้ฝ่ายจัดส่ง forecast ก่อนออก SO / ดีลที่ปิดไปก่อนหน้านี้ไม่ย้อนบังคับ
+    if ($row['source_type'] !== 'ebidding' && $newStage === 'Deal Signed' && $row['stage'] !== 'Deal Signed' && !$newExpectedDelivery) {
+        jsonError(400, 'กรุณาระบุวันที่คาดว่าจะส่งมอบ (ใส่วันประมาณได้)');
+    }
     if ($row['source_type'] !== 'ebidding') {
         if ($newStage === 'Lost') {
             validateSalesLost($db, $body);
@@ -776,8 +799,8 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (isset($body['stage']) && $body['stage'] === 'Deal Signed' && empty($body['order_date'])) {
         $fields[] = "order_date = CURDATE()";
     }
-    // Auto set delivered_date when Delivered
-    if (isset($body['stage']) && $body['stage'] === 'Delivered' && empty($body['delivered_date'])) {
+    // เข้าขั้นส่งสินค้าแล้วโดยไม่ส่งวันที่มา (เช่น API เดิม) → ใช้วันนี้ — ปกติหน้าเว็บส่งวันที่ส่งจริงมาด้วย (2026-10-07)
+    if (isset($body['stage']) && $body['stage'] === 'Delivered' && $row['stage'] !== 'Delivered' && !$newDelivered) {
         $fields[] = "delivered_date = CURDATE()";
     }
 
@@ -800,6 +823,9 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
         $db->prepare('DELETE pic FROM pipeline_item_contacts pic JOIN contacts c ON c.id = pic.contact_id WHERE pic.pipeline_item_id = ? AND NOT (c.account_id <=> ?)')
            ->execute([$id, $updatedAccountId ?: null]);
     }
+    // เลื่อนวันคาดส่งมอบ (มีค่าเดิมแล้วเปลี่ยน) → บันทึกประวัติ ฝ่ายจัดส่งเห็นว่างานไหนเลื่อน (Field History — 2026-10-07)
+    logExpectedDeliveryChange($db, $id, $row['project_code'], (int)$user['id'], $row['expected_delivery_date'], $newExpectedDelivery, $newStage ?? $row['stage']);
+    logDeliveredDateChange($db, $id, $row['project_code'], (int)$user['id'], $row['delivered_date'], $newDelivered, $newStage ?? $row['stage']);
     // แก้คู่แข่งเฉพาะเมื่อส่ง competitor_ids มา (ปุ่มเลื่อนขั้น/ปิดดีลที่ส่งแค่ stage จะไม่ล้างคู่แข่งทิ้ง)
     if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, $id, $row['project_code'], $user, $body['competitor_ids']);
 
@@ -908,6 +934,13 @@ function transferImportDeal(PDO $db, array $user, int $id, int $newSale): void {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+// วันที่คาดว่าจะส่งมอบจาก body (includes/delivery_helper.php) — ผิดรูปแบบตอบ error
+function expectedDeliveryFromBody(array $body): ?string {
+    $v = normalizeExpectedDelivery($body['expected_delivery_date'] ?? null);
+    if ($v === false) jsonError(400, 'วันที่คาดว่าจะส่งมอบไม่ถูกต้อง');
+    return $v;
+}
+
 function periodDateRange(string $period): ?array {
     $today = new DateTime();
     switch ($period) {

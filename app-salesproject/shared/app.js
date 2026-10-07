@@ -37,6 +37,7 @@ const PAGE_LABELS = {
   'competitors.html': 'คู่แข่ง',
   'win-loss-reasons.html': 'เหตุผลปิดงาน (ชนะ/แพ้)',
   'usage-report.html': 'การใช้งานระบบ',
+  'delivery-forecast.html': 'คาดการณ์ส่งมอบ',
   'users.html': 'ผู้ใช้งาน',
   'import.html': 'นำเข้าข้อมูล',
   'holidays.html': 'วันหยุด',
@@ -528,6 +529,10 @@ const AppNav = {
         // รายงานการใช้งานระบบ (Adoption Dashboard) — manager + admin เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-30)
         if (this.isManager || this.isAdmin) {
           g.push({ href:'usage-report.html', page:'usage-report', label:'การใช้งานระบบ', icon:'analytics' });
+        }
+        // คาดการณ์งานส่งมอบ (วันคาดส่งมอบตอนปิดดีล/ชนะ) — admin / ธุรการ / manager ส่งต่อฝ่ายจัดส่ง (ยืนยันจากผู้ใช้ 2026-10-07)
+        if (this.isManager || this.isAdmin || this.isSalesAdmin) {
+          g.push({ href:'delivery-forecast.html', page:'delivery-forecast', label:'คาดการณ์ส่งมอบ', icon:'calendar' });
         }
         if (this.isAdmin) {
           g.push({ href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' });

@@ -696,6 +696,42 @@
             </div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-emerald-600">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <!-- วันที่คาดว่าจะส่งมอบ (งานชนะ/ส่งมอบ) — แก้ได้เมื่อยังชนะการประมูล ถ้าสัญญา/ลูกค้าเลื่อน ระบบบันทึกประวัติ (2026-10-07) -->
+            <div v-if="['ชนะการประมูล','ส่งมอบแล้ว'].includes(modal.data.status)" class="flex gap-2 py-2 border-b border-slate-50 items-start">
+              <span class="text-sm text-slate-400 w-32 shrink-0 pt-1">คาดว่าจะส่งมอบ</span>
+              <template v-if="editingExpectedDelivery">
+                <div class="flex-1 flex flex-wrap gap-1.5 items-center">
+                  <input type="date" v-model="expectedDeliveryDraft" class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <button @click="saveExpectedDelivery" :disabled="savingExpectedDelivery || !expectedDeliveryDraft"
+                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">บันทึก</button>
+                  <button @click="editingExpectedDelivery = false" :disabled="savingExpectedDelivery"
+                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+                </div>
+              </template>
+              <template v-else>
+                <span class="text-sm pt-1" :class="modal.data.expected_delivery_date ? 'text-slate-700 font-semibold' : 'text-amber-700'">{{ modal.data.expected_delivery_date ? formatDateThai(modal.data.expected_delivery_date) : 'ยังไม่ระบุ' }}</span>
+                <button v-if="canEditExpectedDelivery" type="button" @click="expectedDeliveryDraft = modal.data.expected_delivery_date || ''; editingExpectedDelivery = true"
+                  class="ml-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-teal-600 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">{{ modal.data.expected_delivery_date ? 'เปลี่ยน' : 'ระบุ' }}</button>
+              </template>
+            </div>
+            <!-- วันที่ส่งมอบจริง (งานส่งมอบแล้ว) — แก้ได้ ระบบบันทึกประวัติ (2026-10-07) -->
+            <div v-if="modal.data.status === 'ส่งมอบแล้ว'" class="flex gap-2 py-2 border-b border-slate-50 items-start">
+              <span class="text-sm text-slate-400 w-32 shrink-0 pt-1">ส่งมอบจริง</span>
+              <template v-if="editingDeliveredDate">
+                <div class="flex-1 flex flex-wrap gap-1.5 items-center">
+                  <input type="date" v-model="deliveredDateDraft" :max="todayIso()" class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <button @click="saveDeliveredDate" :disabled="savingDeliveredDate || !deliveredDateDraft"
+                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">บันทึก</button>
+                  <button @click="editingDeliveredDate = false" :disabled="savingDeliveredDate"
+                    class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+                </div>
+              </template>
+              <template v-else>
+                <span class="text-sm pt-1" :class="modal.data.delivered_date ? 'text-slate-700 font-semibold' : 'text-amber-700'">{{ modal.data.delivered_date ? formatDateThai(modal.data.delivered_date) : 'ยังไม่ระบุ' }}</span>
+                <button v-if="canEditDeliveredDate" type="button" @click="deliveredDateDraft = modal.data.delivered_date || todayIso(); editingDeliveredDate = true"
+                  class="ml-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-teal-600 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">{{ modal.data.delivered_date ? 'เปลี่ยน' : 'ระบุ' }}</button>
+              </template>
+            </div>
             <div class="flex gap-2 py-2 border-b border-slate-50"><span class="text-sm text-slate-400 w-32 shrink-0">เข้าประมูล</span>
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span>
             </div>
@@ -993,6 +1029,26 @@
         </div>
       </div>
 
+      <!-- บันทึกส่งมอบแล้ว — ใส่วันที่ส่งมอบจริง (ยืนยันจากผู้ใช้ 2026-10-07) ใช้แทนการย้ายสถานะทันที -->
+      <div v-if="modal.type==='delivered'" class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">ส่งมอบแล้ว</h3>
+            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span> · {{ modal.data.project_name }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <div class="p-5">
+          <label class="block text-sm font-semibold text-slate-700 mb-1">วันที่ส่งมอบจริง <span class="text-red-500">*</span></label>
+          <input v-model="deliveredForm.date" type="date" :max="todayIso()" class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          <div class="text-xs text-slate-500 mt-1">ตั้งต้นเป็นวันนี้ แก้เป็นวันที่ส่งมอบจริงได้ (ห้ามเกินวันนี้) — ยอดรายได้รายเดือนนับตามวันนี้</div>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
+          <button class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 border-0 cursor-pointer disabled:opacity-50" :disabled="deliveredForm.saving" @click="submitDelivered">✓ ยืนยันส่งมอบแล้ว</button>
+        </div>
+      </div>
+
       <!-- Win/Loss Modal -->
       <div v-if="modal.type==='win-loss'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
         <!-- หัวขาวเหมือน modal อื่นในระบบ — ใช้ป้าย ✓ ชนะ / ✕ แพ้ บอกผลแทนการทาสีทั้งแถบ (ปรับตามผู้ใช้ 2026-09-25) -->
@@ -1036,6 +1092,11 @@
             <label class="block text-sm font-semibold text-slate-600 mb-1">ราคาที่เสนอ (บาท)</label>
             <input type="number" v-model="winLossForm.bid_amount" placeholder="0.00"
               class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <!-- วันที่คาดว่าจะส่งมอบ — บังคับตอนชนะการประมูล (Expected Delivery Date — ยืนยันจากผู้ใช้ 2026-10-07) -->
+            <label class="block text-sm font-semibold text-slate-600 mb-1 mt-3">วันที่คาดว่าจะส่งมอบ <span class="text-red-500">*</span></label>
+            <input type="date" v-model="winLossForm.expected_delivery_date"
+              class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <div class="text-xs text-slate-500 mt-1">ดูจากสัญญา / TOR ใส่วันโดยประมาณได้ — ฝ่ายจัดส่งใช้วางแผนล่วงหน้าก่อนออก SO</div>
           </div>
           <!-- แพ้: ผู้ชนะ + ราคาผู้ชนะ (ยืนยันจากผู้ใช้ 2026-09-25) — ผู้ชนะเลือกจาก master คู่แข่งชุดเดียวกับฟอร์มดีล (ไม่มี "ไม่มีคู่แข่ง" เพราะแพ้ = มีผู้ชนะ)
                บังคับเฉพาะเหตุผลที่ requires_winner=1 (เช่น ราคาสูงกว่าคู่แข่ง) — ข้อมูลผู้ชนะ/ราคาดูได้จากประกาศผล e-GP -->
@@ -1288,7 +1349,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=64"></script>
+<script src="shared/app.js?v=65"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1347,6 +1408,13 @@ createApp({
       editingUnitName: false,
       savingUnitName: false,
       bidImportReviewSaving: false,
+      editingExpectedDelivery: false,   // แก้วันคาดส่งมอบในหน้าต่างรายละเอียด (2026-10-07)
+      deliveredForm: { date: '', saving: false },   // หน้าต่างบันทึกส่งมอบแล้ว (2026-10-07)
+      editingDeliveredDate: false,      // แก้วันส่งมอบจริงในหน้าต่างรายละเอียด
+      deliveredDateDraft: '',
+      savingDeliveredDate: false,
+      expectedDeliveryDraft: '',
+      savingExpectedDelivery: false,
       bidReviewTransferOpen: false,   // หน้าต่างตรวจงานย้อนหลัง: เปิดส่วนโอนให้ sale คนอื่น (2026-10-01)
       bidReviewTransferTo: '',
       reviewSales: [],                // รายชื่อ sale ให้เลือกโอน (โหลดครั้งแรกที่เปิดหน้าต่างตรวจ)   // ปุ่ม "ตรวจแล้ว — รอเลื่อนสถานะถัดไป" (2026-09-30)
@@ -1366,7 +1434,7 @@ createApp({
   },
   watch: {
     // ปิดโหมดแก้ไขชื่อหน่วยงานทุกครั้งที่ modal เปิด/ปิด กันค้างโหมดแก้ไขข้ามไปคนละงาน
-    'modal.type'() { this.editingUnitName = false; this.linkingAccount = false; },
+    'modal.type'() { this.editingUnitName = false; this.linkingAccount = false; this.editingExpectedDelivery = false; this.editingDeliveredDate = false; },
     linkingAccount(v) { if (v) this.changeAccountConfirmed = false; },
     // ช่องค้นหาด่วน — กรอง client-side ทันทีที่พิมพ์ ต้องสั่ง redraw DataTable เองเพราะ ext.search ไม่ reactive (มุมมอง Kanban/การ์ด reactive อยู่แล้วผ่าน computed)
     'filter.search'() {
@@ -1411,6 +1479,20 @@ createApp({
     },
     isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
     isSale()    { return this.currentUser?.role === 'sale'; },
+    // แก้วันส่งมอบจริง: งานที่ส่งมอบแล้ว / sale เจ้าของงาน, ธุรการ, admin (API ตรวจซ้ำ)
+    canEditDeliveredDate() {
+      const d = this.modal?.type === 'detail' ? this.modal.data : null;
+      if (!d || d.status !== 'ส่งมอบแล้ว') return false;
+      if (['salesadmin', 'admin'].includes(this.currentUser?.role)) return true;
+      return this.isSale && Number(d.assigned_to) === Number(this.currentUser?.id);
+    },
+    // แก้วันคาดส่งมอบ: งานที่ยังชนะการประมูล (ยังไม่ส่งมอบ) / sale เจ้าของงาน, ธุรการ, admin (API ตรวจซ้ำ)
+    canEditExpectedDelivery() {
+      const d = this.modal?.type === 'detail' ? this.modal.data : null;
+      if (!d || d.status !== 'ชนะการประมูล') return false;
+      if (['salesadmin', 'admin'].includes(this.currentUser?.role)) return true;
+      return this.isSale && Number(d.assigned_to) === Number(this.currentUser?.id);
+    },
     // ปุ่ม "เปลี่ยนเป็นงานขายตรง" — งานย้อนหลังที่นำเข้า ทุกสถานะ / sale เจ้าของงาน, ธุรการ, admin (API ตรวจซ้ำ)
     canConvertToDirect() {
       const d = this.modal?.type === 'detail' ? this.modal.data : null;
@@ -1891,10 +1973,9 @@ createApp({
       const card = this.modal.data;
       const confirmText = {
         'ชนะการประมูล': ['ยืนยันสถานะเดิม?', `"${card.project_name}" ยังชนะการประมูล — รอส่งมอบ (ไม่เปลี่ยนสถานะ)`, 'ยืนยัน ยังชนะอยู่'],
-        'ส่งมอบแล้ว':   ['เปลี่ยนเป็น ส่งมอบแล้ว?', `"${card.project_name}" จะเปลี่ยนสถานะเป็น ส่งมอบแล้ว`, 'ยืนยัน ส่งมอบแล้ว'],
         'ยกเลิก':       ['ยกเลิกงานนี้?', `"${card.project_name}" จะเปลี่ยนสถานะเป็น ยกเลิก`, 'ยืนยัน ยกเลิกงาน'],
       }[status];
-      if (!(await this.showConfirm(...confirmText))) return;
+      if (confirmText && !(await this.showConfirm(...confirmText))) return;   // ส่งมอบแล้ว → หน้าต่างใส่วันส่งมอบจริงแทนการยืนยัน
       if (status === 'ชนะการประมูล') { await this.confirmBidImportReview(card); return; }
       this.closeModal();
       await this.moveCard(card, status);
@@ -1913,6 +1994,49 @@ createApp({
         this.closeModal();
         this.loadData();
         await this.showAlert('เปลี่ยนเป็นงานขายตรงแล้ว — ตรวจและเลื่อนสถานะต่อได้ที่หน้า งานขายตรง', 'success');
+      } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    // วันนี้ (YYYY-MM-DD ตามเวลาเครื่อง) — ค่าตั้งต้นและเพดานของวันที่ส่งมอบจริง
+    todayIso() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+
+    async submitDelivered() {
+      const f = this.deliveredForm, card = this.modal.data;
+      if (!f.date) { await this.showAlert('กรุณาระบุวันที่ส่งมอบจริง', 'error'); return; }
+      if (f.date > this.todayIso()) { await this.showAlert('วันที่ส่งมอบจริงต้องไม่เกินวันนี้', 'error'); return; }
+      f.saving = true;
+      const res = await apiCall('POST', 'api/assignments.php?action=update', { project_code: card.project_code, status: 'ส่งมอบแล้ว', delivered_date: f.date });
+      f.saving = false;
+      if (res.success) { this.closeModal(); this.loadData(); await this.showAlert('บันทึกส่งมอบแล้ว', 'success'); }
+      else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    async saveDeliveredDate() {
+      this.savingDeliveredDate = true;
+      const res = await apiCall('POST', 'api/assignments.php?action=update_delivered_date',
+        { project_code: this.modal.data.project_code, delivered_date: this.deliveredDateDraft });
+      this.savingDeliveredDate = false;
+      if (res.success) {
+        this.modal.data.delivered_date = res.data.delivered_date;
+        this.editingDeliveredDate = false;
+        this.loadData();
+        await this.showAlert('บันทึกวันส่งมอบจริงแล้ว', 'success');
+      } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    async saveExpectedDelivery() {
+      this.savingExpectedDelivery = true;
+      const res = await apiCall('POST', 'api/assignments.php?action=update_expected_delivery',
+        { project_code: this.modal.data.project_code, expected_delivery_date: this.expectedDeliveryDraft });
+      this.savingExpectedDelivery = false;
+      if (res.success) {
+        this.modal.data.expected_delivery_date = res.data.expected_delivery_date;
+        this.editingExpectedDelivery = false;
+        this.loadData();
+        await this.showAlert('บันทึกวันคาดส่งมอบแล้ว', 'success');
       } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 
@@ -2041,6 +2165,8 @@ createApp({
     prevStage(status) { return PREV_MAP[status] || null; },
 
     async moveCard(card, newStatus) {
+      // ส่งมอบแล้ว → หน้าต่างใส่วันที่ส่งมอบจริง (ยืนยันจากผู้ใช้ 2026-10-07) — ปุ่มส่งต่อ / หน้าต่างตรวจงาน ผ่านจุดนี้ทั้งหมด
+      if (newStatus === 'ส่งมอบแล้ว') { this.deliveredForm = { date: this.todayIso(), saving: false }; this.modal = { type: 'delivered', data: card }; return; }
       const res = await apiCall('POST', 'api/assignments.php?action=update', { project_code: card.project_code, status: newStatus });
       if (res.success) {
         this.loadData();
@@ -2093,6 +2219,7 @@ createApp({
       this.winLossForm = {
         project_code: card.project_code, newStatus, reason: '', note: '', bid_amount: card.bid_amount || null,
         winner_competitor_id: card.winner_competitor_id || '', winning_price: card.winning_price || '',
+        expected_delivery_date: card.expected_delivery_date || '',   // วันคาดส่งมอบ (บังคับตอนชนะ — 2026-10-07)
       };
       this.modal = { type: 'win-loss', data: card };
     },
@@ -2114,6 +2241,9 @@ createApp({
       if (this.winLossRequiresWinner && !(Number(this.winLossForm.bid_amount) > 0)) {
         await this.showAlert('กรุณากรอกราคาที่เราเสนอ', 'error'); return;
       }
+      if (this.winLossForm.newStatus === 'ชนะการประมูล' && !this.winLossForm.expected_delivery_date) {
+        await this.showAlert('กรุณาระบุวันที่คาดว่าจะส่งมอบ (ดูจากสัญญา/TOR ใส่วันประมาณได้)', 'error'); return;
+      }
       const payload = {
         project_code:    this.winLossForm.project_code,
         status:          this.winLossForm.newStatus,
@@ -2121,6 +2251,7 @@ createApp({
         win_loss_note:      this.winLossForm.note,
       };
       if (this.winLossForm.bid_amount) payload.bid_amount = this.winLossForm.bid_amount;
+      if (this.winLossForm.newStatus === 'ชนะการประมูล') payload.expected_delivery_date = this.winLossForm.expected_delivery_date;
       if (this.winLossForm.newStatus === 'แพ้การประมูล') {
         payload.winner_competitor_id = this.winLossForm.winner_competitor_id || null;
         payload.winning_price = this.winLossForm.winning_price === '' ? null : this.winLossForm.winning_price;
