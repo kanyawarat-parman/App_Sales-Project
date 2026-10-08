@@ -12,7 +12,7 @@ require_once __DIR__ . '/../includes/win_loss_reason_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../includes/usage_helper.php';
 require_once __DIR__ . '/../includes/delivery_helper.php';
-require_once __DIR__ . '/../api/line.php';
+require_once __DIR__ . '/../includes/notify_helper.php';   // ศูนย์กลางแจ้งเตือน (โหลด api/line.php ให้ด้วย — 2026-10-08)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -452,15 +452,6 @@ function createAssignment(PDO $db, array $user): void {
         $ann['account_id'] = $accountId;
     }
 
-    // In-app notification
-    if ($ann) {
-        $projShort = mb_strlen($ann['project_name']) > 60
-            ? mb_substr($ann['project_name'], 0, 60) . '...'
-            : $ann['project_name'];
-        // created_by = ผู้ที่มอบหมาย (ผู้ทำให้เกิดการแจ้งเตือน) — user_id คือผู้รับ (2026-09-26)
-        $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by) VALUES (?, 'new_assignment', 'งานประมูลใหม่', ?, 'assignment', ?, ?, ?)")
-           ->execute([$assignedTo, "มอบหมายโครงการ: {$projShort}", $assignmentId, $user['id'], $user['id']]);
-    }
 
     // Auto-create pipeline_item เพื่อบันทึกไว้ตามหลักการออกแบบ (ข้อมูลยังต้องมีครบใน DB เสมอ) — pipeline_items.php's
     // buildWhere() กรอง source_type='ebidding' ทิ้งไม่ให้แสดงบนหน้า sales-pipeline.html อยู่แล้ว จึงไม่ปนกับงานขายตรง
@@ -508,26 +499,21 @@ function createAssignment(PDO $db, array $user): void {
     // ── งานเบื้องหลัง: ส่งแจ้งเตือน (ผลลัพธ์ไม่กระทบ response ที่ส่งไปแล้ว) ──
     $notifyEnabled  = (bool)($saleUser['notify_enabled']  ?? false);
     $notifyChannel  = $saleUser['notify_channel'] ?? 'line';
-    $canLine        = $notifyEnabled && in_array($notifyChannel, ['line', 'both']);
     $canEmail       = $notifyEnabled && in_array($notifyChannel, ['email', 'both']);
 
-    if ($canLine && $saleUser && !empty($saleUser['line_user_id']) && $ann) {
-        $price = $ann['price_median']
-            ? number_format((float)$ann['price_median'], 0, '.', ',') . ' บาท'
-            : 'ไม่ระบุ';
-        $projName = mb_strlen($ann['project_name']) > 80
-            ? mb_substr($ann['project_name'], 0, 80) . '...'
-            : $ann['project_name'];
-
-        $msg = "📋 งานใหม่มอบหมายมาให้คุณแล้ว!\n\n"
-             . "โครงการ: {$projName}\n"
-             . "วันปิดรับ: {$ann['close_date']}\n"
-             . "ราคากลาง: {$price}\n"
-             . "ความสำคัญ: {$priority}\n"
-             . "หมายเหตุ: " . ($notes ?: '-') . "\n\n"
-             . "กรุณาเข้าระบบเพื่อดูรายละเอียด";
-
-        if (sendLineMessage($saleUser['line_user_id'], $msg)) {
+    // กระดิ่ง + LINE ผ่านศูนย์กลางแจ้งเตือน (ประเภท bid_assigned — 2026-10-08) / ผู้ทำให้เกิด = ผู้มอบหมาย
+    if ($ann) {
+        $projName = mb_strlen($ann['project_name']) > 80 ? mb_substr($ann['project_name'], 0, 80) . '...' : $ann['project_name'];
+        $price    = $ann['price_median'] ? number_format((float)$ann['price_median'], 0, '.', ',') . ' บาท' : 'ไม่ระบุ';
+        $sent = notify($db, 'bid_assigned', $assignedTo, [
+            'title'      => 'งานประมูลใหม่',
+            'body'       => 'มอบหมายโครงการ: ' . (mb_strlen($ann['project_name']) > 60 ? mb_substr($ann['project_name'], 0, 60) . '...' : $ann['project_name']),
+            'ref_id'     => $assignmentId,
+            'line_title' => '📋 งานประมูลใหม่มอบหมายให้คุณ',
+            'line_body'  => "{$projName}\nหน่วยงาน: " . ($ann['unit_name'] ?: '-') . "\nวันปิดรับ: " . ($ann['close_date'] ? thaiShortDate($ann['close_date']) : '-')
+                          . "\nราคากลาง: {$price}\nความสำคัญ: {$priority}" . ($notes ? "\nหมายเหตุ: {$notes}" : ''),
+        ], (int)$user['id']);
+        if (!empty($sent['line']['ok'])) {
             // เวลาส่งแจ้งเตือนเป็นข้อมูลระบบ ไม่ใช่การแก้งาน — คง updated_at เดิม (2026-09-26)
             $db->prepare('UPDATE project_assignments SET line_notified_at = NOW(), updated_at = updated_at WHERE id = ?')
                ->execute([$assignmentId]);

@@ -6,9 +6,19 @@ function envOr(string $key, string $default): string {
     return ($v !== false && $v !== '') ? $v : $default;
 }
 
+
 // LINE Messaging API
+
 define('LINE_CHANNEL_ACCESS_TOKEN', envOr('LINE_TOKEN', 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'));
 define('LINE_API_PUSH', 'https://api.line.me/v2/bot/message/push');
+
+
+
+
+//LINE Messaging API- Host 
+
+// define('LINE_CHANNEL_ACCESS_TOKEN', envOr('LINE_TOKEN', '5ZBuPNEQYSuhKOfRsIHJZ7fYLGTYRONaOvIttFbjBQcRjRrZne8UkNiyVbUwJkVuA5mmres/qMBCICZ+nON5tEYmHfmciNzplPODLt6MR3qpxS3W+kVS0cgTsqYIUdiyrPOr1n/wUUSXZG2/ghbNBwdB04t89/1O/w1cDnyilFU='));
+// define('LINE_API_PUSH', 'https://api.line.me/v2/bot/message/push');
 
 
 

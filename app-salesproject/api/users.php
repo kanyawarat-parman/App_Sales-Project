@@ -3,6 +3,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/notify_helper.php';   // ทดสอบส่ง LINE + ตรวจรูปแบบรหัส LINE (2026-10-08)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -22,6 +23,8 @@ switch ($method) {
             case 'create': requireRole(['admin']); createUser($db, $user); break;
             case 'update': requireRole(['admin']); updateUser($db, $user); break;
             case 'set_target': requireRole(['admin','manager']); setTarget($db, $user); break;
+            // ทดสอบส่ง LINE หาผู้ใช้ 1 คน (ก่อนเปิดใช้จริง) — admin เท่านั้น / ส่งข้อความจริงไปที่ LINE ของผู้ใช้
+            case 'test_line':  requireRole(['admin']); testLine($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -70,6 +73,7 @@ function createUser(PDO $db, array $user): void {
     if ($body['role'] === 'sale' && empty($body['sale_id'])) {
         jsonResponse(false, null, 'กรุณากรอก Sale ID สำหรับ role sale', 400);
     }
+    lineIdOrFail($body['line_user_id'] ?? null);
     try {
         $db->prepare("INSERT INTO users (username, password, full_name, role, line_user_id, phone, email, notify_channel, notify_enabled, avatar_color, sale_id, created_by, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
            ->execute([
@@ -77,7 +81,7 @@ function createUser(PDO $db, array $user): void {
                password_hash($body['password'], PASSWORD_DEFAULT),
                $body['full_name'],
                $body['role'],
-               $body['line_user_id']    ?? null,
+               trim((string)($body['line_user_id'] ?? '')) ?: null,
                $body['phone']           ?? null,
                $body['email']           ?? null,
                $body['notify_channel']  ?? 'line',
@@ -92,6 +96,31 @@ function createUser(PDO $db, array $user): void {
         if ($e->errorInfo[1] === 1062) jsonResponse(false, null, 'Username นี้มีอยู่แล้ว', 409);
         jsonResponse(false, null, 'เกิดข้อผิดพลาด', 500);
     }
+}
+
+// รหัส LINE (userId ของ LINE OA) ต้องเป็นรูปแบบ U + 32 ตัว — ว่างได้ (ไม่รับแจ้งเตือน LINE) — กันพิมพ์ผิด/ใส่ LINE ID แทน
+function lineIdOrFail($value): void {
+    $v = trim((string)($value ?? ''));
+    if ($v !== '' && !isValidLineUserId($v)) {
+        jsonResponse(false, null, 'LINE User ID ไม่ถูกต้อง — ต้องขึ้นต้นด้วย U ตามด้วยตัวอักษร/ตัวเลข 32 ตัว (ไม่ใช่ LINE ID ที่ใช้ค้นหาเพื่อน)', 400);
+    }
+}
+
+// ทดสอบส่ง LINE (body: user_id) — ส่งข้อความทดสอบพร้อมปุ่มลิงก์ แล้วคืนผล/สาเหตุ ไม่บันทึกกระดิ่ง
+function testLine(PDO $db, array $user): void {
+    $body = getJsonBody();
+    $id   = (int)($body['user_id'] ?? 0);
+    $st   = $db->prepare('SELECT full_name, line_user_id FROM users WHERE id = ?');
+    $st->execute([$id]);
+    $target = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$target) jsonResponse(false, null, 'ไม่พบผู้ใช้', 404);
+    if (empty($target['line_user_id'])) jsonResponse(false, null, 'ผู้ใช้นี้ยังไม่มี LINE User ID', 400);
+
+    $r = sendLinePush($target['line_user_id'], '🔔 ทดสอบการแจ้งเตือน',
+        "สวัสดี {$target['full_name']}\nนี่คือข้อความทดสอบจากระบบ " . (defined('APP_NAME') ? APP_NAME : 'Sales Project') . "\nถ้าได้รับข้อความนี้ แปลว่าการแจ้งเตือน LINE ใช้งานได้แล้ว",
+        appPageUrl('dashboard.html'));
+    if ($r['ok']) jsonResponse(true, null, "ส่งข้อความทดสอบถึง {$target['full_name']} แล้ว — ให้ผู้ใช้ตรวจใน LINE");
+    jsonResponse(false, ['status' => $r['status']], 'ส่งไม่สำเร็จ: ' . $r['error'], 400);
 }
 
 function setTarget(PDO $db, array $user): void {
@@ -127,7 +156,7 @@ function updateUser(PDO $db, array $user): void {
     if (!empty($body['full_name']))    { $fields[] = 'full_name = ?';    $params[] = $body['full_name']; }
     if (!empty($body['role']))         { $fields[] = 'role = ?';          $params[] = $body['role']; }
     if (array_key_exists('sale_id', $body))         { $fields[] = 'sale_id = ?';          $params[] = $body['sale_id'] ?: null; }
-    if (array_key_exists('line_user_id', $body))   { $fields[] = 'line_user_id = ?';    $params[] = $body['line_user_id']; }
+    if (array_key_exists('line_user_id', $body))   { lineIdOrFail($body['line_user_id']); $fields[] = 'line_user_id = ?'; $params[] = trim((string)$body['line_user_id']) ?: null; }
     if (array_key_exists('phone', $body))           { $fields[] = 'phone = ?';            $params[] = $body['phone']; }
     if (array_key_exists('email', $body))           { $fields[] = 'email = ?';            $params[] = $body['email'] ?: null; }
     if (!empty($body['notify_channel']))            { $fields[] = 'notify_channel = ?';   $params[] = $body['notify_channel']; }
