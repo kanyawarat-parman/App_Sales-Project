@@ -2,8 +2,17 @@
 require_once __DIR__ . '/../config/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
+    // อายุการ login = SESSION_TIMEOUT จริง (2026-10-10) — ค่าตั้งต้นของ PHP ลบ session ที่ไม่ได้ใช้เกิน 24 นาที (session.gc_maxlifetime = 1440)
+    // และ cookie หายเมื่อปิดเบราว์เซอร์ (cookie_lifetime = 0) ทำให้กดลิงก์จาก LINE / อีเมล แล้วเจอหน้า login แทบทุกครั้ง
+    $secure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    ini_set('session.gc_maxlifetime', (string)SESSION_TIMEOUT);
+    session_set_cookie_params(['lifetime' => SESSION_TIMEOUT, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Lax']);
     session_name(SESSION_NAME);
     session_start();
+    // ต่ออายุ cookie ทุกครั้งที่ใช้งาน (นับ 8 ชม. จากการใช้ครั้งล่าสุด) — PHP ไม่ส่ง cookie ซ้ำเองเมื่อมี session อยู่แล้ว
+    if (!empty($_SESSION['user']) && !headers_sent()) {
+        setcookie(session_name(), session_id(), ['expires' => time() + SESSION_TIMEOUT, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Lax']);
+    }
 }
 
 function requireAuth(): array {

@@ -11,25 +11,95 @@ require_once __DIR__ . '/../api/line.php';
 // channels = ช่องทางที่เรื่องนี้มีแบบข้อความ (ตรงกับ email_supported / line_supported ในตาราง)
 // email / line = ค่าตั้งต้น ใช้เมื่อยังไม่ได้รัน sql/add_notification_types.sql หรือไม่มีแถวของเรื่องนี้ (ระบบไม่พัง ทำงานแบบเดิม)
 //   ค่าจริงที่ใช้ admin ตั้งในหน้า notification-settings.html (ตาราง notification_types)
+// public_view = เรื่องนี้เป็นงานเดียว มีหน้าสรุปแบบดูอย่างเดียวไม่ต้อง login (notify-view.html) — admin เปิดรายเรื่องในหน้าตั้งค่า (2026-10-10)
+//   ต้องตรงกับ public_view_supported ใน sql/add_notification_public_view.sql
+// recipient = กลุ่มผู้รับ (role) ของเรื่องนี้ — ใช้แบ่งกลุ่มในหน้าตั้งค่าการแจ้งเตือน (2026-10-10) ต้องตรงกับที่โค้ดส่งจริงของแต่ละเรื่อง
 const NOTIFY_TYPES = [
-    'bid_assigned'     => ['bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => true,  'channels' => ['email', 'line']],
-    'bid_reassigned'   => ['bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
-    'deal_transferred' => ['bell_type' => 'system',         'ref_type' => 'pipeline_item', 'page' => 'sales-pipeline.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
-    'bid_nudge'        => ['bell_type' => 'message',        'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => false, 'line' => false, 'channels' => ['line']],
-    'erp_pending'      => ['bell_type' => 'system',         'ref_type' => 'erp_pending',   'page' => 'accounts.html?tab=erp_pending', 'email' => false, 'line' => false, 'channels' => ['line']],
+    'bid_assigned'     => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => true,  'channels' => ['email', 'line']],
+    'bid_reassigned'   => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
+    'deal_transferred' => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'pipeline_item', 'page' => 'sales-pipeline.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
+    'bid_nudge'        => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'message',        'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => false, 'line' => false, 'channels' => ['line']],
+    'erp_pending'      => ['recipient' => 'salesadmin', 'bell_type' => 'system',         'ref_type' => 'erp_pending',   'page' => 'accounts.html?tab=erp_pending', 'email' => false, 'line' => false, 'channels' => ['line']],
     // ชนะงานประมูล / ปิดดีลได้ → หัวหน้า (2026-10-08) — ref_type/page ถูกทับตามชนิดงานใน notifyDealWon() (bid_won → bid-pipeline / deal_won → sales-pipeline)
-    'deal_won'         => ['bell_type' => 'system',         'ref_type' => 'deal_won',      'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
+    'deal_won'         => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_won',      'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
     // แพ้การประมูล / ยกเลิก / ดีลไม่สำเร็จ → หัวหน้า (2026-10-08) — ref_type/page ถูกทับใน notifyDealLost() (bid_lost → bid-pipeline / deal_lost → sales-pipeline)
-    'deal_lost'        => ['bell_type' => 'system',         'ref_type' => 'deal_lost',     'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
+    'deal_lost'        => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_lost',     'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
     // ธุรการ/admin เปลี่ยน Sale ผู้ดูแลลูกค้า → แจ้ง Sale คนใหม่ (2026-10-09) — page ถูกทับเป็น accounts.html?account_id=… ใน notifyAccountOwnerAssigned()
-    'account_owner_assigned' => ['bell_type' => 'system',   'ref_type' => 'account',       'page' => 'accounts.html',       'email' => false, 'line' => true,  'channels' => ['line']],
+    'account_owner_assigned' => ['recipient' => 'sale', 'bell_type' => 'system',   'ref_type' => 'account',       'page' => 'accounts.html',       'email' => false, 'line' => true,  'channels' => ['line']],
     // admin นำเข้าประกาศ e-GP ใหม่ → แจ้งธุรการขายให้คัดกรอง (2026-10-09) — กดแล้วเปิดหน้า "ประกาศวันนี้"
-    'announcements_imported' => ['bell_type' => 'system',   'ref_type' => 'announcements_imported', 'page' => 'bid_decision.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    'announcements_imported' => ['recipient' => 'salesadmin', 'bell_type' => 'system',   'ref_type' => 'announcements_imported', 'page' => 'bid_decision.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    // Sale ยกเลิก / ไม่เข้าประมูลเอง → แจ้งธุรการขายให้ทราบผล (2026-10-10) — ผ่าน notifySaleCancelled()
+    'bid_cancelled_by_sale' => ['recipient' => 'salesadmin', 'public_view' => true, 'bell_type' => 'system', 'ref_type' => 'bid_cancelled_by_sale', 'page' => 'assignments.html', 'email' => false, 'line' => true, 'channels' => ['line']],
 ];
+
+// กลุ่มผู้รับ (เรียงตามลำดับแสดงผลในหน้าตั้งค่าการแจ้งเตือน) — รหัส = users.role
+function notifyRecipientGroups(): array {
+    return ['sale' => 'Sale', 'salesadmin' => 'ธุรการขาย', 'manager' => 'หัวหน้า'];
+}
 
 // URL เต็มของหน้าในระบบ (ปุ่มใน LINE / อีเมล ต้องเป็น https เต็ม)
 function appPageUrl(string $page): string {
     return rtrim(defined('APP_URL') ? APP_URL : '', '/') . '/' . ltrim($page, '/');
+}
+
+// ── ปุ่ม "ดูรายละเอียด" เปิดงานนั้นทันที + หน้าสรุปไม่ต้อง login (ยืนยันจากผู้ใช้ 2026-10-10) ──
+
+// หน้าสรุปแบบไม่ต้อง login ดูได้กี่วันหลังส่ง (กฎธุรกิจ Taiyo)
+const NOTIFY_PUBLIC_VIEW_DAYS = 7;
+
+// ref_type ของกระดิ่ง → ชนิดงาน: 'bid' (ref_id = project_assignments.id) | 'deal' (ref_id = pipeline_items.id) | null = ไม่ใช่งานเดียว
+function notifyRecordKind(?string $refType): ?string {
+    if (in_array($refType, ['assignment', 'bid_won', 'bid_lost', 'bid_cancelled_by_sale'], true)) return 'bid';
+    if (in_array($refType, ['pipeline_item', 'deal_won', 'deal_lost'], true)) return 'deal';
+    return null;
+}
+
+// รหัสงาน (project_code) ของกระดิ่ง — ใช้ต่อท้ายลิงก์ ?code= ให้หน้าปลายทางเปิดรายละเอียดงานนั้นเอง
+function notifyRecordCode(PDO $db, ?string $refType, $refId): ?string {
+    $kind = notifyRecordKind($refType);
+    if (!$kind || !$refId) return null;
+    try {
+        $st = $db->prepare($kind === 'bid' ? 'SELECT project_code FROM project_assignments WHERE id = ?' : 'SELECT project_code FROM pipeline_items WHERE id = ?');
+        $st->execute([(int)$refId]);
+        return $st->fetchColumn() ?: null;
+    } catch (Throwable $e) {
+        error_log('[notify] notifyRecordCode: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function notifyPageWithCode(string $page, ?string $code): string {
+    if (!$code) return $page;
+    return $page . (strpos($page, '?') === false ? '?' : '&') . 'code=' . rawurlencode($code);
+}
+
+// แถวการส่งจากรหัสลิงก์ + เรื่อง + งานที่อ้างถึง (null = ไม่พบ)
+function notifyDeliveryByToken(PDO $db, string $token): ?array {
+    if (!preg_match('/^[0-9a-f]{32}$/', $token)) return null;
+    try {
+        $st = $db->prepare('SELECT d.delivery_id, d.notification_type_id, d.user_id, d.channel, d.target_page, d.clicked_at, d.created_at,
+                                   n.title, n.ref_type, n.ref_id, u.full_name AS user_name
+                            FROM notification_deliveries d
+                            LEFT JOIN notifications n ON n.id = d.notification_id
+                            LEFT JOIN users u ON u.id = d.user_id
+                            WHERE d.click_token = ?');
+        $st->execute([$token]);
+        return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        error_log('[notify] notifyDeliveryByToken: ' . $e->getMessage());
+        return null;
+    }
+}
+
+// ดูหน้าสรุปโดยไม่ต้อง login ได้ไหม: เรื่องนี้มีหน้าสรุป (โค้ด + ตาราง) + admin เปิดไว้ + เป็นงานเดียว + ส่งมาไม่เกิน 7 วัน
+// ยังไม่ได้รัน sql/add_notification_public_view.sql = ไม่ได้ (ต้อง login ตามเดิม)
+function notifyPublicViewAllowed(PDO $db, array $delivery): bool {
+    $type = $delivery['notification_type_id'];
+    if (empty(NOTIFY_TYPES[$type]['public_view'])) return false;
+    if (!notifyRecordKind($delivery['ref_type'] ?? null) || empty($delivery['ref_id'])) return false;
+    if (strtotime($delivery['created_at']) < time() - NOTIFY_PUBLIC_VIEW_DAYS * 86400) return false;
+    $row = notifyTypeSettings($db)[$type] ?? null;
+    return $row && (int)($row['public_view_supported'] ?? 0) === 1 && (int)($row['public_view'] ?? 0) === 1;
 }
 
 // การตั้งค่าของทุกเรื่องจากตาราง notification_types (อ่านครั้งเดียวต่อ request) — ยังไม่มีตาราง = คืน [] แล้วใช้ค่าตั้งต้นในโค้ด
@@ -38,7 +108,8 @@ function notifyTypeSettings(PDO $db): array {
     if ($cache !== null) return $cache;
     $cache = [];
     try {
-        foreach ($db->query('SELECT notification_type_id, send_email, send_line, email_supported, line_supported FROM notification_types') as $r) {
+        // SELECT * — คอลัมน์ public_view / public_view_supported มีหลังรัน sql/add_notification_public_view.sql (ยังไม่รัน = ไม่มีคีย์ ถือว่าปิด)
+        foreach ($db->query('SELECT * FROM notification_types') as $r) {
             $cache[$r['notification_type_id']] = $r;
         }
     } catch (Throwable $e) {
@@ -83,7 +154,8 @@ function notify(PDO $db, string $type, int $userId, array $data, ?int $actorId =
         $out['notification_id'] = (int)$db->lastInsertId();
 
         if (!in_array('line', $def['channels'], true)) return $out;
-        $page = $data['page'] ?? $def['page'];
+        // ลิงก์ปุ่มเปิดงานนั้นทันที (?code=รหัสงาน) — หน้าปลายทางอ่านแล้วเปิดหน้าต่างรายละเอียด (2026-10-10)
+        $page = notifyPageWithCode($data['page'] ?? $def['page'], notifyRecordCode($db, $data['ref_type'] ?? $def['ref_type'], $data['ref_id'] ?? null));
         $to   = notifyLoadUser($db, $userId);
         $skip = notifySkipReason($db, $type, $to, 'line');
         if ($skip !== null) {
@@ -120,7 +192,13 @@ function notifyEmail(PDO $db, string $type, int $userId, ?int $notificationId, c
             deliverySkip($db, $notificationId, $type, $userId, 'email', $skip, $actorId);
             return false;
         }
-        $delivery = deliveryStart($db, $notificationId, $type, $userId, 'email', $page ?? $def['page'], $actorId);
+        $page = $page ?? $def['page'];
+        if ($notificationId) {   // ลิงก์ปุ่มเปิดงานนั้นทันที (?code=) จากงานที่กระดิ่งคู่กันอ้างถึง (2026-10-10)
+            $n = $db->prepare('SELECT ref_type, ref_id FROM notifications WHERE id = ?');
+            $n->execute([$notificationId]);
+            if ($ref = $n->fetch(PDO::FETCH_ASSOC)) $page = notifyPageWithCode($page, notifyRecordCode($db, $ref['ref_type'], $ref['ref_id']));
+        }
+        $delivery = deliveryStart($db, $notificationId, $type, $userId, 'email', $page, $actorId);
         $ok = false;
         try { $ok = (bool)$send($to, $delivery['url']); } catch (Throwable $e) { error_log("[notify] {$type} user {$userId} email: " . $e->getMessage()); }
         deliveryFinish($db, $delivery['id'], $ok, $ok ? null : 'ส่งอีเมลไม่สำเร็จ (เมลเซิร์ฟเวอร์ไม่ตอบรับ หรือยังไม่ได้ตั้งค่า SMTP)');
@@ -207,6 +285,12 @@ function queueDeferredLinePush(array $push): void {
     });
 }
 
+// บรรทัด "สินค้า: หมวดสินค้า · แบรนด์" ในข้อความ LINE ดีลขายตรง (ยืนยันจากผู้ใช้ 2026-10-10 — บรรทัดเดียว) — ว่างทั้งคู่ = ไม่แสดง
+function notifyProductLine(array $job): string {
+    $parts = array_filter([$job['product_category'] ?? null, $job['brand'] ?? null]);
+    return $parts ? 'สินค้า: ' . implode(' · ', $parts) : '';
+}
+
 /**
  * ชนะงานประมูล / ปิดดีลได้ → แจ้งหัวหน้า (role manager ที่ใช้งานอยู่ทุกคน — ยืนยันจากผู้ใช้ 2026-10-08) กฎธุรกิจ Taiyo
  * $kind = 'bid' ($refId = project_assignments.id) | 'direct' ($refId = pipeline_items.id)
@@ -235,10 +319,12 @@ function notifyDealWon(PDO $db, string $kind, int $refId, array $user): void {
             $imp->execute([$refId]);
             if ($imp->fetchColumn()) return;
             $st = $db->prepare("SELECT pi.project_code, pi.title, COALESCE(a.name, pi.client_name) AS client, pi.value,
-                                       u.full_name AS sale_name, pi.expected_delivery_date, pi.source_type
+                                       u.full_name AS sale_name, pi.expected_delivery_date, pi.source_type, dt.deal_type_name,
+                                       pi.product_category, pi.brand
                                 FROM pipeline_items pi
                                 JOIN users u ON u.id = pi.assigned_to
                                 LEFT JOIN accounts a ON a.id = pi.account_id
+                                LEFT JOIN deal_types dt ON dt.deal_type_id = pi.deal_type_id
                                 WHERE pi.id = ?");
             $refType = 'deal_won'; $page = 'sales-pipeline.html';
             $head = '🎉 ปิดดีลได้ (งานขายตรง)'; $valueLabel = 'มูลค่า';
@@ -262,7 +348,11 @@ function notifyDealWon(PDO $db, string $kind, int $refId, array $user): void {
             'ref_id'     => $refId,
             'page'       => $page,
             'line_title' => $head,
-            'line_body'  => "{$job['project_code']} {$title}\nลูกค้า: " . ($job['client'] ?: '-') . "\n{$valueLabel}: {$value}\nSale: {$job['sale_name']}\nคาดส่งมอบ: {$edd}",
+            // ประเภทดีลเฉพาะงานขายตรง (2026-10-10)
+            'line_body'  => "{$job['project_code']} {$title}\nลูกค้า: " . ($job['client'] ?: '-')
+                          . (!empty($job['deal_type_name']) ? "\nประเภทดีล: {$job['deal_type_name']}" : '')
+                          . (notifyProductLine($job) !== '' ? "\n" . notifyProductLine($job) : '')
+                          . "\n{$valueLabel}: {$value}\nSale: {$job['sale_name']}\nคาดส่งมอบ: {$edd}",
             'defer_line' => true,
         ];
         $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
@@ -305,10 +395,11 @@ function notifyDealLost(PDO $db, string $kind, int $refId, array $user, bool $sa
             if ($imp->fetchColumn()) return;
             $st = $db->prepare("SELECT pi.project_code, pi.source_type, pi.title, COALESCE(a.name, pi.client_name) AS client,
                                        pi.value AS our_price, pi.winning_price, pi.win_loss_note, r.win_loss_reason_name,
-                                       c.competitor_name, u.full_name AS sale_name
+                                       c.competitor_name, u.full_name AS sale_name, dt.deal_type_name, pi.product_category, pi.brand
                                 FROM pipeline_items pi
                                 JOIN users u ON u.id = pi.assigned_to
                                 LEFT JOIN accounts a ON a.id = pi.account_id
+                                LEFT JOIN deal_types dt ON dt.deal_type_id = pi.deal_type_id
                                 LEFT JOIN win_loss_reasons r ON r.win_loss_reason_id = pi.win_loss_reason_id
                                 LEFT JOIN competitors c ON c.competitor_id = pi.winner_competitor_id
                                 WHERE pi.id = ?");
@@ -338,7 +429,10 @@ function notifyDealLost(PDO $db, string $kind, int $refId, array $user, bool $sa
             ?: ($customerCancelled ? 'หน่วยงาน/ลูกค้ายกเลิก'
             : (($cancelled && trim((string)($job['sale_notes'] ?? '')) !== '') ? 'ไม่เข้าประมูล — ' . mb_substr(trim($job['sale_notes']), 0, 150) : '-'));
 
-        $lines = ["{$job['project_code']} {$title}", 'ลูกค้า: ' . ($job['client'] ?: '-'), "เหตุผล: {$reason}"];
+        $lines = ["{$job['project_code']} {$title}", 'ลูกค้า: ' . ($job['client'] ?: '-')];
+        if (!empty($job['deal_type_name'])) $lines[] = "ประเภทดีล: {$job['deal_type_name']}";   // งานขายตรงเท่านั้น (2026-10-10)
+        if (notifyProductLine($job) !== '') $lines[] = notifyProductLine($job);
+        $lines[] = "เหตุผล: {$reason}";
         if (!$cancelled) {
             $ours = (float)($job['our_price'] ?? 0);
             $win  = (float)($job['winning_price'] ?? 0);
@@ -365,6 +459,70 @@ function notifyDealLost(PDO $db, string $kind, int $refId, array $user, bool $sa
         foreach ($managers as $managerId) notify($db, 'deal_lost', (int)$managerId, $data, (int)$user['id']);
     } catch (Throwable $e) {
         error_log("[notify] deal_lost {$kind} {$refId}: " . $e->getMessage());
+    }
+}
+
+/**
+ * Sale ยกเลิกงานประมูลเอง → แจ้งธุรการขายให้ทราบผล (role salesadmin ที่ใช้งานอยู่ทุกคน — ยืนยันจากผู้ใช้ 2026-10-10) กฎธุรกิจ Taiyo — แจ้งเพื่อทราบ ไม่ใช่สั่งงาน (งานจบที่สถานะยกเลิกแล้ว)
+ * มาตรฐาน: ผู้รับงานคืนงาน (Lead rejected / returned to queue) → แจ้งผู้ดูแลคิว ให้มอบหมายคนใหม่ก่อนวันปิดรับ หรือปิดประกาศ
+ * - เรียกเฉพาะเมื่อคนกดเป็น Sale (ธุรการ/admin ยกเลิกเอง ไม่ต้องแจ้งธุรการ) — หัวหน้ายังได้ deal_lost แยกตามเดิม
+ * - 2 ทาง: กด "ไม่เข้าประมูล" ตอนรับงาน ($saleDeclined) / กดปุ่มยกเลิกบนการ์ด (ไม่เข้าประมูล หรือหน่วยงาน/ลูกค้ายกเลิก)
+ * - ครั้งเดียวต่องาน (กระดิ่ง ref_type bid_cancelled_by_sale + ref_id) / ไม่นับข้อมูลย้อนหลัง / มีวันปิดรับซองให้ธุรการตัดสินใจว่ามอบหมายใหม่ทันไหม
+ */
+function notifySaleCancelled(PDO $db, int $assignmentId, array $user, bool $saleDeclined = false): void {
+    try {
+        $imp = $db->prepare('SELECT 1 FROM quotation_import_log WHERE project_assignment_id = ? LIMIT 1');
+        $imp->execute([$assignmentId]);
+        if ($imp->fetchColumn()) return;
+
+        $sent = $db->prepare("SELECT 1 FROM notifications WHERE ref_type = 'bid_cancelled_by_sale' AND ref_id = ? LIMIT 1");
+        $sent->execute([$assignmentId]);
+        if ($sent->fetchColumn()) return;
+
+        $st = $db->prepare("SELECT pa.project_code, pa.win_loss_note, pa.sale_notes, r.win_loss_reason_name,
+                                   ann.project_name AS title, COALESCE(a.name, ann.unit_name) AS client, ann.close_date,
+                                   u.full_name AS sale_name
+                            FROM project_assignments pa
+                            JOIN announcements ann ON ann.id = pa.announcement_id
+                            JOIN users u ON u.id = pa.assigned_to
+                            LEFT JOIN accounts a ON a.id = ann.account_id
+                            LEFT JOIN win_loss_reasons r ON r.win_loss_reason_id = pa.win_loss_reason_id
+                            WHERE pa.id = ?");
+        $st->execute([$assignmentId]);
+        $job = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$job) return;
+
+        // แยกแบบเดียวกับ notifyDealLost(): มีเหตุผลไม่เข้าประมูล = เราไม่เข้าเอง / ไม่มีเหตุผล + มีสาเหตุ = หน่วยงาน/ลูกค้ายกเลิก
+        $note = trim((string)$job['win_loss_note']);
+        $customerCancelled = !$saleDeclined && !$job['win_loss_reason_name'] && $note !== '';
+        $head = $customerCancelled ? '🚫 หน่วยงาน/ลูกค้ายกเลิก (Sale แจ้ง)' : '🚫 Sale ไม่เข้าประมูล';
+        $reason = $job['win_loss_reason_name']
+            ? $job['win_loss_reason_name'] . ($note !== '' ? ' — ' . mb_substr($note, 0, 150) : '')
+            : ($customerCancelled ? 'หน่วยงาน/ลูกค้ายกเลิก — ' . mb_substr($note, 0, 150)
+            : (trim((string)$job['sale_notes']) !== '' ? mb_substr(trim($job['sale_notes']), 0, 150) : '-'));
+
+        // วันปิดรับซอง + เหลืออีกกี่วัน (เลยแล้ว = บอกว่าปิดรับแล้ว)
+        $closeText = '-';
+        if ($job['close_date']) {
+            $closeText = function_exists('thaiShortDate') ? thaiShortDate($job['close_date']) : $job['close_date'];
+            $days = (int)floor((strtotime($job['close_date']) - strtotime(date('Y-m-d'))) / 86400);
+            $closeText .= $days > 0 ? " (อีก {$days} วัน)" : ($days === 0 ? ' (วันนี้)' : ' (ปิดรับแล้ว)');
+        }
+
+        $title = mb_strlen($job['title']) > 80 ? mb_substr($job['title'], 0, 80) . '...' : $job['title'];
+        $data = [
+            'title'      => $head,
+            'body'       => "{$job['project_code']} {$title} — {$reason} ({$job['sale_name']})",
+            'ref_type'   => 'bid_cancelled_by_sale',
+            'ref_id'     => $assignmentId,
+            'line_title' => $head,
+            'line_body'  => "{$job['project_code']} {$title}\nหน่วยงาน: " . ($job['client'] ?: '-') . "\nเหตุผล: {$reason}\nวันปิดรับซอง: {$closeText}\nSale: {$job['sale_name']}",
+            'defer_line' => true,
+        ];
+        $admins = $db->query("SELECT id FROM users WHERE role = 'salesadmin' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($admins as $adminId) notify($db, 'bid_cancelled_by_sale', (int)$adminId, $data, (int)$user['id']);
+    } catch (Throwable $e) {
+        error_log("[notify] bid_cancelled_by_sale {$assignmentId}: " . $e->getMessage());
     }
 }
 

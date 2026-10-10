@@ -1,18 +1,30 @@
 <?php
 // ปุ่ม "ดูรายละเอียด" ใน LINE / อีเมล ผ่านไฟล์นี้ก่อน: บันทึกการกดดู แล้วพาไปหน้าเดิม (Click tracking — ยืนยันจากผู้ใช้ 2026-10-08)
 // GET ?t=click_token (notification_deliveries) — ไม่ใช่ JSON API จึงตอบด้วย redirect แทน jsonResponse()
-// - ยังไม่ได้ login → ไปหน้า login พร้อม next กลับมาที่นี่ (LINE เปิดลิงก์ในเบราว์เซอร์ของ LINE ซึ่งมักยังไม่ได้ login)
+// - ยังไม่ได้ login → เรื่องที่ admin เปิด "ดูโดยไม่ต้อง login" ไปหน้าสรุปงาน notify-view.html (ดูอย่างเดียว 7 วัน — 2026-10-10)
+//   เรื่องอื่น → ไปหน้า login พร้อม next กลับมาที่นี่
+// - target_page มี ?code=รหัสงาน → หน้าปลายทางเปิดรายละเอียดงานนั้นเอง (2026-10-10)
 // - นับเฉพาะเมื่อผู้ที่ login คือผู้รับคนนั้น และนับครั้งแรกครั้งเดียว — ระบบสแกนลิงก์ของเมลบริษัทไม่มี session จึงไม่ถูกนับ
 // - รหัสไม่ถูกต้อง / ไม่พบ / ยังไม่มีตาราง → ไปหน้าภาพรวม (ไม่แสดง error ให้ผู้ใช้)
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/notify_helper.php';
 
 $token = (string)($_GET['t'] ?? '');
 if (!preg_match('/^[0-9a-f]{32}$/', $token)) redirectTo('dashboard.html');
 
 $user = $_SESSION['user'] ?? null;
 if ($user && isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > SESSION_TIMEOUT) $user = null;
-if (!$user) redirectTo('login.html?next=' . rawurlencode('api/notify_click.php?t=' . $token));
+if (!$user) {
+    try {
+        $db = (new Database())->getConnection();
+        $d  = notifyDeliveryByToken($db, $token);
+        if ($d && notifyPublicViewAllowed($db, $d)) redirectTo('notify-view.html?t=' . $token);
+    } catch (Throwable $e) {
+        error_log('[notify_click] public view: ' . $e->getMessage());
+    }
+    redirectTo('login.html?next=' . rawurlencode('api/notify_click.php?t=' . $token));
+}
 
 try {
     $db = (new Database())->getConnection();

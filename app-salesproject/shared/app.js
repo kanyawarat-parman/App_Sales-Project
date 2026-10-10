@@ -16,6 +16,18 @@ async function apiCall(method, url, body = null) {
   return res.json();
 }
 
+/* ── รหัสงานจากลิงก์ ?code= (ปุ่ม "ดูรายละเอียด" ใน LINE / อีเมล / กระดิ่ง — 2026-10-10) ──
+   อ่านแล้วลบออกจาก URL ทันที (กดรีเฟรชแล้วไม่เปิดหน้าต่างซ้ำ) */
+function takeLinkCode() {
+  const params = new URLSearchParams(window.location.search);
+  const code = (params.get('code') || '').trim();
+  if (!code) return '';
+  params.delete('code');
+  const qs = params.toString();
+  window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+  return code;
+}
+
 /* ── ชื่อเมนูภาษาไทยของแต่ละไฟล์หน้าเว็บ (ต้องตรงกับ label ที่ใช้จริงใน navGroups() ของ AppNav ด้านล่าง — ถ้าแก้ label ใน
    navGroups() ต้องแก้ตรงนี้ด้วย) ใช้แปลงชื่อไฟล์ดิบ (เช่น current_page จาก DB) ให้เป็นชื่อเมนูที่ผู้ใช้อ่านเข้าใจ เช่นในหน้า
    users.html คอลัมน์ "ใช้งานล่าสุด" (ยืนยันจากผู้ใช้ 2026-09-22) */
@@ -27,6 +39,7 @@ const PAGE_LABELS = {
   'company-calendar.html': 'ปฏิทินคัดกรองประกาศ',
   'bid_decision.html': 'ประกาศวันนี้',
   'assignments.html': 'จัดการงานประมูล',
+  'screening-keywords.html': 'คำเตือนคัดกรองประกาศ',
   'calendars.html': 'ปฏิทินการทำงาน',
   'sources.html': 'แหล่งที่มางานประมูล',
   'rotation-settings.html': 'ตั้งค่าวิธีคิดเวรงานประมูล',
@@ -35,7 +48,7 @@ const PAGE_LABELS = {
   'win-loss-analysis.html': 'วิเคราะห์ผลแพ้/ชนะ',
   'kpi-settings.html': 'ตั้งเกณฑ์วัดผล KPI',
   'competitors.html': 'คู่แข่ง',
-  'win-loss-reasons.html': 'เหตุผลปิดงาน (ชนะ/แพ้)',
+  'win-loss-reasons.html': 'เหตุผลปิดงาน',
   'usage-report.html': 'การใช้งานระบบ',
   'delivery-forecast.html': 'คาดการณ์ส่งมอบ',
   'users.html': 'ผู้ใช้งาน',
@@ -423,6 +436,15 @@ const SharedMethods = {
   // Phase 4c: เปลี่ยนให้รับ project_code แทน id (project_assignments.id) สำหรับ action=detail
   // ส่วน documents.php ใช้ project_no (เลขที่โครงการจาก e-GP) แทน — คือตัวเชื่อมจริงที่ resolveDocFolder() ใช้หา
   // โฟลเดอร์บน network share อยู่แล้ว (ยืนยันจากผู้ใช้ 2026-09-22) ได้ค่านี้จาก response ของ action=detail เอง
+  // เปิดรายละเอียดงานประมูลจากลิงก์ ?code= (2026-10-10) — ใช้ใน: bid-pipeline.html, my-assignments.html, assignments.html ('assign-detail')
+  // เปิดไม่ได้ (ไม่พบ / ไม่มีสิทธิ์ดู) → อยู่หน้ารายการตามปกติ + แจ้ง
+  async openDetailFromLink(modalType = 'detail') {
+    const code = takeLinkCode();
+    if (!code) return;
+    await this.openDetail(code, modalType);
+    if (this.modal?.data?.project_code !== code) await this.showAlert(`ไม่พบงาน ${code} หรือคุณไม่มีสิทธิ์ดูงานนี้`, 'error');
+  },
+
   async openDetail(projectCode, modalType = 'detail') {
     const res = await apiCall('GET', `api/assignments.php?action=detail&project_code=${encodeURIComponent(projectCode)}`);
     if (res.success) this.modal = { type: modalType, data: res.data };
@@ -516,6 +538,8 @@ const AppNav = {
         }
         g.push({ href:'calendars.html', page:'calendars', label:'ปฏิทินการทำงาน', icon:'calendar' });
         g.push({ href:'sources.html', page:'sources', label:'แหล่งที่มางานประมูล', icon:'bid_decision' });
+        // คำเตือนคัดกรองประกาศ (ป้ายเตือนหน้าประกาศวันนี้) — admin + ธุรการขาย แก้ได้ (ยืนยันจากผู้ใช้ 2026-10-10)
+        g.push({ href:'screening-keywords.html', page:'screening-keywords', label:'คำเตือนคัดกรองประกาศ', icon:'settings' });
         g.push({ href:'rotation-settings.html', page:'rotation-settings', label:'ตั้งค่าวิธีคิดเวรงานประมูล', icon:'settings' });
         g.push({ href:'duty-calendar.html', page:'duty-calendar', label:'สร้างเวรรายปีงานประมูล', icon:'calendar' });
       }
@@ -542,8 +566,8 @@ const AppNav = {
           g.push({ href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' });
           // รายชื่อคู่แข่ง (master) — admin เท่านั้นเป็นคนเพิ่ม/แก้ไข/ซ่อน ตามมาตรฐาน CRM, sale เลือกจากรายการในฟอร์มดีลอย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-24)
           g.push({ href:'competitors.html', page:'competitors', label:'คู่แข่ง', icon:'competitors' });
-          // เหตุผลปิดงาน (ชนะ/แพ้) master ใช้ทั้งงานประมูลและงานขายตรง — admin เท่านั้นเป็นคนแก้รายการ (ยืนยันจากผู้ใช้ 2026-09-25)
-          g.push({ href:'win-loss-reasons.html', page:'win-loss-reasons', label:'เหตุผลปิดงาน (ชนะ/แพ้)', icon:'win_loss' });
+          // เหตุผลปิดงาน (ชนะ / แพ้ / ไม่เข้าประมูล — ตัด "(ชนะ/แพ้)" ออกจากชื่อเมนู 2026-10-10) master ใช้ทั้งงานประมูลและงานขายตรง — admin เท่านั้นเป็นคนแก้รายการ (ยืนยันจากผู้ใช้ 2026-09-25)
+          g.push({ href:'win-loss-reasons.html', page:'win-loss-reasons', label:'เหตุผลปิดงาน', icon:'win_loss' });
           g.push({ href:'users.html', page:'users', label:'ผู้ใช้งาน', icon:'users' });
           // ตั้งค่าการแจ้งเตือนรายเรื่อง (อีเมล/LINE) — admin เท่านั้น วางต่อจากผู้ใช้งาน เพราะใช้คู่กับการตั้งค่ารายคน (ยืนยันจากผู้ใช้ 2026-10-08)
           g.push({ href:'notification-settings.html', page:'notification-settings', label:'ตั้งค่าการแจ้งเตือน', icon:'bell' });
@@ -591,11 +615,15 @@ const AppNav = {
       // แจ้งเตือนงานประมูล (มอบหมายใหม่ / ย้ายผู้รับผิดชอบ / ข้อความจากธุรการ) → หน้างานที่ได้รับ (ยืนยันจากผู้ใช้ 2026-09-28 ว่าไม่ต้องเปิดรายละเอียด)
       if (n.ref_type === 'assignment') window.location.href = 'my-assignments.html';
       // ดีลขายตรงที่ถูกโอนมาให้ (ไม่ใช่งานของฉัน — ตรวจข้อมูลย้อนหลัง 2026-10-01) → หน้างานขายตรง
-      if (n.ref_type === 'pipeline_item') window.location.href = 'sales-pipeline.html';
+      if (n.ref_type === 'pipeline_item') window.location.href = 'sales-pipeline.html' + (n.project_code ? '?code=' + encodeURIComponent(n.project_code) : '');
       // ชนะงาน / ปิดดีล → แจ้งหัวหน้า (2026-10-08) — งานประมูลเปิดหน้างานประมูล / ขายตรงเปิดหน้างานขายตรง
       // แพ้ / ยกเลิก / ดีลไม่สำเร็จ → แจ้งหัวหน้า (2026-10-08)
-      if (n.ref_type === 'bid_won' || n.ref_type === 'bid_lost') window.location.href = 'bid-pipeline.html';
-      if (n.ref_type === 'deal_won' || n.ref_type === 'deal_lost') window.location.href = 'sales-pipeline.html';
+      // กดแล้วเปิดรายละเอียดงานนั้นทันที (?code= — 2026-10-10) / ไม่มีรหัสงาน = หน้ารายการตามเดิม
+      const codeQs = n.project_code ? '?code=' + encodeURIComponent(n.project_code) : '';
+      if (n.ref_type === 'bid_won' || n.ref_type === 'bid_lost') window.location.href = 'bid-pipeline.html' + codeQs;
+      if (n.ref_type === 'deal_won' || n.ref_type === 'deal_lost') window.location.href = 'sales-pipeline.html' + codeQs;
+      // Sale ยกเลิก / ไม่เข้าประมูล → ธุรการเปิดงานนั้นในหน้าจัดการงานประมูล (2026-10-10)
+      if (n.ref_type === 'bid_cancelled_by_sale') window.location.href = 'assignments.html' + codeQs;
       // ได้รับมอบหมายดูแลลูกค้า → เปิดรายละเอียดลูกค้ารายนั้น (2026-10-09)
       if (n.ref_type === 'account' && n.ref_id) window.location.href = 'accounts.html?account_id=' + n.ref_id;
       // นำเข้าประกาศ e-GP ใหม่ → หน้า "ประกาศวันนี้" ให้ธุรการคัดกรอง (2026-10-09)

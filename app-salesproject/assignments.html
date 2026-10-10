@@ -623,7 +623,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=71"></script>
+<script src="shared/app.js?v=74"></script>
 <script>
 const { createApp } = Vue;
 
@@ -776,6 +776,7 @@ createApp({
     this.authReady = true;
     this.loadAssignments();
     if (this.isSecretary) this.loadSales();
+    this.openDetailFromLink('assign-detail');   // ลิงก์ ?code= จาก LINE / กระดิ่ง → เปิดรายละเอียดงานนั้น (2026-10-10)
   },
   methods: {
     // เรียกโหลดข้อมูลของมุมมองที่กำลังเปิดอยู่ตอนนี้ใหม่ — ใช้หลังอัพเดตสถานะ/มอบหมายใหม่จาก modal

@@ -6,6 +6,7 @@
 // สิทธิ์ตามลำดับบังคับบัญชา: admin/manager/salesadmin เห็นทั้งทีม, sale เห็นเฉพาะงานของตัวเอง (บังคับที่ API ไม่ใช่แค่ซ่อนในหน้าจอ)
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/win_loss_reason_helper.php';   // noBidGroups() — แท็บไม่เข้าประมูล (2026-10-10)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -20,6 +21,7 @@ switch ($action) {
     case 'competitor_detail': getCompetitorDetail($db, $user); break;
     case 'deals':             getDeals($db, $user);            break;
     case 'sales':             getSalesOptions($db, $user);     break;
+    case 'no_bid':            getNoBidAnalysis($db, $user);    break;   // แท็บไม่เข้าประมูล (2026-10-10)
     default: jsonResponse(false, null, 'Unknown action', 400);
 }
 
@@ -377,4 +379,156 @@ function getSalesOptions(PDO $db, array $user): void {
         $stmt = $db->query("SELECT id, full_name FROM users WHERE role = 'sale' AND is_active = 1 ORDER BY full_name");
     }
     jsonResponse(true, $stmt->fetchAll());
+}
+
+// ─── แท็บ "ไม่เข้าประมูล" (Bid / No-Bid analysis — ยืนยันจากผู้ใช้ + mockup 2026-10-10) ─────────────────────
+// รวม 2 แหล่ง (ความหมายต่างกัน จึงแยกผู้ตัดสินไว้เสมอ):
+//   salesadmin = ธุรการตัดตอนคัดกรอง (announcements.bid_decision = 'ไม่เข้าประมูล' + decision_reason_id) — ตัดทิ้งเร็ว ไม่เสียแรง Sale
+//   sale       = ตัดหลังมอบหมายแล้ว (pipeline_items งานประมูลสถานะ ยกเลิก + เหตุผลประเภท no_bid) — เสียแรงไปแล้ว
+//               ยกเลิกที่ไม่มีเหตุผล no_bid (หน่วยงาน/ลูกค้ายกเลิก หลังยื่นซอง) ไม่นับ — ไม่ใช่การตัดสินใจของเรา
+// จัดกลุ่มตามหมวดของเหตุผล (win_loss_reasons.no_bid_group / noBidGroups()) — ยังไม่กำหนดหมวดนับเป็น "อื่นๆ"
+// ตัวกรอง: period (เหมือนแท็บเดิม — นับตามวันที่ตัดสิน), decider = all|salesadmin|sale, assigned_to (เลือก Sale = เหลือฝั่ง sale)
+// สิทธิ์: sale เห็นเฉพาะงานของตัวเอง (ฝั่ง sale เท่านั้น) / role อื่นเห็นทั้งหมด — บังคับที่ API
+function fetchNoBidItems(PDO $db, array $user): array {
+    $decider  = in_array($_GET['decider'] ?? 'all', ['all', 'salesadmin', 'sale'], true) ? ($_GET['decider'] ?? 'all') : 'all';
+    $saleId   = $user['role'] === 'sale' ? (int)$user['id'] : (int)($_GET['assigned_to'] ?? 0);
+    $range    = periodRange($_GET['period'] ?? 'year');
+    $items    = [];
+
+    // ธุรการคัดกรอง — ไม่มี Sale จึงไม่แสดงเมื่อกรอง Sale หรือเป็น role sale
+    if ($decider !== 'sale' && !$saleId) {
+        $where = ["an.bid_decision = 'ไม่เข้าประมูล'", 'an.decision_reason_id IS NOT NULL'];
+        $params = [];
+        if ($range) { $where[] = 'an.decided_at >= ? AND an.decided_at < ?'; $params[] = $range[0]; $params[] = $range[1]; }
+        $stmt = $db->prepare("
+            SELECT 'salesadmin' AS decider, NULL AS project_code, an.project_no, an.project_name,
+                   COALESCE(acc.name, an.unit_name) AS unit_name, an.price_median, DATE(an.decided_at) AS decided_date,
+                   an.close_date, NULL AS assigned_date, an.decision_reason AS note,
+                   r.win_loss_reason_id, r.win_loss_reason_name, r.no_bid_group,
+                   ud.full_name AS person_name, NULL AS sale_id
+            FROM announcements an
+            JOIN win_loss_reasons r ON r.win_loss_reason_id = an.decision_reason_id
+            LEFT JOIN accounts acc ON acc.id = an.account_id
+            LEFT JOIN users ud ON ud.id = an.decided_by
+            WHERE " . implode(' AND ', $where));
+        $stmt->execute($params);
+        $items = $stmt->fetchAll();
+    }
+
+    // ตัดหลังมอบหมาย — วันที่ตัดสิน = วันที่เปลี่ยนเป็นยกเลิกครั้งล่าสุด (ไม่มีประวัติ = วันแก้ไขล่าสุด)
+    if ($decider !== 'salesadmin') {
+        $where = ["pi.source_type = 'ebidding'", "pi.stage = 'ยกเลิก'"];
+        $params = [];
+        if ($saleId) { $where[] = 'pi.assigned_to = ?'; $params[] = $saleId; }
+        $periodSql = '';
+        if ($range) { $periodSql = 'WHERE d.decided_date >= ? AND d.decided_date < ?'; $params[] = $range[0]; $params[] = $range[1]; }
+        $stmt = $db->prepare("
+            SELECT d.* FROM (
+                SELECT 'sale' AS decider, pi.project_code, a.project_no, a.project_name,
+                       COALESCE(acc.name, a.unit_name) AS unit_name, a.price_median,
+                       COALESCE(DATE(h.cancelled_at), DATE(pi.updated_at)) AS decided_date,
+                       a.close_date, DATE(pi.created_at) AS assigned_date, pi.win_loss_note AS note,
+                       r.win_loss_reason_id, r.win_loss_reason_name, r.no_bid_group,
+                       u.full_name AS person_name, pi.assigned_to AS sale_id
+                FROM pipeline_items pi
+                JOIN announcements a ON a.id = pi.announcement_id
+                JOIN win_loss_reasons r ON r.win_loss_reason_id = pi.win_loss_reason_id AND r.win_loss_type = 'no_bid'
+                JOIN users u ON u.id = pi.assigned_to
+                LEFT JOIN accounts acc ON acc.id = COALESCE(pi.account_id, a.account_id)
+                LEFT JOIN (SELECT pipeline_item_id, MAX(changed_at) AS cancelled_at FROM pipeline_item_history
+                           WHERE new_stage = 'ยกเลิก' GROUP BY pipeline_item_id) h ON h.pipeline_item_id = pi.id
+                WHERE " . implode(' AND ', $where) . "
+            ) d $periodSql");
+        $stmt->execute($params);
+        $items = array_merge($items, $stmt->fetchAll());
+    }
+
+    $groups = noBidGroups();
+    foreach ($items as &$it) {
+        if (!isset($groups[$it['no_bid_group'] ?? ''])) $it['no_bid_group'] = 'other';
+        $it['price_median'] = $it['price_median'] !== null ? (float)$it['price_median'] : 0.0;
+        // จำนวนวันจากวันมอบหมายถึงวันปิดรับ (ฝั่ง sale) — ใช้ดูหมวด "ความพร้อมภายใน" ว่ามอบหมายช้าหรือไม่
+        $it['lead_days'] = ($it['assigned_date'] && $it['close_date'])
+            ? (int)round((strtotime($it['close_date']) - strtotime($it['assigned_date'])) / 86400) : null;
+    }
+    unset($it);
+    usort($items, fn($a, $b) => strcmp((string)$b['decided_date'], (string)$a['decided_date']));
+    return $items;
+}
+
+function getNoBidAnalysis(PDO $db, array $user): void {
+    $items  = fetchNoBidItems($db, $user);
+    $defs   = noBidGroups();
+    $range  = periodRange($_GET['period'] ?? 'year');
+
+    // % ของประกาศที่คัดกรองในช่วงเดียวกัน (ธุรการตัดสินเข้า/ไม่เข้าประมูล) — ไม่แสดงให้ role sale / ตอนกรอง Sale (คนละฐาน)
+    $screened = null;
+    if ($user['role'] !== 'sale' && empty($_GET['assigned_to'])) {
+        $sql = "SELECT COUNT(*) FROM announcements WHERE bid_decision IS NOT NULL" . ($range ? ' AND decided_at >= ? AND decided_at < ?' : '');
+        $st = $db->prepare($sql);
+        $st->execute($range ?: []);
+        $screened = (int)$st->fetchColumn();
+    }
+
+    $groups = [];
+    foreach ($defs as $key => $g) $groups[$key] = ['key' => $key, 'label' => $g['label'], 'fix' => $g['fix'], 'controllable' => $g['controllable'], 'count' => 0, 'value' => 0.0, 'reasons' => []];
+    $byDecider = ['salesadmin' => ['count' => 0, 'groups' => array_fill_keys(array_keys($defs), 0)],
+                  'sale'       => ['count' => 0, 'groups' => array_fill_keys(array_keys($defs), 0)]];
+    $months = []; $internalBySale = []; $units = []; $total = 0; $value = 0.0;
+
+    foreach ($items as $it) {
+        $g = $it['no_bid_group']; $v = $it['price_median'];
+        $total++; $value += $v;
+        $groups[$g]['count']++; $groups[$g]['value'] += $v;
+        $rid = (int)$it['win_loss_reason_id'];
+        if (!isset($groups[$g]['reasons'][$rid])) $groups[$g]['reasons'][$rid] = ['reason_id' => $rid, 'name' => $it['win_loss_reason_name'], 'count' => 0, 'value' => 0.0];
+        $groups[$g]['reasons'][$rid]['count']++; $groups[$g]['reasons'][$rid]['value'] += $v;
+        $byDecider[$it['decider']]['count']++; $byDecider[$it['decider']]['groups'][$g]++;
+        $ym = substr((string)$it['decided_date'], 0, 7);
+        if ($ym) { $months[$ym] = $months[$ym] ?? ['ym' => $ym, 'total' => 0, 'groups' => array_fill_keys(array_keys($defs), 0)]; $months[$ym]['total']++; $months[$ym]['groups'][$g]++; }
+        if ($g === 'internal' && $it['decider'] === 'sale') {
+            $sid = (int)$it['sale_id'];
+            $internalBySale[$sid] = $internalBySale[$sid] ?? ['sale_name' => $it['person_name'], 'count' => 0, 'lead' => []];
+            $internalBySale[$sid]['count']++;
+            if ($it['lead_days'] !== null) $internalBySale[$sid]['lead'][] = $it['lead_days'];
+        }
+        $u = trim((string)$it['unit_name']);
+        if ($u !== '') { $units[$u] = $units[$u] ?? ['unit_name' => $u, 'count' => 0, 'groups' => []]; $units[$u]['count']++; $units[$u]['groups'][$g] = ($units[$u]['groups'][$g] ?? 0) + 1; }
+    }
+
+    foreach ($groups as &$gr) {
+        $gr['value'] = round($gr['value']);
+        $gr['reasons'] = array_values($gr['reasons']);
+        usort($gr['reasons'], fn($a, $b) => $b['count'] <=> $a['count']);
+        foreach ($gr['reasons'] as &$r) $r['value'] = round($r['value']);
+        unset($r);
+    }
+    unset($gr);
+    ksort($months);
+    $internal = array_map(fn($s) => ['sale_name' => $s['sale_name'], 'count' => $s['count'],
+                                     'avg_lead_days' => $s['lead'] ? round(array_sum($s['lead']) / count($s['lead']), 1) : null], array_values($internalBySale));
+    usort($internal, fn($a, $b) => $b['count'] <=> $a['count']);
+    $unitRows = array_map(function ($u) use ($defs) { arsort($u['groups']); $top = array_key_first($u['groups']);
+                                                      return ['unit_name' => $u['unit_name'], 'count' => $u['count'], 'top_group' => $top, 'top_group_label' => $defs[$top]['label'] ?? '']; }, array_values($units));
+    usort($unitRows, fn($a, $b) => $b['count'] <=> $a['count']);
+
+    jsonResponse(true, [
+        'kpi' => [
+            'total' => $total, 'value' => round($value),
+            'screened' => $screened, 'pct_of_screened' => ($screened ? (int)round($total / $screened * 100) : null),
+            'by_salesadmin' => $byDecider['salesadmin']['count'], 'by_sale' => $byDecider['sale']['count'],
+            'other_pct' => $total ? (int)round($groups['other']['count'] / $total * 100) : 0,
+        ],
+        'groups'     => array_values($groups),
+        'by_decider' => $byDecider,
+        'internal_by_sale' => $internal,
+        'monthly'    => array_values($months),
+        'units'      => array_slice(array_values(array_filter($unitRows, fn($u) => $u['count'] >= 2)), 0, 10),
+        'items'      => array_map(fn($it) => [
+            'decider' => $it['decider'], 'project_code' => $it['project_code'], 'project_no' => $it['project_no'], 'project_name' => $it['project_name'],
+            'unit_name' => $it['unit_name'], 'price_median' => round($it['price_median']), 'decided_date' => $it['decided_date'],
+            'reason' => $it['win_loss_reason_name'], 'group' => $it['no_bid_group'], 'note' => $it['note'],
+            'person_name' => $it['person_name'], 'lead_days' => $it['lead_days'],
+        ], $items),
+    ]);
 }

@@ -80,11 +80,18 @@
 
         <!-- ประเภทงาน + แท็บ — เฉพาะหน้านี้ไม่มีในหน้าอื่น จึงวางเป็นแถวเปล่าใต้แถบหัว ไม่ใส่กล่องการ์ดครอบ (ปรับตามผู้ใช้ 2026-09-25) -->
         <div class="flex flex-col gap-3 mb-4">
-          <div class="flex items-center gap-2 flex-wrap">
+          <div v-if="tab!=='no_bid'" class="flex items-center gap-2 flex-wrap">
             <span class="text-sm text-slate-500 mr-1">ประเภทงาน:</span>
             <button v-for="c in channelOptions" :key="c.val" type="button" @click="setChannel(c.val)"
               class="px-4 py-2 rounded-full text-sm font-semibold border-0 cursor-pointer transition-all"
               :class="channel===c.val ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">{{ c.label }}</button>
+          </div>
+          <!-- แท็บไม่เข้าประมูล: มีเฉพาะงานประมูล จึงแทนตัวเลือกประเภทงานด้วย "ผู้ตัดสิน" (Sale เห็นเฉพาะงานตัวเอง ไม่มีตัวเลือกนี้) — 2026-10-10 -->
+          <div v-else-if="!isSaleUser && !assignedTo" class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm text-slate-500 mr-1">ผู้ตัดสิน:</span>
+            <button v-for="d in deciderOptions" :key="d.val" type="button" @click="setDecider(d.val)"
+              class="px-4 py-2 rounded-full text-sm font-semibold border-0 cursor-pointer transition-all"
+              :class="decider===d.val ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">{{ d.label }}</button>
           </div>
           <!-- แท็บเส้นใต้ (ไม่ใช่ chip) — แยกให้ต่างจากปุ่ม "ประเภทงาน" ด้านบนชัดเจน ปุ่มนั้นเป็นตัวกรอง ส่วนนี้คือสลับมุมมอง (ปรับตามผู้ใช้ 2026-09-25) -->
           <div class="flex items-center gap-6 border-b border-slate-200">
@@ -99,6 +106,13 @@
               :class="tab==='competitors' ? 'border-teal-700 text-slate-800 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-600'">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
               คู่แข่ง
+            </button>
+            <!-- แท็บไม่เข้าประมูล (Bid / No-Bid analysis — ยืนยันจากผู้ใช้ + mockup 2026-10-10) -->
+            <button type="button" @click="tab = 'no_bid'"
+              class="flex items-center gap-1.5 pb-2.5 pt-1 text-sm bg-transparent border-0 border-b-2 -mb-px cursor-pointer transition-colors"
+              :class="tab==='no_bid' ? 'border-teal-700 text-slate-800 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-600'">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>
+              ไม่เข้าประมูล
             </button>
           </div>
           <p v-if="isSaleUser" class="text-xs text-teal-700 m-0">แสดงเฉพาะงานของคุณ</p>
@@ -164,8 +178,8 @@
             </div>
           </template>
 
-          <!-- ═══ แท็บคู่แข่ง ═══ -->
-          <template v-else-if="comp">
+          <!-- ═══ แท็บคู่แข่ง ═══ (ระบุ tab ชัดเจน — มีแท็บไม่เข้าประมูลเพิ่ม 2026-10-10) -->
+          <template v-else-if="tab==='competitors' && comp">
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
               <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3"><div class="text-sm text-slate-500">คู่แข่งที่เจอ</div><div class="text-2xl font-bold text-slate-700 mt-0.5">{{ comp.kpi.competitor_count }} ราย</div></div>
               <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3"><div class="text-sm text-slate-500">แพ้ให้คู่แข่งที่รู้ชื่อ</div><div class="text-2xl font-bold text-slate-700 mt-0.5">{{ comp.kpi.lost_to_known }} งาน</div></div>
@@ -215,6 +229,121 @@
               </p>
             </div>
           </template>
+          <!-- ═══ แท็บไม่เข้าประมูล ═══ จัดตามหมวด "แก้ที่ไหน" (win_loss_reasons.no_bid_group) — ทุกตัวเลขกดดูรายการงานได้ -->
+          <template v-if="tab==='no_bid'">
+            <div v-if="!noBid" class="text-sm text-slate-400 py-10 text-center">ไม่มีข้อมูล</div>
+            <template v-else>
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                <button type="button" @click="openNoBidItems('ทั้งหมด', () => true)" class="text-left bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3 border-0 cursor-pointer hover:ring-teal-300">
+                  <div class="text-sm text-slate-500">ไม่เข้าประมูล</div>
+                  <div class="text-2xl font-bold mt-0.5 text-slate-800">{{ noBid.kpi.total }} งาน</div>
+                  <div v-if="noBid.kpi.pct_of_screened !== null" class="text-xs text-slate-500 mt-0.5">{{ noBid.kpi.pct_of_screened }}% ของประกาศที่คัดกรอง ({{ noBid.kpi.screened }})</div>
+                </button>
+                <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3">
+                  <div class="text-sm text-slate-500">มูลค่าราคากลางรวม</div>
+                  <div class="text-2xl font-bold mt-0.5 text-slate-800">{{ moneyShort(noBid.kpi.value) }}</div>
+                  <div class="text-xs text-slate-500 mt-0.5">ที่ไม่ได้เข้าประมูล</div>
+                </div>
+                <button type="button" @click="openNoBidItems('ธุรการตัดตอนคัดกรอง', i => i.decider==='salesadmin')" class="text-left bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3 border-0 cursor-pointer hover:ring-teal-300">
+                  <div class="text-sm text-slate-500">ธุรการตัดตอนคัดกรอง</div>
+                  <div class="text-2xl font-bold mt-0.5 text-slate-800">{{ noBid.kpi.by_salesadmin }}</div>
+                  <div class="text-xs text-slate-500 mt-0.5">ตัดทิ้งเร็ว ไม่เสียแรง Sale</div>
+                </button>
+                <button type="button" @click="openNoBidItems('ตัดหลังมอบหมายให้ Sale', i => i.decider==='sale')" class="text-left bg-white rounded-2xl ring-1 ring-slate-100 px-4 py-3 border-0 cursor-pointer hover:ring-teal-300">
+                  <div class="text-sm text-slate-500">ตัดหลังมอบหมายให้ Sale</div>
+                  <div class="text-2xl font-bold mt-0.5" :class="noBid.kpi.by_sale ? 'text-rose-600' : 'text-slate-800'">{{ noBid.kpi.by_sale }}</div>
+                  <div class="text-xs text-slate-500 mt-0.5">เสียแรงไปแล้ว ควรน้อยที่สุด</div>
+                </button>
+              </div>
+
+              <!-- 1. แยกตามหมวด -->
+              <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4 mb-4">
+                <div class="font-bold text-slate-700">1. แยกตามหมวด — แก้อะไรได้</div>
+                <div class="text-xs text-slate-400 mb-3">กดที่หมวดเพื่อดูเหตุผลย่อย · กดเหตุผลเพื่อดูรายการงาน</div>
+                <div v-for="g in noBid.groups" :key="g.key" class="border-b border-slate-50 last:border-0">
+                  <button type="button" @click="noBidOpen[g.key] = !noBidOpen[g.key]"
+                    class="w-full grid grid-cols-[minmax(0,190px)_minmax(0,1fr)_auto] gap-3 items-center py-2 px-1 rounded-lg hover:bg-slate-50 bg-transparent border-0 cursor-pointer text-left">
+                    <span class="text-sm truncate" :class="g.controllable ? 'text-rose-700 font-semibold' : 'text-slate-700'">{{ noBidOpen[g.key] ? '▾' : '▸' }} {{ g.label }}<span v-if="g.controllable"> ⚠</span></span>
+                    <span class="h-4 rounded" :style="{ width: noBidBarWidth(g.count) + '%', background: noBidGroupColor(g.key), opacity: g.count ? 1 : 0.25 }"></span>
+                    <span class="text-sm text-slate-600 whitespace-nowrap text-right">{{ g.count }} งาน · {{ moneyShort(g.value) }}</span>
+                  </button>
+                  <div v-if="noBidOpen[g.key]" class="ml-5 mb-2 pl-3 border-l-2 border-slate-100">
+                    <div v-if="!g.reasons.length" class="text-xs text-slate-400 py-1">ไม่มีงานในหมวดนี้</div>
+                    <button v-for="r in g.reasons" :key="r.reason_id" type="button" @click="openNoBidItems(r.name, i => i.reason===r.name && i.group===g.key)"
+                      class="w-full flex justify-between gap-3 py-1 px-1 text-sm text-slate-600 hover:bg-slate-50 bg-transparent border-0 cursor-pointer text-left rounded">
+                      <span>{{ r.name }}</span><span class="whitespace-nowrap">{{ r.count }} งาน · {{ moneyShort(r.value) }}</span>
+                    </button>
+                    <div class="text-xs mt-1 inline-block px-2 py-0.5 rounded bg-teal-50 text-teal-800">แก้ที่: {{ g.fix }}</div>
+                  </div>
+                </div>
+                <p v-if="noBid.kpi.other_pct > 15" class="text-xs text-amber-700 mt-2 mb-0">หมวด "อื่นๆ" {{ noBid.kpi.other_pct }}% — เกิน 15% แปลว่ารายการเหตุผลยังไม่ครอบคลุม ควรเพิ่มเหตุผลใหม่ที่หน้าเหตุผลปิดงาน</p>
+              </div>
+
+              <div class="grid gap-4 lg:grid-cols-2 mb-4">
+                <!-- 2. ธุรการ กับ Sale -->
+                <div v-if="!isSaleUser && !assignedTo && decider==='all'" class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+                  <div class="font-bold text-slate-700">2. ธุรการ กับ Sale ตัดสิน</div>
+                  <div class="text-xs text-slate-400 mb-3">Sale ตัดหมวด ก. เยอะ = การคัดกรองหลวม</div>
+                  <div v-for="d in [{k:'salesadmin',l:'ธุรการ'},{k:'sale',l:'Sale'}]" :key="d.k" class="grid grid-cols-[60px_minmax(0,1fr)_40px] gap-3 items-center py-1.5">
+                    <span class="text-sm text-slate-700">{{ d.l }}</span>
+                    <div class="flex h-4 rounded overflow-hidden bg-slate-100">
+                      <div v-for="g in noBid.groups" :key="g.key" :style="{ width: noBidPct(noBid.by_decider[d.k].groups[g.key], noBid.by_decider[d.k].count) + '%', background: noBidGroupColor(g.key) }" :title="g.label + ' ' + noBid.by_decider[d.k].groups[g.key]"></div>
+                    </div>
+                    <span class="text-sm text-slate-600 text-right">{{ noBid.by_decider[d.k].count }}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-3 text-xs text-slate-500 mt-2">
+                    <span v-for="g in noBid.groups" :key="g.key" class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm inline-block" :style="{background: noBidGroupColor(g.key)}"></span>{{ g.label }}</span>
+                  </div>
+                </div>
+                <!-- 3. หมวด ค. แยกตาม Sale -->
+                <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+                  <div class="font-bold text-slate-700">3. หมวด ค. ความพร้อมภายใน แยกตาม Sale</div>
+                  <div class="text-xs text-slate-400 mb-3">วันจากวันมอบหมายถึงวันปิดรับ — น้อย = มอบหมายช้า</div>
+                  <div v-if="!noBid.internal_by_sale.length" class="text-sm text-slate-400 py-1">ไม่มีงานในหมวดนี้</div>
+                  <table v-else class="w-full text-sm">
+                    <thead><tr class="text-left text-slate-500 border-b border-slate-100"><th class="py-1.5 font-semibold">Sale</th><th class="py-1.5 font-semibold text-right">งาน</th><th class="py-1.5 font-semibold text-right">เฉลี่ย</th></tr></thead>
+                    <tbody>
+                      <tr v-for="r in noBid.internal_by_sale" :key="r.sale_name" class="border-b border-slate-50 cursor-pointer hover:bg-slate-50"
+                        @click="openNoBidItems('ความพร้อมภายใน · ' + r.sale_name, i => i.group==='internal' && i.decider==='sale' && i.person_name===r.sale_name)">
+                        <td class="py-1.5 text-slate-700">{{ r.sale_name }}</td><td class="py-1.5 text-right">{{ r.count }}</td>
+                        <td class="py-1.5 text-right" :class="r.avg_lead_days !== null && r.avg_lead_days <= 3 ? 'text-rose-600 font-semibold' : 'text-slate-600'">{{ r.avg_lead_days === null ? '-' : r.avg_lead_days + ' วัน' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <!-- 4. แนวโน้มรายเดือน -->
+                <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+                  <div class="font-bold text-slate-700">4. แนวโน้มรายเดือน</div>
+                  <div class="text-xs text-slate-400 mb-3">หลังปรับการคัดกรอง หมวด ก. ควรลดลง</div>
+                  <div v-if="!noBid.monthly.length" class="text-sm text-slate-400 py-1">ไม่มีข้อมูล</div>
+                  <div v-for="m in noBid.monthly" :key="m.ym" class="grid grid-cols-[70px_minmax(0,1fr)_32px] gap-3 items-center py-1">
+                    <span class="text-sm text-slate-600">{{ monthLabel(m.ym) }}</span>
+                    <div class="flex h-4 rounded overflow-hidden bg-slate-100" :style="{ width: noBidMonthWidth(m.total) + '%' }">
+                      <div v-for="g in noBid.groups" :key="g.key" :style="{ width: noBidPct(m.groups[g.key], m.total) + '%', background: noBidGroupColor(g.key) }"></div>
+                    </div>
+                    <span class="text-sm text-slate-600 text-right">{{ m.total }}</span>
+                  </div>
+                </div>
+                <!-- 5. หน่วยงานที่ไม่เข้าประมูลบ่อย -->
+                <div class="bg-white rounded-2xl ring-1 ring-slate-100 px-5 py-4">
+                  <div class="font-bold text-slate-700">5. หน่วยงานที่ไม่เข้าประมูลบ่อย</div>
+                  <div class="text-xs text-slate-400 mb-3">ตั้งแต่ 2 ครั้งขึ้นไป — ดูหมวด ข. เพื่อวางแผนเข้าพบ</div>
+                  <div v-if="!noBid.units.length" class="text-sm text-slate-400 py-1">ยังไม่มีหน่วยงานที่ไม่เข้าประมูล 2 ครั้งขึ้นไป</div>
+                  <table v-else class="w-full text-sm">
+                    <thead><tr class="text-left text-slate-500 border-b border-slate-100"><th class="py-1.5 font-semibold">หน่วยงาน</th><th class="py-1.5 font-semibold text-right">ครั้ง</th><th class="py-1.5 font-semibold">หมวดหลัก</th></tr></thead>
+                    <tbody>
+                      <tr v-for="u in noBid.units" :key="u.unit_name" class="border-b border-slate-50 cursor-pointer hover:bg-slate-50" @click="openNoBidItems(u.unit_name, i => i.unit_name===u.unit_name)">
+                        <td class="py-1.5 text-slate-700">{{ u.unit_name }}</td><td class="py-1.5 text-right">{{ u.count }}</td><td class="py-1.5 text-slate-600">{{ u.top_group_label }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p class="text-xs text-slate-400 mb-0 leading-relaxed">
+                นับ: ธุรการเลือก "ไม่เข้าประมูล" ตอนคัดกรอง + งานที่ยกเลิกด้วยเหตุผลไม่เข้าประมูลหลังมอบหมาย · ไม่นับงานที่หน่วยงาน/ลูกค้ายกเลิกหลังยื่นซอง · ช่วงเวลานับตามวันที่ตัดสิน
+              </p>
+            </template>
+          </template>
         </template>
       </main>
     </div>
@@ -247,6 +376,35 @@
                 <td class="py-2 px-3 text-right whitespace-nowrap">{{ moneyFull(d.value) }}</td>
                 <template v-if="modal.data.side==='lost'"><td class="py-2 px-3 whitespace-nowrap">{{ d.winner_name || '-' }}</td><td class="py-2 px-3 text-right whitespace-nowrap">{{ moneyFull(d.winning_price) }}</td><td class="py-2 px-3 text-right whitespace-nowrap">{{ gapText(d.gap_pct) }}</td></template>
                 <td class="py-2 px-3 whitespace-nowrap text-slate-600">{{ d.sale_name }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- รายการงานไม่เข้าประมูล (กดจากตัวเลขในแท็บไม่เข้าประมูล) — 2026-10-10 -->
+      <div v-if="modal.type==='nobid-items'" class="bg-white rounded-2xl w-full max-w-[1040px] shadow-2xl overflow-hidden my-8">
+        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ modal.data.title }}</h3>
+            <div class="text-sm text-slate-500">ไม่เข้าประมูล · {{ modal.data.rows.length }} งาน</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-x-auto">
+          <table class="w-full text-sm min-w-[860px]">
+            <thead><tr class="text-left text-slate-500 border-b border-slate-100">
+              <th class="py-2 px-3 font-semibold">รหัส / เลขที่โครงการ</th><th class="py-2 px-3 font-semibold">โครงการ / หน่วยงาน</th><th class="py-2 px-3 font-semibold">วันที่ตัดสิน</th>
+              <th class="py-2 px-3 font-semibold text-right">ราคากลาง</th><th class="py-2 px-3 font-semibold">เหตุผล</th><th class="py-2 px-3 font-semibold">ผู้ตัดสิน</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="(d, idx) in modal.data.rows" :key="idx" class="border-b border-slate-50 align-top">
+                <td class="py-2 px-3 whitespace-nowrap"><div v-if="d.project_code" class="font-mono text-xs text-purple-700">{{ d.project_code }}</div><div class="font-mono text-xs text-slate-400">{{ d.project_no }}</div></td>
+                <td class="py-2 px-3 text-slate-700"><div class="line-clamp-2">{{ d.project_name }}</div><div class="text-xs text-slate-400">{{ d.unit_name }}</div></td>
+                <td class="py-2 px-3 text-slate-600 min-w-[110px]">{{ formatDateThai(d.decided_date) }}</td>
+                <td class="py-2 px-3 text-right whitespace-nowrap">{{ moneyFull(d.price_median) }}</td>
+                <td class="py-2 px-3 text-slate-700"><div>{{ d.reason }}</div><div v-if="d.note" class="text-xs text-slate-500 mt-0.5">{{ d.note }}</div></td>
+                <td class="py-2 px-3 whitespace-nowrap text-slate-600">{{ d.decider==='salesadmin' ? 'ธุรการ' : 'Sale' }} · {{ d.person_name || '-' }}</td>
               </tr>
             </tbody>
           </table>
@@ -309,7 +467,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=71"></script>
+<script src="shared/app.js?v=74"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -324,6 +482,11 @@ createApp({
       channel: 'ebidding',
       channelOptions: [{ val: 'ebidding', label: 'งานประมูล' }, { val: 'sales', label: 'งานขายตรง' }, { val: 'all', label: 'ทั้งหมด (เทียบคู่)' }],
       tab: 'reasons',
+      // แท็บไม่เข้าประมูล (2026-10-10) — decider = ผู้ตัดสิน, noBidOpen = หมวดที่กางดูเหตุผลย่อย
+      noBid: null,
+      decider: 'all',
+      deciderOptions: [{ val: 'all', label: 'ทั้งหมด' }, { val: 'salesadmin', label: 'ธุรการคัดกรอง' }, { val: 'sale', label: 'หลังมอบหมายให้ Sale' }],
+      noBidOpen: {},
       period: 'year',
       periodOptions: [
         { val: 'month', label: 'เดือนนี้' }, { val: 'quarter', label: 'ไตรมาสนี้' }, { val: 'year', label: 'ปีนี้' },
@@ -336,6 +499,10 @@ createApp({
       comp: null,
       navHeight: 0, // ความสูงแถบ AppNav (มือถือ) ใช้เป็น top ของ header หน้านี้ตอน sticky — เหมือน bid-pipeline.html/sales-pipeline.html
     };
+  },
+  watch: {
+    // แท็บไม่เข้าประมูลใช้ข้อมูลคนละชุด — สลับเข้า/ออกแล้วโหลดชุดที่ต้องใช้ (ตัวกรองอาจเปลี่ยนระหว่างอยู่อีกแท็บ)
+    tab(v, old) { if (v === 'no_bid' || old === 'no_bid') this.loadAll(); },
   },
   computed: {
     isSaleUser() { return this.currentUser?.role === 'sale'; },
@@ -451,6 +618,7 @@ createApp({
     selectPeriod(val) { this.openDropdown = null; if (this.period === val) return; this.period = val; this.loadAll(); },
     selectSale(val) { this.openDropdown = null; if (this.isSaleUser || this.assignedTo === val) return; this.assignedTo = val; this.loadAll(); },
     async loadAll() {
+      if (this.tab === 'no_bid') return this.loadNoBid();
       this.loading = true;
       try {
         const base = this.filterQuery();
@@ -471,6 +639,34 @@ createApp({
       }
     },
 
+    // ─── แท็บไม่เข้าประมูล (2026-10-10) ───
+    async loadNoBid() {
+      this.loading = true;
+      try {
+        // เลือก Sale แล้ว = เหลือเฉพาะงานหลังมอบหมาย (ธุรการคัดกรองไม่มี Sale) — ตัวเลือกผู้ตัดสินถูกซ่อน จึงกลับเป็นทั้งหมด
+        if (this.assignedTo) this.decider = 'all';
+        const q = this.filterQuery(); q.set('action', 'no_bid'); q.set('decider', this.decider);
+        const res = await apiCall('GET', 'api/win_loss_analysis.php?' + q);
+        this.noBid = res.success ? res.data : null;
+        if (!res.success) await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+      } catch {
+        await this.showAlert('โหลดข้อมูลไม่สำเร็จ', 'error');
+      } finally {
+        this.loading = false;
+      }
+    },
+    setDecider(v) { if (this.decider === v) return; this.decider = v; this.loadNoBid(); },
+    // สีหมวด (คงที่ตามรหัสหมวด) — ค. ความพร้อมภายใน = แดง เพราะเราแก้ได้เอง
+    noBidGroupColor(key) { return { not_our_market: '#8b5cf6', uncompetitive: '#f97316', internal: '#ef4444', strategic: '#94a3b8', other: '#cbd5e1' }[key] || '#cbd5e1'; },
+    noBidBarWidth(count) { const max = Math.max(...(this.noBid?.groups || []).map(g => g.count), 1); return count ? Math.max(3, Math.round(count / max * 100)) : 2; },
+    noBidMonthWidth(total) { const max = Math.max(...(this.noBid?.monthly || []).map(m => m.total), 1); return Math.max(4, Math.round(total / max * 100)); },
+    noBidPct(n, total) { return total ? (n / total * 100) : 0; },
+    monthLabel(ym) { const [y, m] = ym.split('-').map(Number); return ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'][m] + ' ' + String(y + 543).slice(2); },
+    openNoBidItems(title, filterFn) {
+      const rows = (this.noBid?.items || []).filter(filterFn);
+      this.modal = { type: 'nobid-items', data: { title, rows } };
+    },
+
     async openDeals(ch, side, reason) {
       const q = this.filterQuery();
       q.set('action', 'deals'); q.set('channel', ch); q.set('result', side); q.set('reason_id', reason.reason_id);
@@ -489,6 +685,15 @@ createApp({
     // Excel ตามแท็บที่เปิดอยู่
     exportCurrentTab() {
       const periodLabel = this.periodOptions.find(p => p.val === this.period)?.label || '';
+      if (this.tab === 'no_bid') {
+        if (!this.noBid) return;
+        const groupLabel = k => this.noBid.groups.find(g => g.key === k)?.label || k;
+        const headers = ['รหัสงาน', 'เลขที่โครงการ', 'โครงการ', 'หน่วยงาน', 'วันที่ตัดสิน', 'ราคากลาง', 'หมวด', 'เหตุผล', 'หมายเหตุ', 'ผู้ตัดสิน', 'ชื่อ'];
+        const rows = this.noBid.items.map(i => [i.project_code || '', i.project_no, i.project_name, i.unit_name, i.decided_date, i.price_median,
+          groupLabel(i.group), i.reason, i.note || '', i.decider === 'salesadmin' ? 'ธุรการ' : 'Sale', i.person_name || '']);
+        this.exportExcel(`วิเคราะห์ไม่เข้าประมูล_${periodLabel}`, headers, rows);
+        return;
+      }
       if (this.tab === 'competitors') {
         if (!this.comp) return;
         const headers = ['คู่แข่ง', 'เจอ (ประมูล)', 'เจอ (ขายตรง)', 'เจอรวม', 'เราชนะ', 'แพ้ให้', 'Win rate (%)', 'มูลค่าที่แพ้', 'แพงกว่าเฉลี่ย (%)'];

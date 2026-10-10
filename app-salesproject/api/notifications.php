@@ -38,7 +38,11 @@ function listNotifications(PDO $db, array $user): void {
     ");
     $stmt->execute([$user['id']]);
     $rows = $stmt->fetchAll();
-    foreach ($rows as &$r) $r['is_read'] = (bool)$r['is_read'];
+    require_once __DIR__ . '/../includes/notify_helper.php';
+    foreach ($rows as &$r) {
+        $r['is_read'] = (bool)$r['is_read'];
+        $r['project_code'] = notifyRecordCode($db, $r['ref_type'], $r['ref_id']);   // กดกระดิ่งแล้วเปิดงานนั้นทันที (2026-10-10)
+    }
 
     $cntStmt = $db->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
     $cntStmt->execute([$user['id']]);

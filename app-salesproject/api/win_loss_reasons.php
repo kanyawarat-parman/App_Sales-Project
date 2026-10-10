@@ -6,6 +6,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/code_helper.php';
+require_once __DIR__ . '/../includes/win_loss_reason_helper.php';   // noBidGroups() — หมวดเหตุผลไม่เข้าประมูล (2026-10-10)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -16,6 +17,8 @@ switch ($method) {
     case 'GET':
         switch ($action) {
             case 'list': listWinLossReasons($db); break;
+            // หมวดเหตุผลไม่เข้าประมูล (รหัส → ชื่อ / แก้ที่ไหน) ให้หน้าเหตุผลปิดงานใช้เป็นตัวเลือก (2026-10-10)
+            case 'no_bid_groups': jsonResponse(true, noBidGroups()); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -36,7 +39,7 @@ switch ($method) {
 //   งานประมูลนับจาก project_assignments + งานขายตรงนับจาก pipeline_items (source_type ไม่ใช่ ebidding กันนับ mirror ซ้ำ)
 function listWinLossReasons(PDO $db): void {
     $rows = $db->query("
-        SELECT r.win_loss_reason_id, r.win_loss_reason_code, r.win_loss_type, r.applies_to, r.win_loss_reason_name, r.requires_winner, r.requires_note, r.sort_order, r.is_active,
+        SELECT r.win_loss_reason_id, r.win_loss_reason_code, r.win_loss_type, r.applies_to, r.win_loss_reason_name, r.requires_winner, r.requires_note, r.no_bid_group, r.sort_order, r.is_active,
                r.updated_at, uu.full_name AS updated_by_name,
                (SELECT COUNT(*) FROM project_assignments pa
                 WHERE pa.win_loss_reason_id = r.win_loss_reason_id
@@ -74,18 +77,24 @@ function winLossReasonFields(array $body): array {
     $requiresWinner = ($type === 'lost' && !empty($body['requires_winner'])) ? 1 : 0;
     // requires_note = ต้องกรอกรายละเอียดเพิ่มเติมเมื่อเลือกเหตุผลนี้ (เช่น อื่นๆ) ใช้ได้ทั้งชนะและแพ้ — เพิ่ม 2026-09-25 แทนการเช็คชื่อ "อื่นๆ" ในโค้ด
     $requiresNote = !empty($body['requires_note']) ? 1 : 0;
-    return [$type, $name, $requiresWinner, (int)($body['sort_order'] ?? 0), $appliesTo, $requiresNote];
+    // หมวด (เฉพาะไม่เข้าประมูล) — บังคับเลือกจากรหัสใน noBidGroups() / ชนะ-แพ้ ไม่มีหมวด = NULL (2026-10-10)
+    $group = null;
+    if ($type === 'no_bid') {
+        $group = (string)($body['no_bid_group'] ?? '');
+        if (!array_key_exists($group, noBidGroups())) jsonResponse(false, null, 'กรุณาเลือกหมวดของเหตุผล', 400);
+    }
+    return [$type, $name, $requiresWinner, (int)($body['sort_order'] ?? 0), $appliesTo, $requiresNote, $group];
 }
 
 function createWinLossReason(PDO $db, array $user): void {
-    [$type, $name, $requiresWinner, $sort, $appliesTo, $requiresNote] = winLossReasonFields(getJsonBody());
+    [$type, $name, $requiresWinner, $sort, $appliesTo, $requiresNote, $group] = winLossReasonFields(getJsonBody());
     $dup = $db->prepare('SELECT 1 FROM win_loss_reasons WHERE win_loss_type = ? AND win_loss_reason_name = ?');
     $dup->execute([$type, $name]);
     if ($dup->fetchColumn()) jsonResponse(false, null, "มีเหตุผล \"{$name}\" อยู่แล้ว", 409);
     // รหัสเหตุผลระบบออกให้เอง ไม่เปลี่ยน (แก้ไขไม่รับรหัสจากหน้าเว็บ) — กฎการสร้าง Database ข้อ 2 (2026-09-26)
     $code = nextWinLossReasonCode($db, (int)$user['id']);
-    $db->prepare('INSERT INTO win_loss_reasons (win_loss_reason_code, win_loss_type, applies_to, win_loss_reason_name, requires_winner, requires_note, sort_order, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-       ->execute([$code, $type, $appliesTo, $name, $requiresWinner, $requiresNote, $sort, $user['id'], $user['id']]);
+    $db->prepare('INSERT INTO win_loss_reasons (win_loss_reason_code, win_loss_type, applies_to, win_loss_reason_name, requires_winner, requires_note, no_bid_group, sort_order, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+       ->execute([$code, $type, $appliesTo, $name, $requiresWinner, $requiresNote, $group, $sort, $user['id'], $user['id']]);
     jsonResponse(true, ['win_loss_reason_id' => (int)$db->lastInsertId(), 'win_loss_reason_code' => $code], 'เพิ่มเหตุผลแล้ว');
 }
 
@@ -95,7 +104,7 @@ function updateWinLossReason(PDO $db, array $user): void {
     $body = getJsonBody();
     $id   = (int)($body['win_loss_reason_id'] ?? 0);
     if (!$id) jsonResponse(false, null, 'ไม่พบเหตุผลที่ต้องการแก้ไข', 400);
-    [$type, $name, $requiresWinner, $sort, $appliesTo, $requiresNote] = winLossReasonFields($body);
+    [$type, $name, $requiresWinner, $sort, $appliesTo, $requiresNote, $group] = winLossReasonFields($body);
     // เหตุผลที่มีงานใช้แล้วห้ามสลับผล ชนะ <-> แพ้ — งานเก่าที่อ้างรหัสนี้จะกลายเป็นเหตุผลผิดฝั่ง (เก็บเป็นรหัสตั้งแต่ 2026-09-25)
     $cur = $db->prepare('SELECT win_loss_type FROM win_loss_reasons WHERE win_loss_reason_id = ?');
     $cur->execute([$id]);
@@ -112,8 +121,8 @@ function updateWinLossReason(PDO $db, array $user): void {
     $dup = $db->prepare('SELECT 1 FROM win_loss_reasons WHERE win_loss_type = ? AND win_loss_reason_name = ? AND win_loss_reason_id <> ?');
     $dup->execute([$type, $name, $id]);
     if ($dup->fetchColumn()) jsonResponse(false, null, "มีเหตุผล \"{$name}\" อยู่แล้ว", 409);
-    $db->prepare('UPDATE win_loss_reasons SET win_loss_type = ?, applies_to = ?, win_loss_reason_name = ?, requires_winner = ?, requires_note = ?, sort_order = ?, updated_by = ? WHERE win_loss_reason_id = ?')
-       ->execute([$type, $appliesTo, $name, $requiresWinner, $requiresNote, $sort, $user['id'], $id]);
+    $db->prepare('UPDATE win_loss_reasons SET win_loss_type = ?, applies_to = ?, win_loss_reason_name = ?, requires_winner = ?, requires_note = ?, no_bid_group = ?, sort_order = ?, updated_by = ? WHERE win_loss_reason_id = ?')
+       ->execute([$type, $appliesTo, $name, $requiresWinner, $requiresNote, $group, $sort, $user['id'], $id]);
     jsonResponse(true, null, 'บันทึกเรียบร้อย');
 }
 

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>สรุปงาน</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<!-- หน้าสรุปงานแบบดูอย่างเดียว ไม่ต้อง login (ยืนยันจากผู้ใช้ 2026-10-10) — เปิดจากปุ่ม "ดูรายละเอียด" ใน LINE / อีเมล ผ่าน api/notify_click.php
+     เฉพาะเรื่องที่ admin เปิด "ดูโดยไม่ต้อง login" ในหน้าตั้งค่าการแจ้งเตือน / งานเดียว / หมดอายุ 7 วัน / ข้อมูลจาก api/notify_view.php
+     ไม่มีเมนู (ผู้ดูยังไม่ได้ login) — ทำงานต่อกดปุ่ม "เข้าระบบเพื่อทำงานต่อ" → login → เปิดงานนั้นในระบบ -->
+<div id="app" class="min-h-screen flex flex-col">
+  <header class="bg-white border-b border-slate-100 px-4 py-3 shadow-sm">
+    <div class="max-w-[640px] mx-auto font-bold text-slate-700">{{ brand }}</div>
+  </header>
+
+  <main class="flex-1 w-full max-w-[640px] mx-auto px-4 py-5">
+    <div v-if="loading" class="py-16 flex justify-center"><div class="spinner w-12 h-12"></div></div>
+
+    <!-- ดูไม่ได้: หมดอายุ / เรื่องนี้ต้อง login / ไม่พบ -->
+    <div v-else-if="error" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6 text-center space-y-4">
+      <div class="text-lg font-bold text-slate-700">{{ error }}</div>
+      <p class="text-base text-slate-500">เข้าระบบเพื่อดูรายละเอียดงานนี้</p>
+      <a :href="loginUrl" class="block w-full py-3.5 rounded-xl bg-teal-700 text-white text-lg font-semibold no-underline hover:bg-teal-800">เข้าระบบ</a>
+    </div>
+
+    <template v-else-if="view">
+      <h1 class="text-xl font-bold text-slate-800 leading-snug">{{ view.title }}</h1>
+      <div class="mt-1 text-sm font-semibold text-purple-700">{{ job.project_code }}</div>
+      <div class="mt-1 text-base text-slate-700 leading-relaxed">{{ job.title }}</div>
+
+      <!-- รายละเอียดงาน -->
+      <section class="mt-4 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 divide-y divide-slate-100">
+        <div v-for="row in detailRows" :key="row.label" class="flex gap-3 px-4 py-3 text-base">
+          <div class="w-[120px] shrink-0 text-slate-500">{{ row.label }}</div>
+          <div class="flex-1 font-semibold text-slate-700 break-words" :class="row.cls || ''">{{ row.value }}</div>
+        </div>
+      </section>
+
+      <!-- รายการสินค้าในประกาศ (งานประมูล — 2026-10-10) ข้อความตามต้นฉบับ แสดง 8 บรรทัดแรก ยาวกว่านั้นกด "ดูทั้งหมด" -->
+      <section v-if="itemLines.length" class="mt-5">
+        <h2 class="text-base font-bold text-slate-700 mb-2">รายการสินค้าในประกาศ</h2>
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 px-4 py-3">
+          <div class="text-base text-slate-700 leading-relaxed whitespace-pre-wrap break-words">{{ itemsShown }}</div>
+          <button v-if="itemLines.length > itemsPreviewLines" type="button" @click="itemsExpanded = !itemsExpanded"
+            class="mt-3 w-full py-2.5 rounded-xl bg-white ring-1 ring-slate-300 text-slate-700 text-base font-semibold border-0 cursor-pointer hover:bg-slate-50">
+            {{ itemsExpanded ? '▲ ย่อ' : '▼ ดูทั้งหมด (' + itemLines.length + ' บรรทัด)' }}
+          </button>
+        </div>
+      </section>
+
+      <!-- ประวัติสถานะ -->
+      <section v-if="job.history && job.history.length" class="mt-5">
+        <h2 class="text-base font-bold text-slate-700 mb-2">ประวัติสถานะ</h2>
+        <ol class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 px-4 py-3 space-y-2.5">
+          <li v-for="(h, i) in job.history" :key="i" class="flex gap-3 text-base">
+            <span class="mt-2 w-2.5 h-2.5 rounded-full shrink-0" :class="i === 0 ? 'bg-teal-600' : 'bg-slate-300'"></span>
+            <span class="w-[130px] shrink-0 text-slate-500">{{ formatDateTime(h.changed_at) }}</span>
+            <span class="text-slate-700" :class="i === 0 ? 'font-semibold' : ''">{{ h.status }}</span>
+          </li>
+        </ol>
+      </section>
+
+      <a :href="loginUrl" class="mt-6 block w-full py-3.5 rounded-xl bg-teal-700 text-white text-lg font-semibold text-center no-underline hover:bg-teal-800">เข้าระบบเพื่อทำงานต่อ</a>
+      <p class="mt-3 text-sm text-slate-500 text-center leading-relaxed">
+        หน้านี้ดูได้ถึง {{ formatDateThai(view.expires_at) }}<br>
+        สำหรับ{{ view.recipient }} เท่านั้น ห้ามส่งต่อ
+      </p>
+    </template>
+  </main>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=74"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      loading: true,
+      error: '',
+      view: null,
+      token: new URLSearchParams(window.location.search).get('t') || '',
+      loginNext: '',
+      itemsExpanded: false,
+      itemsPreviewLines: 8,
+      brand: (window.APP_CONFIG && window.APP_CONFIG.app_name) || 'Taiyo Sales Project',
+    };
+  },
+  computed: {
+    job() { return this.view ? this.view.job : {}; },
+    // รายการสินค้าในประกาศ — ตัดบรรทัดว่างหัว/ท้าย คงบรรทัดว่างคั่นกลาง (ตามต้นฉบับ)
+    itemLines() {
+      const text = String(this.job.items || '').replace(/\r\n?/g, '\n').replace(/^\s*\n+|\n+\s*$/g, '');
+      return text.trim() ? text.split('\n') : [];
+    },
+    itemsShown() {
+      const lines = this.itemsExpanded ? this.itemLines : this.itemLines.slice(0, this.itemsPreviewLines);
+      return lines.join('\n') + (!this.itemsExpanded && this.itemLines.length > this.itemsPreviewLines ? '\n…' : '');
+    },
+    // login แล้วกลับมาเปิดงานนั้น (api/notify_click.php → หน้างานพร้อม ?code=)
+    loginUrl() {
+      const next = this.loginNext || (this.token ? 'api/notify_click.php?t=' + this.token : '');
+      return 'login.html' + (next ? '?next=' + encodeURIComponent(next) : '');
+    },
+    // แถวรายละเอียด — แสดงเฉพาะช่องที่มีข้อมูล (งานที่ยังไม่จบไม่มีผู้ชนะ/ราคาผู้ชนะ)
+    detailRows() {
+      const j = this.job;
+      const isBid = this.view?.kind === 'bid';
+      const rows = [
+        { label: isBid ? 'หน่วยงาน' : 'ลูกค้า', value: j.client },
+        { label: 'ประเภทดีล', value: isBid ? '' : j.deal_type_name },   // งานขายตรงเท่านั้น (2026-10-10)
+        { label: 'หมวดสินค้า', value: isBid ? '' : j.product_category },
+        { label: 'แบรนด์', value: isBid ? '' : j.brand },
+        { label: 'Sale', value: j.sale_name },
+        { label: 'สถานะ', value: j.status_label },
+        { label: 'เหตุผล', value: j.reason },
+        { label: 'ผู้ชนะ', value: j.winner },
+        { label: isBid ? 'ราคาผู้ชนะ' : 'ราคาคู่แข่ง', value: Number(j.winning_price) > 0 ? this.formatPrice(j.winning_price) : '' },
+        { label: isBid ? 'ราคาเรา' : 'มูลค่า', value: Number(j.our_price) > 0 ? this.formatPrice(j.our_price) + this.gapText(j.price_gap_pct) : '' },
+        { label: 'ราคากลาง', value: isBid && Number(j.price_median) > 0 ? this.formatPrice(j.price_median) : '' },
+        { label: 'วันปิดรับซอง', value: j.close_date ? this.formatDateThai(j.close_date) : '' },
+        { label: 'วันคาดส่งมอบ', value: j.expected_delivery_date ? this.formatDateThai(j.expected_delivery_date) : '' },
+        { label: 'หมายเหตุ', value: j.note },
+      ];
+      return rows.filter(r => r.value);
+    },
+  },
+  async mounted() {
+    window.APP_CONFIG_READY?.then(cfg => { if (cfg?.app_name) this.brand = cfg.app_name; });
+    try {
+      const res = await apiCall('GET', 'api/notify_view.php?action=view&t=' + encodeURIComponent(this.token));
+      if (res.success) {
+        this.view = res.data;
+        this.loginNext = res.data.login_next;
+      } else {
+        this.loginNext = res.data?.login_next || '';
+        this.error = res.data?.reason === 'login_required' ? 'ลิงก์นี้หมดอายุแล้ว หรือต้องเข้าระบบก่อนดู' : (res.message || 'ไม่พบงานนี้');
+      }
+    } catch {
+      this.error = 'เปิดหน้านี้ไม่ได้';
+    }
+    this.loading = false;
+  },
+  methods: {
+    ...SharedMethods,
+    formatDateThai(d) { return formatDateThai(d); },
+    gapText(pct) {
+      if (pct === null || pct === undefined) return '';
+      return pct >= 0 ? ` (สูงกว่า ${Math.abs(pct)}%)` : ` (ต่ำกว่า ${Math.abs(pct)}%)`;
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

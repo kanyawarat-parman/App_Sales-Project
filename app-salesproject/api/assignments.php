@@ -881,6 +881,10 @@ function updateAssignment(PDO $db, array $user): void {
         if (in_array($body['status'], $lostStatuses, true) && !in_array($current['status'], $lostStatuses, true)) {
             notifyDealLost($db, 'bid', $id, $user);
         }
+        // Sale กดยกเลิกเอง → แจ้งธุรการขายให้ทราบผลด้วย (ยืนยันจากผู้ใช้ 2026-10-10)
+        if ($body['status'] === 'ยกเลิก' && $current['status'] !== 'ยกเลิก' && $user['role'] === 'sale') {
+            notifySaleCancelled($db, $id, $user);
+        }
     }
 
     // งานย้อนหลัง "ตรวจแล้ว" เฉพาะเมื่อเลื่อนสถานะ — บันทึกหมายเหตุ/ราคาเฉยๆ ไม่นับ (ยืนยันจากผู้ใช้ 2026-09-30)
@@ -951,7 +955,10 @@ function acceptAssignment(PDO $db, array $user): void {
 
     markImportReviewed($db, $user, null, (int)$current['announcement_id']);   // งานย้อนหลัง "ตรวจแล้ว" (2026-09-30)
     // Sale แจ้งไม่เข้าประมูล (สถานะยกเลิก) → แจ้งหัวหน้า (ยืนยันจากผู้ใช้ 2026-10-08 ให้แจ้งยกเลิกด้วย)
-    if ($newStatus === 'ยกเลิก') notifyDealLost($db, 'bid', $id, $user, true);
+    if ($newStatus === 'ยกเลิก') {
+        notifyDealLost($db, 'bid', $id, $user, true);
+        notifySaleCancelled($db, $id, $user, true);   // แจ้งธุรการขายให้ทราบผล (2026-10-10)
+    }
     jsonResponse(true, ['status' => $newStatus], 'บันทึกผลสำเร็จ');
 }
 

@@ -1573,7 +1573,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=71"></script>
+<script src="shared/app.js?v=74"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1884,7 +1884,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     this.loadContactRoles();
     this.loadCompetitors();
     this.loadWinLossReasons();
-    this.loadSpKanban();
+    this.loadSpKanban().then(() => this.openSpFormFromLink());   // ลิงก์ ?code= → เปิดดีลนั้น (2026-10-10)
 
     // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky กันซ้อนทับ (เหมือน bid-pipeline.html)
     // ใช้ ResizeObserver แทน setTimeout เดา timing — เดิมวัดตอน mounted() แล้วสุ่มเสี่ยงได้ค่าตอน Tailwind CDN ยังฉีด style
@@ -2361,6 +2361,16 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         this.loadSpKanban();
         await this.showAlert('บันทึกว่าตรวจแล้ว — ยังเป็นใบเสนอราคาอยู่', 'success');
       } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    // เปิดดีลจากลิงก์ ?code= (ปุ่มใน LINE / อีเมล / กระดิ่ง — 2026-10-10) — หาการ์ดจากรหัสงานในข้อมูลที่โหลดแล้ว
+    // ไม่พบ (ดีลของคนอื่นที่ไม่มีสิทธิ์เห็น / ถูกลบ) → อยู่หน้ารายการตามปกติ + แจ้ง
+    async openSpFormFromLink() {
+      const code = takeLinkCode();
+      if (!code) return;
+      const card = this.spTableData.find(c => c.project_code === code);
+      if (card) await this.openSpForm(card);
+      else await this.showAlert(`ไม่พบดีล ${code} หรือคุณไม่มีสิทธิ์ดูดีลนี้`, 'error');
     },
 
     async openSpForm(card) {

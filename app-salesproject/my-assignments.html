@@ -394,7 +394,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=71"></script>
+<script src="shared/app.js?v=74"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -473,6 +473,7 @@ createApp({
     } catch { window.location.href = 'login.html'; return; }
     this.authReady = true;
     await this.loadAssignments();
+    await this.openDetailFromLink();   // ลิงก์ ?code= จาก LINE / อีเมล → เปิดรายละเอียดงานนั้น (2026-10-10)
   },
   methods: {
     ...SharedMethods,

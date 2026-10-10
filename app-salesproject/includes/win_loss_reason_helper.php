@@ -37,3 +37,18 @@ function winLossNoteError(array $reason, array $body): ?string {
     }
     return null;
 }
+
+/**
+ * หมวดเหตุผลไม่เข้าประมูล (win_loss_reasons.no_bid_group — sql/add_no_bid_reason_group.sql, ยืนยันจากผู้ใช้ 2026-10-10)
+ * จัดตาม "สิ่งที่ต้องแก้" (Bid / No-Bid analysis) — รหัสตายตัว โค้ดเช็คจากรหัส ไม่เช็คชื่อไทย / ลำดับ = ลำดับแสดงผล
+ * fix = แก้ที่ไหน (แสดงในหน้าวิเคราะห์) / controllable = เราแก้ได้เอง (เน้นสีเตือน)
+ */
+function noBidGroups(): array {
+    return [
+        'not_our_market' => ['label' => 'ก. ไม่ใช่ตลาดเรา',   'fix' => 'ปรับคำค้นและการคัดกรองตอนนำเข้าประกาศ',          'controllable' => false],
+        'uncompetitive'  => ['label' => 'ข. แข่งไม่ได้',       'fix' => 'ดูหน่วยงานที่เจอบ่อย เข้าพบหรือเสนอสเปกล่วงหน้า', 'controllable' => false],
+        'internal'       => ['label' => 'ค. ความพร้อมภายใน',  'fix' => 'มอบหมายให้เร็วขึ้น เกลี่ยงาน เตรียมตัวอย่างล่วงหน้า', 'controllable' => true],
+        'strategic'      => ['label' => 'ง. กลยุทธ์',          'fix' => 'ไม่ใช่การเสียงาน — นับแยก',                        'controllable' => false],
+        'other'          => ['label' => 'จ. อื่นๆ',            'fix' => 'เกิน 15–20% ให้เพิ่มเหตุผลใหม่ในหน้าเหตุผลปิดงาน',   'controllable' => false],
+    ];
+}

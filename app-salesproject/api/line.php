@@ -19,6 +19,12 @@ function lineTokenConfigured(): bool {
  * - ไม่มี $url → ข้อความธรรมดา
  * คืนค่า ['ok' => bool, 'status' => HTTP code, 'error' => สาเหตุภาษาไทย|null]
  */
+// ให้ LINE เปิดลิงก์ในเบราว์เซอร์ของมือถือ (Chrome / Safari) แทนเบราว์เซอร์ใน LINE — ใช้การ login เดียวกับที่ผู้ใช้เปิดเว็บเอง (2026-10-10)
+// openExternalBrowser=1 เป็นพารามิเตอร์ที่ LINE รองรับ (LINE ตัดออกก่อนเปิด / หน้าเว็บไม่ต้องอ่าน)
+function lineExternalUrl(string $url): string {
+    return $url . (strpos($url, '?') === false ? '?' : '&') . 'openExternalBrowser=1';
+}
+
 function sendLinePush(string $lineUserId, string $title, string $body, ?string $url = null): array {
     if (!lineTokenConfigured()) return ['ok' => false, 'status' => 0, 'error' => 'ยังไม่ได้ตั้ง LINE Token (LINE_TOKEN) ในระบบ'];
     if (!isValidLineUserId($lineUserId)) return ['ok' => false, 'status' => 0, 'error' => 'รหัส LINE ของผู้รับไม่ถูกต้อง (ต้องขึ้นต้นด้วย U ตามด้วยตัวอักษร 32 ตัว)'];
@@ -35,7 +41,7 @@ function sendLinePush(string $lineUserId, string $title, string $body, ?string $
                 ]],
                 'footer' => ['type' => 'box', 'layout' => 'vertical', 'contents' => [
                     ['type' => 'button', 'style' => 'primary', 'color' => '#0f766e', 'height' => 'sm',
-                     'action' => ['type' => 'uri', 'label' => 'ดูรายละเอียด', 'uri' => $url]],
+                     'action' => ['type' => 'uri', 'label' => 'ดูรายละเอียด', 'uri' => lineExternalUrl($url)]],
                 ]],
             ],
         ];

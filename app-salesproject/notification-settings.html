@@ -36,62 +36,89 @@
           <button v-for="t in tabs" :key="t.val" type="button" @click="switchTab(t.val)"
             class="px-3.5 py-1.5 rounded-full text-sm font-semibold border-0 cursor-pointer transition-all"
             :class="tab === t.val ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">{{ t.label }}</button>
+          <!-- คำอธิบายหน้านี้เปิดเป็น modal (ยืนยันจากผู้ใช้ 2026-10-10 "จะดูค่อยกดดู" — แบบเดียวกับ delivery-forecast.html / usage-report.html) -->
+          <button v-if="tab === 'settings'" type="button" @click="helpOpen = true"
+            class="ml-auto bg-transparent border-0 cursor-pointer text-sm text-slate-500 hover:text-teal-700 whitespace-nowrap">ⓘ ตั้งค่าหน้านี้ทำงานอย่างไร?</button>
         </div>
 
         <template v-if="tab === 'settings'">
-        <!-- คำอธิบาย (สีเทา ไม่มีกรอบ) -->
-        <div class="text-sm text-slate-500 mb-4 space-y-1 max-w-[860px]">
-          <p>เลือกว่าแต่ละเรื่องจะส่ง <b class="text-slate-600">อีเมล</b> และ <b class="text-slate-600">LINE</b> หรือไม่ — <b class="text-slate-600">กระดิ่งในระบบขึ้นทุกเรื่องเสมอ</b> (เป็นหลักฐานว่าแจ้งแล้ว)</p>
-          <p>ผู้รับจะได้อีเมล / LINE เมื่อ <b class="text-slate-600">เรื่องนั้นเปิดไว้ในหน้านี้</b> และ <b class="text-slate-600">ผู้รับตั้งรับช่องทางนั้น</b> ในหน้า
-            <a href="users.html" class="text-teal-700 font-semibold underline underline-offset-2">ผู้ใช้งาน</a> (เปิดแจ้งเตือน + เลือก LINE / Email / ทั้งคู่)</p>
-          <p v-if="receivers">ตอนนี้มีผู้ใช้ตั้งรับ <b class="text-slate-600">อีเมล {{ receivers.email }} คน</b> · <b class="text-slate-600">LINE {{ receivers.line }} คน</b> (นับเฉพาะคนที่ใส่อีเมล / LINE User ID แล้ว)</p>
-        </div>
+        <!-- คำอธิบายหน้านี้อยู่ใน modal "ตั้งค่าหน้านี้ทำงานอย่างไร?" ท้ายหน้า (2026-10-10) -->
 
         <div v-if="loadError" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-6 text-sm text-red-600">{{ loadError }}</div>
 
-        <div v-else class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 overflow-hidden">
-          <div v-if="loading" class="p-10 flex justify-center"><div class="spinner w-10 h-10"></div></div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full min-w-[680px] text-sm">
-              <thead>
-                <tr class="bg-slate-50 text-slate-500">
-                  <th class="text-left font-semibold px-5 py-3">เรื่องที่แจ้งเตือน</th>
-                  <th class="font-semibold px-3 py-3 w-[110px]">กระดิ่ง</th>
-                  <th class="font-semibold px-3 py-3 w-[110px]">อีเมล</th>
-                  <th class="font-semibold px-3 py-3 w-[110px]">LINE</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="t in types" :key="t.notification_type_id" class="border-t border-slate-100"
-                  :class="isChanged(t) ? 'bg-amber-50/60' : ''">
-                  <td class="px-5 py-3 align-top">
-                    <div class="font-semibold text-slate-700">{{ t.notification_type_name }}</div>
-                    <div class="text-xs text-slate-500 mt-0.5 leading-relaxed">{{ t.notification_type_description }}</div>
-                  </td>
-                  <!-- กระดิ่ง: ขึ้นเสมอ ปิดไม่ได้ -->
-                  <td class="px-3 py-3 text-center align-middle">
-                    <div class="text-xs text-slate-400 font-semibold">ขึ้นเสมอ</div>
-                  </td>
-                  <td class="px-3 py-3 text-center align-middle">
-                    <label v-if="Number(t.email_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
-                      <input type="checkbox" v-model="t.send_email" class="w-5 h-5 accent-teal-600 cursor-pointer">
-                      <span class="text-xs font-semibold" :class="t.send_email ? 'text-teal-700' : 'text-slate-400'">{{ t.send_email ? 'ส่ง' : 'ไม่ส่ง' }}</span>
-                    </label>
-                    <div v-else class="text-xs text-slate-400">ไม่มีแบบอีเมล</div>
-                  </td>
-                  <td class="px-3 py-3 text-center align-middle">
-                    <label v-if="Number(t.line_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
-                      <input type="checkbox" v-model="t.send_line" class="w-5 h-5 accent-teal-600 cursor-pointer">
-                      <span class="text-xs font-semibold" :class="t.send_line ? 'text-teal-700' : 'text-slate-400'">{{ t.send_line ? 'ส่ง' : 'ไม่ส่ง' }}</span>
-                    </label>
-                    <div v-else class="text-xs text-slate-400">—</div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+        <template v-else>
+          <div v-if="loading" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-10 flex justify-center"><div class="spinner w-10 h-10"></div></div>
+          <template v-else>
+          <!-- 1 กลุ่มผู้รับ = 1 กล่อง เว้นระยะห่างให้แยกกลุ่มชัด (ผู้ใช้ยืนยัน 2026-10-10 — แถวหัวกลุ่มในตารางเดียวอ่านแยกไม่ออก) -->
+          <div class="space-y-6">
+            <section v-for="g in typeGroups" :key="g.role" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
+              <div class="px-5 py-4 border-b-2 border-slate-200 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div>
+                  <h2 class="text-lg font-bold text-slate-800">แจ้ง {{ g.label }}</h2>
+                  <div v-if="g.rec" class="text-sm text-slate-500">
+                    {{ g.label }} {{ g.rec.users }} คน ·
+                    <span :class="receiverLow(g.rec, g.rec.email) ? 'text-red-600 font-semibold' : ''">รับอีเมล {{ g.rec.email }}</span> ·
+                    <span :class="receiverLow(g.rec, g.rec.line) ? 'text-red-600 font-semibold' : ''">รับ LINE {{ g.rec.line }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <!-- คอลัมน์ช่องทางแคบลง + หัวคอลัมน์ตัดบรรทัดได้ ให้ 5 คอลัมน์พอดีจอถึง ~900px (เดิมถูกตัดเมื่อจอแคบกว่า ~1000px — 2026-10-10) -->
+                <table class="w-full min-w-[580px] text-sm">
+                  <thead>
+                    <tr class="bg-slate-50 text-slate-500">
+                      <th class="text-left font-semibold px-5 py-2.5">เรื่องที่แจ้งเตือน</th>
+                      <th class="font-semibold px-2 py-2.5 w-[84px]">กระดิ่ง</th>
+                      <th class="font-semibold px-2 py-2.5 w-[84px]">อีเมล</th>
+                      <th class="font-semibold px-2 py-2.5 w-[84px]">LINE</th>
+                      <th v-if="publicViewReady" class="font-semibold px-2 py-2.5 w-[96px] leading-tight">ดูโดยไม่ต้อง<br>login</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="t in g.items" :key="t.notification_type_id" class="border-t border-slate-100"
+                      :class="isChanged(t) ? 'bg-amber-50/60' : ''">
+                      <td class="px-5 py-3 align-top">
+                        <div class="font-semibold text-slate-700">{{ t.notification_type_name }}</div>
+                        <div class="text-xs text-slate-500 mt-0.5 leading-relaxed">{{ t.notification_type_description }}</div>
+                      </td>
+                      <!-- กระดิ่ง: ขึ้นเสมอ ปิดไม่ได้ -->
+                      <td class="px-3 py-3 text-center align-middle">
+                        <div class="text-xs text-slate-400 font-semibold">ขึ้นเสมอ</div>
+                      </td>
+                      <td class="px-3 py-3 text-center align-middle">
+                        <label v-if="Number(t.email_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                          <input type="checkbox" v-model="t.send_email" class="w-5 h-5 accent-teal-600 cursor-pointer">
+                          <span class="text-xs font-semibold" :class="t.send_email ? 'text-teal-700' : 'text-slate-400'">{{ t.send_email ? 'ส่ง' : 'ไม่ส่ง' }}</span>
+                        </label>
+                        <div v-else class="text-xs text-slate-400">ไม่มีแบบอีเมล</div>
+                      </td>
+                      <td class="px-3 py-3 text-center align-middle">
+                        <label v-if="Number(t.line_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                          <input type="checkbox" v-model="t.send_line" class="w-5 h-5 accent-teal-600 cursor-pointer">
+                          <span class="text-xs font-semibold" :class="t.send_line ? 'text-teal-700' : 'text-slate-400'">{{ t.send_line ? 'ส่ง' : 'ไม่ส่ง' }}</span>
+                        </label>
+                        <div v-else class="text-xs text-slate-400">—</div>
+                      </td>
+                      <!-- ดูหน้าสรุปโดยไม่ต้อง login (2026-10-10) — เรื่องที่เป็นรายการหลายงานติ๊กไม่ได้ -->
+                      <td v-if="publicViewReady" class="px-3 py-3 text-center align-middle">
+                        <label v-if="Number(t.public_view_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                          <input type="checkbox" v-model="t.public_view" class="w-5 h-5 accent-teal-600 cursor-pointer">
+                          <span class="text-xs font-semibold" :class="t.public_view ? 'text-teal-700' : 'text-slate-400'">{{ t.public_view ? 'เปิด' : 'ปิด' }}</span>
+                        </label>
+                        <div v-else class="text-xs text-slate-400">—</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
 
-          <div v-if="!loading" class="flex items-center justify-between gap-3 flex-wrap px-5 py-4 border-t border-slate-100">
+          <!-- แถบบันทึกอันเดียว ท้ายทุกกลุ่ม -->
+          <div class="mt-6 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 flex items-center justify-between gap-3 flex-wrap px-5 py-4">
             <div class="text-sm text-slate-500">
               <span v-if="changedCount" class="text-amber-700 font-semibold">มีการเปลี่ยนแปลง {{ changedCount }} เรื่อง ยังไม่ได้บันทึก</span>
               <span v-else-if="lastUpdated">แก้ไขล่าสุด {{ formatDateTime(lastUpdated.updated_at) }}{{ lastUpdated.updated_by_name ? ' โดย ' + lastUpdated.updated_by_name : '' }}</span>
@@ -103,7 +130,8 @@
                 class="px-5 py-2 rounded-xl text-sm font-semibold bg-teal-700 text-white hover:bg-teal-800 border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">{{ saving ? 'กำลังบันทึก…' : 'บันทึก' }}</button>
             </div>
           </div>
-        </div>
+          </template>
+        </template>
 
         <p class="text-xs text-slate-400 mt-3 max-w-[860px]">ต้องการแจ้งเตือนเรื่องใหม่ (เช่น ชนะงานแล้วแจ้งหัวหน้า) ต้องเพิ่มในโปรแกรมก่อน จึงจะขึ้นในรายการนี้ · LINE OA มีโควตาข้อความต่อเดือน ควรเปิด LINE เฉพาะเรื่องที่ต้องทำทันที</p>
         </template>
@@ -134,13 +162,19 @@
 
             <!-- ตัวกรอง -->
             <div class="flex items-center gap-2 flex-wrap mb-3">
+              <select v-model="histFilter.role" @change="changeHistRole" class="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
+                <option value="">กลุ่มผู้รับ: ทุกกลุ่ม</option>
+                <option v-for="(label, role) in roleLabels" :key="role" :value="role">แจ้ง {{ label }}</option>
+              </select>
               <select v-model="histFilter.user_id" @change="loadHistory" class="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
                 <option value="">ผู้รับ: ทุกคน</option>
-                <option v-for="u in hist.users" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                <option v-for="u in histUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
               </select>
               <select v-model="histFilter.type" @change="loadHistory" class="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
                 <option value="">เรื่อง: ทุกเรื่อง</option>
-                <option v-for="t in types" :key="t.notification_type_id" :value="t.notification_type_id">{{ t.notification_type_name }}</option>
+                <optgroup v-for="g in histTypeGroups" :key="g.role" :label="'แจ้ง ' + g.label">
+                  <option v-for="t in g.items" :key="t.notification_type_id" :value="t.notification_type_id">{{ t.notification_type_name }}</option>
+                </optgroup>
               </select>
               <select v-model="histFilter.status" @change="loadHistory" class="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
                 <option value="">สถานะ: ทั้งหมด</option>
@@ -173,7 +207,9 @@
                     <tr v-for="g in hist.groups" :key="g.key" class="border-t border-slate-100 align-top">
                       <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{{ formatDateTime(g.created_at) }}</td>
                       <td class="px-3 py-3">
-                        <div class="font-semibold text-slate-700">{{ g.user_name }}</div>
+                        <div class="font-semibold text-slate-700 flex items-center gap-1.5 flex-wrap">{{ g.user_name }}
+                          <span v-if="roleLabels[g.user_role]" class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500">{{ roleLabels[g.user_role] }}</span>
+                        </div>
                         <div class="text-xs text-slate-500">{{ g.type_name }}</div>
                         <div v-if="g.body" class="text-xs text-slate-400 mt-0.5 line-clamp-2">{{ g.body }}</div>
                       </td>
@@ -213,12 +249,32 @@
       </main>
     </div>
 
+    <!-- วิธีใช้หน้าตั้งค่าการแจ้งเตือน (แบบเดียวกับ modal คำอธิบายใน delivery-forecast.html) -->
+    <div v-if="helpOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="helpOpen = false">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">วิธีใช้หน้าตั้งค่าการแจ้งเตือน</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="helpOpen = false">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>เลือกว่าแต่ละเรื่องจะส่ง <b class="text-slate-700">อีเมล</b> และ <b class="text-slate-700">LINE</b> หรือไม่ — <b class="text-slate-700">กระดิ่งในระบบขึ้นทุกเรื่องเสมอ</b> (เป็นหลักฐานว่าแจ้งแล้ว)</p>
+          <p>ผู้รับจะได้อีเมล / LINE เมื่อ <b class="text-slate-700">เรื่องนั้นเปิดไว้ในหน้านี้</b> และ <b class="text-slate-700">ผู้รับตั้งรับช่องทางนั้น</b> ในหน้า
+            <a href="users.html" class="text-teal-700 font-semibold underline underline-offset-2">ผู้ใช้งาน</a> (เปิดแจ้งเตือน + เลือก LINE / Email / ทั้งคู่)</p>
+          <p v-if="publicViewReady"><b class="text-slate-700">ดูโดยไม่ต้อง login</b> = กดปุ่มใน LINE / อีเมล แล้วเห็นหน้าสรุปงานนั้นทันที (ดูอย่างเดียว หมดอายุ {{ publicViewDays }} วัน) — ปิด = ต้อง login ก่อน แล้วเปิดงานนั้นให้</p>
+          <p>แบ่งเป็นกลุ่มตาม <b class="text-slate-700">ผู้รับ</b> — หัวกลุ่มบอกจำนวนคนที่รับได้จริง (นับเฉพาะคนที่ใส่อีเมล / LINE User ID แล้ว) <span class="text-red-600">ตัวเลขสีแดง</span> = รับได้ไม่ถึงครึ่งของกลุ่ม</p>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="helpOpen = false">ปิด</button>
+        </div>
+      </div>
+    </div>
+
     <app-modal ref="appModal"></app-modal>
   </template>
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=71"></script>
+<script src="shared/app.js?v=74"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -233,17 +289,41 @@ createApp({
       types: [],        // แถวที่แสดง (แก้ได้)
       original: {},     // ค่าที่บันทึกไว้ ใช้เทียบว่าเปลี่ยนอะไรบ้าง — key = notification_type_id
       receivers: null,
+      publicViewReady: false,   // รัน sql/add_notification_public_view.sql แล้ว → แสดงคอลัมน์ "ดูโดยไม่ต้อง login" (2026-10-10)
+      publicViewDays: 7,
+      helpOpen: false,  // modal วิธีใช้หน้านี้ (2026-10-10)  // จำนวนผู้รับต่อกลุ่ม { sale: {label, users, email, line}, ... } (แยกตาม role 2026-10-10)
       // แท็บประวัติการส่ง (2026-10-08)
       tab: 'settings',
       tabs: [{ val: 'settings', label: 'ตั้งค่าเรื่องที่แจ้งเตือน' }, { val: 'history', label: 'ประวัติการส่ง' }],
       hist: { summary: {}, groups: [], users: [], total: 0 },
-      histFilter: { user_id: '', type: '', status: '', days: 7 },
+      histFilter: { role: '', user_id: '', type: '', status: '', days: 7 },
       histLoading: false,
       histError: '',
     };
   },
   computed: {
     changedCount() { return this.types.filter(t => this.isChanged(t)).length; },
+    // ชื่อกลุ่มผู้รับ เรียงตามลำดับจาก API (sale → ธุรการขาย → หัวหน้า)
+    roleLabels() {
+      return Object.fromEntries(Object.entries(this.receivers || {}).map(([role, r]) => [role, r.label]));
+    },
+    // เรื่องแจ้งเตือนแบ่งกลุ่มตามผู้รับ — เรื่องที่ไม่ระบุผู้รับไปอยู่กลุ่ม "อื่นๆ" ท้ายสุด (กันหายจากหน้าจอ)
+    typeGroups() {
+      const groups = Object.entries(this.roleLabels).map(([role, label]) => ({
+        role, label, rec: this.receivers[role], items: this.types.filter(t => t.recipient === role),
+      }));
+      const others = this.types.filter(t => !this.roleLabels[t.recipient]);
+      if (others.length) groups.push({ role: 'other', label: 'อื่นๆ', rec: null, items: others });
+      return groups.filter(g => g.items.length);
+    },
+    // แท็บประวัติ: รายชื่อผู้รับ / เรื่อง ตามกลุ่มผู้รับที่เลือก
+    histUsers() {
+      const users = this.hist.users || [];
+      return this.histFilter.role ? users.filter(u => u.role === this.histFilter.role) : users;
+    },
+    histTypeGroups() {
+      return this.histFilter.role ? this.typeGroups.filter(g => g.role === this.histFilter.role) : this.typeGroups;
+    },
     // แถวที่แก้ไขล่าสุด (แสดงผู้แก้/เวลา)
     lastUpdated() {
       return [...this.types].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0] || null;
@@ -280,6 +360,17 @@ createApp({
       this.hist = res.data;
     },
 
+    // เปลี่ยนกลุ่มผู้รับ: ล้างผู้รับ / เรื่องที่ไม่อยู่ในกลุ่มใหม่ แล้วโหลดใหม่
+    async changeHistRole() {
+      const role = this.histFilter.role;
+      if (role && this.histFilter.user_id && !this.histUsers.some(u => String(u.id) === String(this.histFilter.user_id))) this.histFilter.user_id = '';
+      if (role && this.histFilter.type && !this.types.some(t => t.notification_type_id === this.histFilter.type && t.recipient === role)) this.histFilter.type = '';
+      await this.loadHistory();
+    },
+
+    // รับได้ไม่ถึงครึ่งของกลุ่ม → แสดงสีแดง
+    receiverLow(rec, count) { return rec.users > 0 && count * 2 < rec.users; },
+
     statusLabel(st) { return { sent: 'ส่งแล้ว', failed: 'ไม่สำเร็จ', skipped: 'ไม่ได้ส่ง', pending: 'กำลังส่ง' }[st] || st; },
     statusClass(st) {
       return { sent: 'bg-emerald-50 text-emerald-700', failed: 'bg-red-50 text-red-700', skipped: 'bg-amber-50 text-amber-700', pending: 'bg-slate-100 text-slate-500' }[st] || 'bg-slate-100 text-slate-500';
@@ -291,13 +382,15 @@ createApp({
       this.loading = false;
       if (!res.success) { this.loadError = res.message || 'โหลดข้อมูลไม่สำเร็จ'; return; }
       this.receivers = res.data.receivers;
-      this.types = res.data.types.map(t => ({ ...t, send_email: Number(t.send_email) === 1, send_line: Number(t.send_line) === 1 }));
-      this.original = Object.fromEntries(this.types.map(t => [t.notification_type_id, { send_email: t.send_email, send_line: t.send_line }]));
+      this.publicViewReady = !!res.data.public_view_ready;
+      this.publicViewDays = res.data.public_view_days || 7;
+      this.types = res.data.types.map(t => ({ ...t, send_email: Number(t.send_email) === 1, send_line: Number(t.send_line) === 1, public_view: Number(t.public_view) === 1 }));
+      this.original = Object.fromEntries(this.types.map(t => [t.notification_type_id, { send_email: t.send_email, send_line: t.send_line, public_view: t.public_view }]));
     },
 
     isChanged(t) {
       const o = this.original[t.notification_type_id];
-      return !!o && (o.send_email !== t.send_email || o.send_line !== t.send_line);
+      return !!o && (o.send_email !== t.send_email || o.send_line !== t.send_line || o.public_view !== t.public_view);
     },
 
     resetChanges() {
@@ -312,13 +405,14 @@ createApp({
         const parts = [];
         if (o.send_email !== t.send_email) parts.push(`อีเมล ${o.send_email ? 'ส่ง' : 'ไม่ส่ง'} → ${t.send_email ? 'ส่ง' : 'ไม่ส่ง'}`);
         if (o.send_line !== t.send_line)   parts.push(`LINE ${o.send_line ? 'ส่ง' : 'ไม่ส่ง'} → ${t.send_line ? 'ส่ง' : 'ไม่ส่ง'}`);
+        if (o.public_view !== t.public_view) parts.push(`ดูโดยไม่ต้อง login ${o.public_view ? 'เปิด' : 'ปิด'} → ${t.public_view ? 'เปิด' : 'ปิด'}`);
         return `• ${t.notification_type_name}: ${parts.join(', ')}`;
       });
       const ok = await this.showConfirm('บันทึกการตั้งค่าการแจ้งเตือน?', lines.join('\n') + '\n\nมีผลกับการแจ้งเตือนครั้งถัดไปทันที', 'บันทึก');
       if (!ok) return;
       this.saving = true;
       const res = await apiCall('POST', 'api/notification_types.php?action=save', {
-        items: changed.map(t => ({ notification_type_id: t.notification_type_id, send_email: t.send_email ? 1 : 0, send_line: t.send_line ? 1 : 0 })),
+        items: changed.map(t => ({ notification_type_id: t.notification_type_id, send_email: t.send_email ? 1 : 0, send_line: t.send_line ? 1 : 0, public_view: t.public_view ? 1 : 0 })),
       });
       this.saving = false;
       if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }

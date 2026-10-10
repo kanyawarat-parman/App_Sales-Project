@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คำเตือนคัดกรองประกาศ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="screening-keywords" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          คำเตือนคัดกรองประกาศ
+        </h1>
+      </header>
+
+      <!-- คำเตือนคัดกรองประกาศ (ยืนยันจากผู้ใช้ 2026-10-10) — ใช้แสดงป้ายเตือนในหน้า "ประกาศวันนี้" จาก % เฟอร์นิเจอร์ + คำในชื่อโครงการ
+           ผลในอดีต = ประกาศที่ตัดสินแล้ว (ไม่รวมงานย้อนหลัง) ว่ากี่ครั้งที่ "ไม่ใช่ตลาดเรา" (หมวด ก. ของเหตุผลไม่เข้าประมูล) — ระบบนับเองทุกครั้งที่เปิดหน้า
+           admin + ธุรการขาย แก้ได้ / ไม่มีการลบ ใช้ปิดแทน -->
+      <main class="flex-1 w-full max-w-[1100px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <!-- คำอธิบายหน้านี้ + ข้อแนะนำการใช้งาน อยู่ใน modal "หน้านี้ใช้อย่างไร?" (ยืนยันจากผู้ใช้ 2026-10-10 — แบบเดียวกับ notification-settings.html) -->
+        <div class="flex items-center justify-end gap-3 flex-wrap mb-4">
+          <button type="button" @click="helpOpen = true"
+            class="bg-transparent border-0 cursor-pointer text-sm text-slate-500 hover:text-teal-700 whitespace-nowrap">ⓘ หน้านี้ใช้อย่างไร?</button>
+          <!-- Export ส่งทีม Cowork (ตัวกรองต้นทาง) ให้ใช้คำ/เกณฑ์ชุดเดียวกับป้ายในระบบ — ยืนยันจากผู้ใช้ 2026-10-10 -->
+          <button type="button" @click="exportForCowork" :disabled="!data"
+            class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer disabled:opacity-50 shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export ส่งให้ทีม Cowork
+          </button>
+        </div>
+
+        <div v-if="loading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+        <template v-else-if="data">
+          <!-- เกณฑ์ % เฟอร์นิเจอร์ -->
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 px-5 py-4 mb-4">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div class="font-bold text-slate-700">เกณฑ์ % เฟอร์นิเจอร์ในประกาศ</div>
+                <div class="text-xs text-slate-400">คำนวณจากบรรทัดสรุปรายการ ("เป็นเฟอร์นิเจอร์ X จาก Y รายการ") — บางประกาศอ่านไม่ได้ จะเตือนจากคำในชื่ออย่างเดียว</div>
+              </div>
+              <button type="button" @click="openConfig" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">แก้เกณฑ์</button>
+            </div>
+            <div class="grid sm:grid-cols-3 gap-3 mt-3">
+              <div v-for="b in bandRows" :key="b.key" class="rounded-xl px-3.5 py-2.5" :class="b.cls">
+                <div class="text-sm font-semibold">{{ b.label }}</div>
+                <div class="text-xs mt-0.5">{{ b.range }}</div>
+                <div class="text-xs mt-1 opacity-80">ในอดีตไม่ใช่ตลาดเรา {{ data.band_stats[b.key].not_our_market }} จาก {{ data.band_stats[b.key].total }} ครั้ง</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- รายการคำ -->
+          <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 gap-3 flex-wrap">
+              <div>
+                <div class="font-bold text-slate-700">คำในชื่อโครงการ</div>
+                <div class="text-xs text-slate-400">ผลในอดีตนับจากประกาศที่ตัดสินแล้ว {{ data.history_total }} ประกาศ</div>
+              </div>
+              <button type="button" @click="openKeyword(null)" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">+ เพิ่มคำ</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm min-w-[640px]">
+                <thead><tr class="text-left text-slate-500 border-b border-slate-100">
+                  <th class="py-2.5 px-4 font-semibold">คำ</th><th class="py-2.5 px-3 font-semibold">ระดับป้าย</th>
+                  <th class="py-2.5 px-3 font-semibold">ผลในอดีต</th><th class="py-2.5 px-3 font-semibold">แก้ไขล่าสุด</th><th class="py-2.5 px-4"></th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="k in data.keywords" :key="k.screening_keyword_id" class="border-b border-slate-50 align-top" :class="Number(k.is_active) ? '' : 'opacity-50'">
+                    <td class="py-2.5 px-4"><div class="font-semibold text-slate-800">{{ k.screening_keyword_name }}</div><div v-if="k.screening_keyword_description" class="text-xs text-slate-400">{{ k.screening_keyword_description }}</div></td>
+                    <td class="py-2.5 px-3 whitespace-nowrap">
+                      <span v-if="!Number(k.is_active)" class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500">ปิดอยู่</span>
+                      <span v-else class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold" :class="k.alert_level==='not_our_market' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'">{{ levelLabel(k.alert_level) }}</span>
+                    </td>
+                    <td class="py-2.5 px-3 whitespace-nowrap" :class="k.total && k.not_our_market < k.total ? 'text-amber-700' : 'text-slate-600'">
+                      {{ k.total ? `ไม่ใช่ตลาดเรา ${k.not_our_market} จาก ${k.total}` : 'ยังไม่พบ' }}
+                    </td>
+                    <td class="py-2.5 px-3 text-xs text-slate-500 whitespace-nowrap">{{ k.updated_by_name || 'ระบบ' }} · {{ formatDateThai(k.updated_at) }}</td>
+                    <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                      <button type="button" @click="openKeyword(k)" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">แก้ไข</button>
+                      <button type="button" @click="toggleActive(k)" class="ml-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 border-0 cursor-pointer"
+                        :class="Number(k.is_active) ? 'ring-slate-200 text-slate-500 hover:bg-slate-50' : 'ring-teal-200 text-teal-700 hover:bg-teal-50'">{{ Number(k.is_active) ? 'ปิด' : 'เปิด' }}</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-xs text-slate-400 px-5 py-3 m-0">ผลในอดีตต่ำ (เช่น ไม่ใช่ตลาดเรา 2 จาก 10) แปลว่าคำนี้พาประกาศงานจริงมาด้วย ควรลดเป็นป้ายส้มหรือปิด</p>
+          </div>
+        </template>
+      </main>
+    </div>
+
+    <!-- วิธีใช้หน้านี้ (แบบเดียวกับ modal คำอธิบายใน notification-settings.html / delivery-forecast.html) -->
+    <div v-if="helpOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="helpOpen = false">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">วิธีใช้หน้าคำเตือนคัดกรองประกาศ</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="helpOpen = false">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4 text-sm text-slate-600 leading-relaxed space-y-3">
+          <p>ป้ายเตือนในหน้า "ประกาศวันนี้" ช่วยให้คัดกรองเร็วขึ้น โดยดูจาก % เฟอร์นิเจอร์ในประกาศ และคำในชื่อโครงการที่ในอดีตมักไม่ใช่ตลาดเรา — เป็นคำแนะนำเท่านั้น ธุรการตัดสินเองเหมือนเดิม</p>
+          <div>
+            <div class="font-semibold text-slate-700 mb-1">ข้อแนะนำการใช้งาน</div>
+            <div>1. ทบทวน<b class="text-slate-700">ทุกไตรมาส</b> — คำที่ผลในอดีตต่ำ (เช่น ไม่ใช่ตลาดเรา 2 จาก 10) ให้ลดเป็นป้ายส้มหรือปิด กันเตือนผิดจนตัดงานดีทิ้ง / คำส้มที่ผลสูงต่อเนื่อง ให้เลื่อนเป็นป้ายแดง</div>
+            <div>2. ดูแท็บ "ไม่เข้าประมูล" ในหน้า<a href="win-loss-analysis.html" class="text-teal-700 hover:underline">วิเคราะห์ผลแพ้/ชนะ</a> ว่าหมวด ก. ไม่ใช่ตลาดเรา ลดลงหรือไม่</div>
+            <div>3. กด <b class="text-slate-700">"Export ส่งให้ทีม Cowork"</b> ทุกครั้งที่ปรับคำหรือเกณฑ์ ให้ตัวกรองต้นทางใช้คำชุดเดียวกับระบบ</div>
+          </div>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="helpOpen = false">ปิด</button>
+        </div>
+      </div>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+
+    <!-- หน้าต่างแบบมาตรฐาน: หัวขาว + กล่องเลข + ปุ่มติดล่าง -->
+    <div v-if="modal.type" class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto" @click.self="closeModal">
+      <div v-if="modal.type==='keyword'" class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl overflow-hidden my-[4vh] max-h-[92vh] flex flex-col">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <h3 class="font-bold text-lg text-slate-800 m-0">{{ form.screening_keyword_id ? 'แก้ไขคำเตือน' : 'เพิ่มคำเตือน' }}</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto flex-1 space-y-4">
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200"><span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span><h3 class="text-base font-bold text-slate-800 m-0">คำในชื่อโครงการ <span class="text-red-500">*</span></h3></div>
+            <input v-model="form.screening_keyword_name" maxlength="100" placeholder="เช่น ห้องปฏิบัติการ"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <p class="text-xs text-slate-500 m-0">ประกาศที่ชื่อโครงการมีคำนี้อยู่จะขึ้นป้ายเตือน — ใช้คำให้เจาะจง เช่น "ห้องปฏิบัติการ" ไม่ใช่แค่ "ปฏิบัติการ"</p>
+          </section>
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200"><span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span><h3 class="text-base font-bold text-slate-800 m-0">ระดับป้าย <span class="text-red-500">*</span></h3></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button v-for="lv in ['not_our_market','review']" :key="lv" type="button" @click="form.alert_level = lv"
+                class="text-left border-2 rounded-xl py-2 px-3 cursor-pointer transition-all"
+                :class="form.alert_level===lv ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'">
+                <span class="block text-[.9rem] font-semibold">{{ levelLabel(lv) }}</span>
+                <span class="block text-xs text-slate-500">{{ lv==='not_our_market' ? 'พบบ่อย และแทบไม่เคยเป็นงานจริง' : 'พบไม่กี่ครั้ง หรือบางครั้งเป็นงานจริง' }}</span>
+              </button>
+            </div>
+          </section>
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200"><span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span><h3 class="text-base font-bold text-slate-800 m-0">คำอธิบาย</h3></div>
+            <input v-model="form.screening_keyword_description" maxlength="255" placeholder="ไม่บังคับ เช่น พบในประกาศครุภัณฑ์ห้องเรียนคอมพิวเตอร์"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+          </section>
+        </div>
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 text-white min-h-[44px] bg-teal-700 hover:bg-teal-800 cursor-pointer disabled:opacity-50" :disabled="saving" @click="submitKeyword">บันทึก</button>
+        </div>
+      </div>
+
+      <div v-if="modal.type==='config'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-[4vh] max-h-[92vh] flex flex-col">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <h3 class="font-bold text-lg text-slate-800 m-0">เกณฑ์ % เฟอร์นิเจอร์</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto flex-1">
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200"><span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span><h3 class="text-base font-bold text-slate-800 m-0">เกณฑ์</h3></div>
+            <label class="flex items-center gap-2 text-sm text-slate-700">ป้ายแดง เมื่อเฟอร์นิเจอร์ต่ำกว่า
+              <input v-model.number="configForm.red_pct" type="number" min="0" max="100" class="w-20 border border-slate-200 rounded-lg px-2.5 py-1.5 text-base bg-white"> %</label>
+            <label class="flex items-center gap-2 text-sm text-slate-700">ป้ายส้ม เมื่อเฟอร์นิเจอร์ต่ำกว่า
+              <input v-model.number="configForm.review_pct" type="number" min="0" max="100" class="w-20 border border-slate-200 rounded-lg px-2.5 py-1.5 text-base bg-white"> %</label>
+            <p class="text-xs text-slate-500 m-0">ค่าตั้งต้นจากผลวิเคราะห์ 2026-10-10: ต่ำกว่า 25% ไม่ใช่ตลาดเรา 25 จาก 25 ครั้ง / 25–49% ไม่ใช่ตลาดเรา 12 จาก 14 ครั้ง</p>
+          </section>
+        </div>
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 text-white min-h-[44px] bg-teal-700 hover:bg-teal-800 cursor-pointer disabled:opacity-50" :disabled="saving" @click="submitConfig">บันทึก</button>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=74"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      helpOpen: false,   // modal วิธีใช้หน้านี้ (2026-10-10)
+      saving: false,
+      data: null,
+      modal: { type: null, data: null },
+      form: { screening_keyword_id: null, screening_keyword_name: '', alert_level: 'review', screening_keyword_description: '' },
+      configForm: { red_pct: 25, review_pct: 50 },
+    };
+  },
+  computed: {
+    // ช่วง % เฟอร์นิเจอร์ 3 ช่วงตามเกณฑ์ปัจจุบัน
+    bandRows() {
+      const t = this.data?.thresholds || { red_pct: 25, review_pct: 50 };
+      return [
+        { key: 'red', label: 'ป้ายแดง', range: `เฟอร์นิเจอร์ต่ำกว่า ${t.red_pct}%`, cls: 'bg-red-50 text-red-800' },
+        { key: 'review', label: 'ป้ายส้ม', range: `เฟอร์นิเจอร์ ${t.red_pct}–${t.review_pct - 1}%`, cls: 'bg-amber-50 text-amber-900' },
+        { key: 'ok', label: 'ไม่มีป้าย', range: `เฟอร์นิเจอร์ ${t.review_pct}% ขึ้นไป`, cls: 'bg-slate-50 text-slate-700' },
+      ];
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      // admin + ธุรการขาย (ยืนยันจากผู้ใช้ 2026-10-10) — API บังคับซ้ำ
+      if (!['admin', 'salesadmin'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.load();
+  },
+  methods: {
+    ...SharedMethods,
+
+    levelLabel(lv) { return lv === 'not_our_market' ? 'แดง · น่าจะไม่ใช่ตลาดเรา' : 'ส้ม · ควรดูให้ละเอียด'; },
+
+    async load() {
+      this.loading = true;
+      const r = await apiCall('GET', 'api/screening_keywords.php?action=list');
+      this.data = r.success ? r.data : null;
+      this.loading = false;
+      if (!r.success) await this.showAlert(r.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+    },
+
+    openKeyword(k) {
+      this.form = k
+        ? { screening_keyword_id: k.screening_keyword_id, screening_keyword_name: k.screening_keyword_name, alert_level: k.alert_level, screening_keyword_description: k.screening_keyword_description || '' }
+        : { screening_keyword_id: null, screening_keyword_name: '', alert_level: 'review', screening_keyword_description: '' };
+      this.modal = { type: 'keyword', data: k };
+    },
+
+    async submitKeyword() {
+      if (!this.form.screening_keyword_name.trim()) { await this.showAlert('กรุณาระบุคำ', 'error'); return; }
+      const isNew = !this.form.screening_keyword_id;
+      this.saving = true;
+      let r;
+      try { r = await apiCall('POST', `api/screening_keywords.php?action=${isNew ? 'create' : 'update'}`, this.form); }
+      catch { r = { success: false, message: 'ระบบขัดข้อง บันทึกไม่สำเร็จ' }; }
+      finally { this.saving = false; }
+      if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      this.closeModal();
+      await this.load();
+      await this.showAlert(isNew ? 'เพิ่มคำเตือนแล้ว' : 'บันทึกแล้ว', 'success');
+    },
+
+    async toggleActive(k) {
+      const on = !Number(k.is_active);
+      if (!on && !(await this.showConfirm('ปิดคำเตือนนี้?', `คำ "${k.screening_keyword_name}" จะไม่ขึ้นป้ายเตือนอีก (เปิดกลับได้)`, 'ปิดคำเตือน'))) return;
+      const r = await apiCall('POST', 'api/screening_keywords.php?action=set_active', { screening_keyword_id: k.screening_keyword_id, is_active: on ? 1 : 0 });
+      if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      await this.load();
+    },
+
+    // Excel ส่งทีม Cowork (2026-10-10) — exportExcel ทำได้ตารางเดียว จึงรวม 3 ส่วนแยกด้วยคอลัมน์ "ส่วน"
+    //   เกณฑ์ % เฟอร์นิเจอร์ / คำในชื่อโครงการ (เฉพาะที่เปิดใช้) / ข้อขอจากทีม Cowork
+    exportForCowork() {
+      if (!this.data) return;
+      const hist = s => s.total ? `ไม่ใช่ตลาดเรา ${s.not_our_market} จาก ${s.total} ครั้ง` : 'ยังไม่พบ';
+      const advice = lv => lv === 'not_our_market' ? 'ตัดทิ้ง หรือส่งเป็น "ไม่ตรง"' : 'ส่งเป็น "ต้องตรวจสอบ" (ไม่ตัดทิ้ง)';
+      const headers = ['ส่วน', 'รายการ', 'ระดับ', 'ผลในอดีต', 'คำแนะนำสำหรับตัวกรอง Cowork', 'หมายเหตุ'];
+      const rows = [];
+      const bandAdvice = { red: advice('not_our_market'), review: advice('review'), ok: 'ส่งเข้ามาตามปกติ' };
+      this.bandRows.forEach(b => rows.push(['เกณฑ์ % เฟอร์นิเจอร์', b.range, b.label, hist(this.data.band_stats[b.key]), bandAdvice[b.key],
+        '% = จำนวนรายการเฟอร์นิเจอร์ ÷ รายการทั้งหมด']));
+      this.data.keywords.filter(k => Number(k.is_active)).forEach(k => rows.push(['คำในชื่อโครงการ', k.screening_keyword_name,
+        k.alert_level === 'not_our_market' ? 'แดง · น่าจะไม่ใช่ตลาดเรา' : 'ส้ม · ควรดูให้ละเอียด', hist(k), advice(k.alert_level), k.screening_keyword_description || '']));
+      [
+        'ส่ง "จำนวนรายการทั้งหมด" และ "จำนวนรายการเฟอร์นิเจอร์" เป็นตัวเลขแยกช่อง — บรรทัดสรุปตอนนี้เขียนไม่เป็นรูปแบบเดียว ระบบอ่าน % ไม่ได้บางประกาศ',
+        'ใช้คำเต็มตามรายการ เช่น "ห้องปฏิบัติการ" ไม่ใช่ "ปฏิบัติการ" (งานจริงมี "อาคารปฏิบัติการสถาปัตยกรรม")',
+        'ระวังตัดงานดีทิ้ง — ไม่แน่ใจให้ส่งเป็น "ต้องตรวจสอบ" แทนการตัดทิ้ง',
+        'ประกาศเฟอร์นิเจอร์ 100% ที่สเปกผลิตไม่ได้ (เช่น สแตนเลส เก้าอี้เบาะ) กรองด้วยคำในชื่อไม่ได้ ต้องอ่านสเปกวัสดุใน TOR',
+      ].forEach(t => rows.push(['ข้อขอจากทีม Cowork', t, '', '', '', '']));
+      rows.push(['ที่มา', `ผลในอดีตนับจากประกาศที่ตัดสินแล้ว ${this.data.history_total} ประกาศ (ไม่รวมงานย้อนหลัง)`, '', '', '', `ส่งออกเมื่อ ${this.formatDateThai(new Date().toISOString().slice(0, 10))}`]);
+      this.exportExcel(`คำเตือนคัดกรองประกาศ_สำหรับ Cowork_${new Date().toISOString().slice(0, 10)}`, headers, rows);
+    },
+
+    openConfig() {
+      this.configForm = { ...this.data.thresholds };
+      this.modal = { type: 'config', data: null };
+    },
+
+    async submitConfig() {
+      this.saving = true;
+      let r;
+      try { r = await apiCall('POST', 'api/screening_keywords.php?action=save_config', this.configForm); }
+      catch { r = { success: false, message: 'ระบบขัดข้อง บันทึกไม่สำเร็จ' }; }
+      finally { this.saving = false; }
+      if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
+      this.closeModal();
+      await this.load();
+      await this.showAlert('บันทึกเกณฑ์แล้ว', 'success');
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

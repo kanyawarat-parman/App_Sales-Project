@@ -1390,7 +1390,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=71"></script>
+<script src="shared/app.js?v=74"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1733,6 +1733,7 @@ createApp({
     if (this.isManager) this.loadSales();
     this.loadWinLossMasters();
     this.loadData();
+    this.openDetailFromLink();   // ลิงก์ ?code= จาก LINE / อีเมล / กระดิ่ง → เปิดรายละเอียดงานนั้น (2026-10-10)
 
     // วัดความสูงจริงของแถบ AppNav ไว้ใช้เป็น top ของ header หน้านี้ตอน sticky กันซ้อนทับ (ยืนยันจากผู้ใช้ 2026-09-20)
     // ใช้ ResizeObserver แทน setTimeout เดา timing — เดิมวัดตอน mounted() แล้วสุ่มเสี่ยงได้ค่าตอน Tailwind CDN

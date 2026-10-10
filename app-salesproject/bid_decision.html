@@ -167,6 +167,11 @@
                           <span class="text-[.8rem] text-slate-400">{{ row.project_no }}</span>
                           <span :class="srcBadgeCls(row.source_type)">{{ srcBadgeLbl(row.source_type) }}</span>
                         </div>
+                        <!-- ป้ายเตือนคัดกรอง (จากผลในอดีต — ยืนยันจากผู้ใช้ 2026-10-10) เป็นคำแนะนำ ธุรการตัดสินเอง / กด "ดู" เห็นเหตุผลเต็ม -->
+                        <div v-if="hints[row.id]?.level" class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[.78rem] font-semibold max-w-[300px]"
+                          :class="hints[row.id].level==='not_our_market' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'">
+                          <span class="truncate">{{ hintShort(hints[row.id]) }}</span>
+                        </div>
                       </td>
                       <td class="px-3 py-2.5 border-b border-slate-100 align-middle text-[.85rem] text-slate-500">{{ row.unit_name || '-' }}</td>
                       <td class="px-3 py-2.5 border-b border-slate-100 align-middle text-[.9rem] font-semibold text-blue-800 whitespace-nowrap">{{ formatPrice(row.price_median) }}</td>
@@ -345,6 +350,13 @@
             กำลังโหลด...
           </div>
           <template v-else-if="detailData">
+            <!-- ป้ายเตือนคัดกรอง: เหตุผลเต็ม + ผลจริงในอดีต (2026-10-10) -->
+            <div v-if="hints[detailData.id]?.level" class="mb-4 rounded-xl px-4 py-3 text-sm leading-relaxed"
+              :class="hints[detailData.id].level==='not_our_market' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'">
+              <div class="font-bold mb-1">{{ hints[detailData.id].level==='not_our_market' ? '⚠ ประกาศแบบนี้ในอดีตส่วนใหญ่ไม่ใช่ตลาดเรา' : 'ควรดูให้ละเอียดก่อนตัดสินใจ' }}</div>
+              <div v-for="(r, i) in hints[detailData.id].reasons" :key="i">• {{ r.text }}</div>
+              <div class="text-xs mt-1.5 opacity-80">เป็นคำแนะนำจากผลในอดีต ธุรการตัดสินเองเหมือนเดิม · ปรับคำได้ที่เมนู "คำเตือนคัดกรองประกาศ"</div>
+            </div>
             <!-- ข้อมูลโครงการ -->
             <div class="mb-5">
               <div class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1.5 border-b border-slate-100">ข้อมูลโครงการ</div>
@@ -630,7 +642,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=71"></script>
+<script src="shared/app.js?v=74"></script>
 <script>
 const SalesAdminApp = {
   components: { AppNav, AppModal, AppBidAccountPicker, AppDuplicateAccounts, AppNoBidReasons },
@@ -644,6 +656,7 @@ const SalesAdminApp = {
       egpHolidayMap: {}, // { 'YYYY-MM-DD': 'ชื่อวันหยุด' } ของปฏิทินอ้างอิงแหล่ง e-GP — ใช้ทั้งเช็ควันประกาศและเวร (รวมเป็นปฏิทินเดียว 2026-08-30)
       tab: 0,
       rows: [],
+      hints: {},   // ป้ายเตือนคัดกรองต่อประกาศ { announcement_id: { level, ratio_pct, words, reasons } } — โหลดเฉพาะแท็บรอตัดสินใจ
       loading: false,
       saving: false,
       summary: { total: 0, pending: 0, can_bid: 0, cannot_bid: 0, assigned: 0, waiting_assign: 0 },
@@ -794,6 +807,21 @@ const SalesAdminApp = {
       const r = await apiCall('GET', url);
       this.rows = (r.success && Array.isArray(r.data)) ? r.data : [];
       this.loading = false;
+      // ป้ายเตือนคัดกรอง (2026-10-10) — โหลดทีหลัง ไม่ให้ตารางช้า / โหลดไม่สำเร็จก็แค่ไม่มีป้าย
+      this.hints = {};
+      if (this.tab === 0 && this.rows.length) {
+        try {
+          const h = await apiCall('GET', 'api/screening_keywords.php?action=hints&ids=' + this.rows.map(x => x.id).join(','));
+          if (h.success) this.hints = h.data || {};
+        } catch {}
+      }
+    },
+    // ข้อความสั้นบนป้ายในตาราง เช่น "น่าจะไม่ใช่ตลาดเรา · เฟอร์นิเจอร์ 27% · ห้องปฏิบัติการ"
+    hintShort(h) {
+      const parts = [h.level === 'not_our_market' ? '⚠ น่าจะไม่ใช่ตลาดเรา' : 'ควรดูให้ละเอียด'];
+      if (h.ratio_pct !== null && h.ratio_pct !== undefined && h.ratio_pct < 50) parts.push(`เฟอร์นิเจอร์ ${h.ratio_pct}%`);
+      if (h.words?.length) parts.push(h.words.slice(0, 2).join(', '));
+      return parts.join(' · ');
     },
 
     async openDetail(row, source) {
