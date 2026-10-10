@@ -3,6 +3,7 @@
  * ส่ง HTML email ผ่าน SMTP (socket) โดยไม่ต้องพึ่ง PHPMailer
  * รองรับ SMTP AUTH LOGIN + STARTTLS (Gmail, Office365, etc.)
  */
+require_once __DIR__ . '/notify_helper.php';   // notifyEmail() — เช็คการตั้งค่าแจ้งเตือน + บันทึกผลการส่ง (2026-10-08)
 
 function sendEmail(string $toEmail, string $toName, string $subject, string $htmlBody): bool {
     if (empty(SMTP_HOST) || empty(SMTP_USER) || empty(SMTP_PASS)) {
@@ -110,7 +111,9 @@ function _smtpSend(string $toEmail, string $toName, string $subject, string $htm
     return strpos($r, '250') !== false;
 }
 
-function buildAssignmentEmailHtml(array $ann, string $saleName, string $priority, string $notes): string {
+// $url = ลิงก์ปุ่ม (จาก notifyEmail — ผ่าน api/notify_click.php เพื่อบันทึกการกดดู) ไม่ส่ง = หน้า "งานที่ได้รับ" ตรงๆ
+// เดิมปุ่มลิงก์ไป my-projects.html ซึ่งไม่มีไฟล์แล้ว (พบ 2026-10-08) — เปลี่ยนเป็น my-assignments.html เหมือนปุ่มใน LINE
+function buildAssignmentEmailHtml(array $ann, string $saleName, string $priority, string $notes, ?string $url = null): string {
     $project  = htmlspecialchars($ann['project_name'] ?? '-');
     $unit     = htmlspecialchars($ann['unit_name']    ?? '-');
     $close    = $ann['close_date'] ?? '-';
@@ -120,7 +123,7 @@ function buildAssignmentEmailHtml(array $ann, string $saleName, string $priority
     $prioMap  = ['เร่งด่วน' => '#dc2626', 'ปกติ' => '#2563eb', 'ต่ำ' => '#64748b'];
     $prioColor = $prioMap[$priority] ?? '#2563eb';
     $notesHtml = $notes ? htmlspecialchars($notes) : '<span style="color:#94a3b8">ไม่มี</span>';
-    $appUrl   = defined('APP_URL') ? APP_URL : 'http://localhost:8081';
+    $btnUrl   = htmlspecialchars($url ?? rtrim(defined('APP_URL') ? APP_URL : 'http://localhost:8081', '/') . '/my-assignments.html', ENT_QUOTES, 'UTF-8');
     // ชื่อผู้ใช้ในระบบมักขึ้นต้นด้วย "คุณ" อยู่แล้ว — เติมเฉพาะเมื่อยังไม่มี กัน "สวัสดีคุณ คุณ..." (แก้ 2026-10-01)
     $saleEnc  = htmlspecialchars(preg_match('/^คุณ/u', trim($saleName)) ? trim($saleName) : 'คุณ' . trim($saleName));
 
@@ -187,7 +190,7 @@ function buildAssignmentEmailHtml(array $ann, string $saleName, string $priority
         <!-- CTA button -->
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr><td align="center">
-            <a href="{$appUrl}/my-projects.html"
+            <a href="{$btnUrl}"
                style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:13px 32px;border-radius:10px;font-size:15px;font-weight:700;letter-spacing:.3px">
               เข้าระบบดูงานของฉัน
             </a>
@@ -225,7 +228,8 @@ function buildTransferEmailHtml(string $toName, array $info): string {
     $from   = $e($info['from_name'] ?? '-');
     // ชื่อผู้ใช้ในระบบมักขึ้นต้นด้วย "คุณ" อยู่แล้ว — เติมเฉพาะเมื่อยังไม่มี กัน "คุณคุณ..."
     $to     = $e(preg_match('/^คุณ/u', trim($toName)) ? trim($toName) : 'คุณ' . trim($toName));
-    $url    = rtrim(defined('APP_URL') ? APP_URL : 'http://localhost:8081', '/') . '/' . $e($info['page'] ?? 'dashboard.html');
+    // $info['url'] = ลิงก์ปุ่มที่บันทึกการกดดู (จาก notifyEmail) — ไม่มีใช้หน้าตาม page ตรงๆ
+    $url    = $e($info['url'] ?? rtrim(defined('APP_URL') ? APP_URL : 'http://localhost:8081', '/') . '/' . ($info['page'] ?? 'dashboard.html'));
 
     return <<<HTML
 <!DOCTYPE html>
@@ -287,19 +291,13 @@ HTML;
 }
 
 /**
- * ส่งอีเมลแจ้งโอนงาน/ดีล ตามการตั้งค่าแจ้งเตือนของผู้รับ (เปิดแจ้งเตือน + ช่องทาง email/both — เหมือนอีเมลมอบหมายงานใหม่)
+ * ส่งอีเมลแจ้งโอนงาน/ดีล ผ่าน notifyEmail() (includes/notify_helper.php) — เช็คหน้าตั้งค่าการแจ้งเตือน (เรื่อง $type) + การตั้งค่าของผู้รับ
+ * แล้วบันทึกผลการส่ง/การกดดู (2026-10-08) — $notificationId = กระดิ่งที่คู่กัน
  * เรียกหลัง respondThenContinue() เท่านั้น (SMTP ช้าไม่ทำให้หน้าจอค้าง) / ส่งไม่สำเร็จไม่กระทบการโอน
  */
-function sendTransferEmail(PDO $db, int $toUserId, array $info): bool {
-    try {
-        $stmt = $db->prepare('SELECT full_name, email, notify_channel, notify_enabled FROM users WHERE id = ?');
-        $stmt->execute([$toUserId]);
-        $to = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$to || !$to['notify_enabled'] || !in_array($to['notify_channel'], ['email', 'both'], true) || empty($to['email'])) return false;
+function sendTransferEmail(PDO $db, int $toUserId, array $info, string $type, ?int $notificationId = null, ?int $actorId = null): bool {
+    return notifyEmail($db, $type, $toUserId, $notificationId, function (array $to, string $url) use ($info): bool {
         $subject = "มี{$info['kind']}โอนมาให้คุณ: " . mb_substr((string)($info['title'] ?? ''), 0, 60);
-        return sendEmail($to['email'], $to['full_name'], $subject, buildTransferEmailHtml($to['full_name'], $info));
-    } catch (Throwable $e) {
-        error_log('sendTransferEmail: ' . $e->getMessage());
-        return false;
-    }
+        return sendEmail($to['email'], $to['full_name'], $subject, buildTransferEmailHtml($to['full_name'], $info + ['url' => $url]));
+    }, $actorId, $info['page'] ?? null);
 }

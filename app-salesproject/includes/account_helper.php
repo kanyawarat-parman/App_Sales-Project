@@ -338,6 +338,11 @@ function mergeAccounts(PDO $db, int $keepId, int $mergeId, array $user, ?string 
                $uid, $keepId,
            ]);
 
+        // รายที่เก็บยังไม่มีผู้ดูแล → ได้ผู้ดูแลจากรายที่ถูกรวม = บันทึกประวัติผู้ดูแล (ไม่แจ้งเตือน — ยืนยันจากผู้ใช้ 2026-10-09)
+        if (!$keep['owner_user_id'] && $merge['owner_user_id']) {
+            logAccountOwnerChange($db, $keepId, $keep['account_code'], null, (int)$merge['owner_user_id'], $uid, 'รวมลูกค้า ' . $merge['account_code']);
+        }
+
         // บันทึกการรวม + ประวัติเดิมที่ชี้รายที่ถูกรวม ย้ายมาชี้รายที่เก็บ (รวมต่อกันหลายทอด ค้นรหัสแรกสุดก็เจอรายล่าสุด)
         $db->prepare('UPDATE account_merge_logs SET kept_account_id = ?, kept_account_code = ?, updated_by = ? WHERE kept_account_id = ?')
            ->execute([$keepId, $keep['account_code'], $uid, $mergeId]);
@@ -367,6 +372,40 @@ function accountMergeLogs(PDO $db, int $accountId): array {
                         WHERE l.kept_account_id = ? ORDER BY l.created_at DESC, l.account_merge_log_id DESC');
     $st->execute([$accountId]);
     return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// ── ประวัติการเปลี่ยนข้อมูลลูกค้า (Field History — ยืนยันจากผู้ใช้ 2026-10-09, sql/add_account_history.sql) ──
+
+// บันทึกการเปลี่ยน Sale ผู้ดูแล (เฉพาะเมื่อค่าเปลี่ยนจริง) — NULL = ส่วนกลาง / เก็บชื่อ ณ ตอนนั้นไว้แสดง
+// ยังไม่ได้รัน SQL = ไม่บันทึก แต่การแก้ลูกค้ายังทำงานปกติ
+function logAccountOwnerChange(PDO $db, int $accountId, string $accountCode, ?int $oldOwner, ?int $newOwner, ?int $userId, ?string $note = null): void {
+    if ($oldOwner === $newOwner) return;
+    try {
+        $name = function (?int $id) use ($db): string {
+            if (!$id) return 'ส่วนกลาง';
+            $st = $db->prepare('SELECT full_name FROM users WHERE id = ?');
+            $st->execute([$id]);
+            return (string)($st->fetchColumn() ?: "ผู้ใช้ #{$id}");
+        };
+        $db->prepare("INSERT INTO account_history (account_id, account_code, field_name, old_value, new_value, old_display, new_display, note, changed_by)
+                      VALUES (?, ?, 'owner_user_id', ?, ?, ?, ?, ?, ?)")
+           ->execute([$accountId, $accountCode, $oldOwner, $newOwner, $name($oldOwner), $name($newOwner), $note, $userId]);
+    } catch (Throwable $e) {
+        error_log('[account_history] ' . $e->getMessage());
+    }
+}
+
+// ประวัติของลูกค้า 1 ราย — ใหม่สุดก่อน / ทุก role ดูได้ (ยังไม่มีตาราง = คืน [])
+function accountHistory(PDO $db, int $accountId): array {
+    try {
+        $st = $db->prepare('SELECT h.account_history_id, h.field_name, h.old_display, h.new_display, h.note, h.changed_at, u.full_name AS changed_by_name
+                            FROM account_history h LEFT JOIN users u ON u.id = h.changed_by
+                            WHERE h.account_id = ? ORDER BY h.changed_at DESC, h.account_history_id DESC');
+        $st->execute([$accountId]);
+        return $st->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return [];
+    }
 }
 
 // ลูกค้าที่อาจซ้ำกับลูกค้ารายนี้ (Potential Duplicates แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-09-30)

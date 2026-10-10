@@ -68,7 +68,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=65"></script>
+<script src="shared/app.js?v=71"></script>
 <script>
 const { createApp } = Vue;
 
@@ -85,12 +85,19 @@ createApp({
     window.APP_CONFIG_READY?.then(cfg => { this.appConfig = cfg; });
     try {
       const res = await apiCall('GET', 'api/auth.php?action=me');
-      if (res.success) { window.location.href = 'dashboard.html'; return; }
+      if (res.success) { window.location.href = this.nextPage(); return; }
     } catch {}
     this.checking = false;
   },
 
   methods: {
+    // หน้าถัดไปหลัง login — ?next= จากปุ่ม "ดูรายละเอียด" ใน LINE / อีเมล (api/notify_click.php — 2026-10-08)
+    // รับเฉพาะหน้าในระบบ (ชื่อไฟล์ .html หรือ api/notify_click.php) กันพาไปเว็บอื่น ไม่ตรง = ภาพรวม
+    nextPage() {
+      const next = new URLSearchParams(window.location.search).get('next') || '';
+      return /^([a-z0-9_\-]+\.html|api\/notify_click\.php)(\?[^\s]*)?$/i.test(next) ? next : 'dashboard.html';
+    },
+
     async doLogin() {
       this.form.loading = true;
       this.form.error   = '';
@@ -100,7 +107,7 @@ createApp({
           password: this.form.password,
         });
         if (res.success) {
-          window.location.href = 'dashboard.html';
+          window.location.href = this.nextPage();
         } else {
           this.form.error = res.message || 'Username หรือ Password ไม่ถูกต้อง';
         }

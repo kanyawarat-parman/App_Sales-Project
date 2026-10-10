@@ -486,10 +486,9 @@
                   :style="{color: isCloseOverdue(card) ? countdownColor(daysToClose(card.close_date)) : '#94a3b8'}">
                   {{ isCloseOverdue(card) ? countdownText(daysToClose(card.close_date)) : formatDateThai(card.close_date) }}
                 </div>
-                <!-- Win/Loss reason -->
-                <div v-if="card.win_loss_reason"
-                  class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-1">
-                  {{ card.win_loss_reason }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
+                <!-- Win/Loss reason — ข้อความอ่านอย่างเดียว ไม่มีกรอบ (เดิมมีกรอบดูเหมือนช่องพิมพ์) + คำนำหน้าบอกว่าเป็นผลอะไร (2026-10-10) -->
+                <div v-if="resultReasonText(card)" class="mt-1.5 text-xs line-clamp-1" :class="resultTextClass(card)">
+                  <span class="font-semibold">{{ resultPrefix(card) }}:</span> {{ resultReasonText(card) }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
                 </div>
                 <!-- งานย้อนหลังรอตรวจ: ปุ่มยืนยันบนการ์ดเลย ไม่ต้องเปิดรายละเอียด (ยืนยันจากผู้ใช้ 2026-09-30) -->
                 <button v-if="canConfirmBidImport(card)" type="button" @click.stop="openBidImportReview(card)"
@@ -513,6 +512,9 @@
                   <button v-else-if="nextStage(card.status)"
                     @click.stop="moveCard(card, nextStage(card.status))"
                     class="flex-1 text-xs font-semibold px-2 py-1 rounded-lg bg-sky-100 text-sky-700 hover:bg-sky-200 border-0 cursor-pointer">ส่งต่อ →</button>
+                  <!-- ยกเลิกงาน — Sale เจ้าของงานปิดงานเองที่เดียวกับที่เลื่อนขั้น (มาตรฐาน owner closes, ยืนยันจากผู้ใช้ 2026-10-10) เปิดหน้าต่างใส่เหตุผล openCancel -->
+                  <button @click.stop="openCancel(card)"
+                    class="text-xs font-semibold px-2 py-1 rounded-lg bg-white ring-1 ring-slate-300 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
                 </div>
               </div>
             </div>
@@ -555,10 +557,9 @@
               :style="{color: isCloseOverdue(card) ? countdownColor(daysToClose(card.close_date)) : '#94a3b8'}">
               {{ isCloseOverdue(card) ? countdownText(daysToClose(card.close_date)) : formatDateThai(card.close_date) }}
             </div>
-            <!-- Win/Loss reason -->
-            <div v-if="card.win_loss_reason"
-              class="mt-1.5 text-[.7rem] px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200 text-slate-500 line-clamp-1">
-              {{ card.win_loss_reason }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
+            <!-- Win/Loss reason — ข้อความอ่านอย่างเดียว ไม่มีกรอบ + คำนำหน้าบอกว่าเป็นผลอะไร (2026-10-10) -->
+            <div v-if="resultReasonText(card)" class="mt-1.5 text-xs line-clamp-1" :class="resultTextClass(card)">
+              <span class="font-semibold">{{ resultPrefix(card) }}:</span> {{ resultReasonText(card) }}<span v-if="card.winner_name"> · แพ้ให้ {{ card.winner_name }}</span>
             </div>
             <!-- งานย้อนหลังรอตรวจ: ปุ่มยืนยันบนการ์ดเลย ไม่ต้องเปิดรายละเอียด (ยืนยันจากผู้ใช้ 2026-09-30) -->
             <button v-if="canConfirmBidImport(card)" type="button" @click.stop="openBidImportReview(card)"
@@ -580,6 +581,9 @@
               <button v-else-if="nextStage(card.status)"
                 @click.stop="moveCard(card, nextStage(card.status))"
                 class="flex-1 text-xs font-semibold px-2 py-1 rounded-lg bg-sky-100 text-sky-700 hover:bg-sky-200 border-0 cursor-pointer">ส่งต่อ →</button>
+              <!-- ยกเลิกงาน — Sale เจ้าของงานปิดงานเองที่เดียวกับที่เลื่อนขั้น (มาตรฐาน owner closes, ยืนยันจากผู้ใช้ 2026-10-10) เปิดหน้าต่างใส่เหตุผล openCancel -->
+              <button @click.stop="openCancel(card)"
+                class="text-xs font-semibold px-2 py-1 rounded-lg bg-white ring-1 ring-slate-300 text-slate-500 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
             </div>
           </div>
         </div>
@@ -816,7 +820,8 @@
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">หมายเหตุจาก SalesAdmin</div>
             <div class="text-sm p-3 rounded-xl bg-amber-50 text-amber-800">{{ modal.data.secretary_notes }}</div>
           </div>
-          <div v-if="modal.data.sale_notes" class="mb-4">
+          <!-- งานไม่เข้าประมูล: บันทึก Sale มักเป็นข้อความเดียวกับเหตุผลด้านล่าง ซ่อนไม่ให้ซ้ำ (2026-10-09) -->
+          <div v-if="modal.data.sale_notes && !noBidNotesDuplicate(modal.data)" class="mb-4">
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">บันทึก Sale</div>
             <div class="text-sm p-3 rounded-xl bg-sky-50 text-sky-800">{{ modal.data.sale_notes }}</div>
           </div>
@@ -824,12 +829,17 @@
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ราคาที่เสนอ</div>
             <div class="text-xl font-bold text-emerald-600">{{ formatPrice(modal.data.bid_amount) }}</div>
           </div>
+          <!-- ป้าย/สีตามผล: ชนะ / แพ้ / ไม่เข้าประมูล (สถานะยกเลิก — เหตุผลประเภท no_bid 2026-10-09 เดิมขึ้นว่า "เหตุผลที่แพ้") -->
+          <div v-if="isCustomerCancelled(modal.data)" class="mb-4">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">สาเหตุที่หน่วยงาน / ลูกค้ายกเลิก</div>
+            <div class="text-sm p-3 rounded-xl bg-slate-100 text-slate-700">{{ modal.data.win_loss_note }}</div>
+          </div>
           <div v-if="modal.data.win_loss_reason" class="mb-4">
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-              {{ modal.data.status==='ชนะการประมูล'||modal.data.status==='ส่งมอบแล้ว' ? 'เหตุผลที่ชนะ' : 'เหตุผลที่แพ้' }}
+              {{ modal.data.status==='ชนะการประมูล'||modal.data.status==='ส่งมอบแล้ว' ? 'เหตุผลที่ชนะ' : modal.data.status==='ยกเลิก' ? 'เหตุผลที่ไม่เข้าประมูล' : 'เหตุผลที่แพ้' }}
             </div>
             <div class="text-sm p-3 rounded-xl"
-              :class="(modal.data.status==='ชนะการประมูล'||modal.data.status==='ส่งมอบแล้ว') ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'">
+              :class="(modal.data.status==='ชนะการประมูล'||modal.data.status==='ส่งมอบแล้ว') ? 'bg-emerald-50 text-emerald-800' : modal.data.status==='ยกเลิก' ? 'bg-slate-100 text-slate-700' : 'bg-rose-50 text-rose-800'">
               {{ modal.data.win_loss_reason }}<span v-if="modal.data.win_loss_note"> — {{ modal.data.win_loss_note }}</span>
             </div>
           </div>
@@ -1026,6 +1036,37 @@
         </div>
         <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
           <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+
+      <!-- ยกเลิกงาน — บังคับเหตุผลเสมอ (ปิดช่องโหว่ 2026-10-10) แบบมาตรฐาน: หัวขาว + กล่องเลข + แถบปุ่มล่าง
+           ก่อนยื่นซอง = ไม่เข้าประมูล (เลือกจากรายการ no_bid) / หลังยื่นซองหรือชนะแล้ว = หน่วยงาน/ลูกค้ายกเลิก (พิมพ์สาเหตุ) -->
+      <div v-if="modal.type==='cancel'" class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl overflow-hidden my-[4vh] max-h-[92vh] flex flex-col">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ cancelForm.noBid ? 'ยกเลิกงาน — ไม่เข้าประมูล' : 'ยกเลิกงาน — หน่วยงาน / ลูกค้ายกเลิก' }}</h3>
+            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span> · สถานะตอนนี้: {{ modal.data.status }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <div class="p-5 overflow-y-auto flex-1">
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">{{ cancelForm.noBid ? 'งานที่ยกเลิก' : 'สาเหตุที่ยกเลิก' }}<span v-if="!cancelForm.noBid" class="text-red-500"> *</span></h3>
+            </div>
+            <div class="text-[.95rem] font-semibold text-slate-800 leading-snug">{{ modal.data.project_name }}</div>
+            <app-no-bid-reasons v-if="cancelForm.noBid" ref="cancelNoBid" v-model:reason-id="cancelForm.win_loss_reason_id" v-model:note="cancelForm.win_loss_note"></app-no-bid-reasons>
+            <template v-else>
+              <textarea v-model="cancelForm.win_loss_note" rows="3" placeholder="เช่น หน่วยงานยกเลิกประกาศ / ลูกค้ายกเลิกสัญญาเพราะงบถูกตัด"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+              <div class="text-sm text-slate-500">งานนี้ยื่นซองแล้ว จึงไม่นับเป็น "ไม่เข้าประมูล"</div>
+            </template>
+          </section>
+        </div>
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ปิด</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 text-white min-h-[44px] bg-red-500 hover:bg-red-600 cursor-pointer disabled:opacity-50" :disabled="cancelForm.saving" @click="submitCancel">ยืนยัน ยกเลิกงาน</button>
         </div>
       </div>
 
@@ -1349,7 +1390,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=65"></script>
+<script src="shared/app.js?v=71"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1370,6 +1411,8 @@ const STAGES = [
   { key: 'ยกเลิก',               label: 'ยกเลิก',                terminal: true,  bgLight: '#f8fafc', bgLightMid: '#f1f5f9', textLight: '#94a3b8' },
 ];
 
+// สถานะก่อนยื่นซอง — ยกเลิกจากสถานะเหล่านี้ = ไม่เข้าประมูล (ต้องตรงกับ BID_PRE_SUBMIT_STATUSES ใน api/assignments.php — 2026-10-10)
+const BID_PRE_SUBMIT_STATUSES = ['รอดำเนินการ', 'รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ'];
 const NEXT_MAP = {
   'รับงาน/ศึกษา TOR':      'จัดเตรียมยื่นข้อเสนอ',
   'จัดเตรียมยื่นข้อเสนอ': 'รอประกาศผล',
@@ -1381,7 +1424,7 @@ const PREV_MAP = {
 };
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppBidAccountPicker, AppDuplicateAccounts },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppBidAccountPicker, AppDuplicateAccounts, AppNoBidReasons },
   data() {
     return {
       authReady: false,
@@ -1409,7 +1452,8 @@ createApp({
       savingUnitName: false,
       bidImportReviewSaving: false,
       editingExpectedDelivery: false,   // แก้วันคาดส่งมอบในหน้าต่างรายละเอียด (2026-10-07)
-      deliveredForm: { date: '', saving: false },   // หน้าต่างบันทึกส่งมอบแล้ว (2026-10-07)
+      deliveredForm: { date: '', saving: false },
+      cancelForm: { noBid: true, win_loss_reason_id: null, win_loss_note: '', saving: false },   // หน้าต่างยกเลิกงาน — บังคับเหตุผล (2026-10-10)   // หน้าต่างบันทึกส่งมอบแล้ว (2026-10-07)
       editingDeliveredDate: false,      // แก้วันส่งมอบจริงในหน้าต่างรายละเอียด
       deliveredDateDraft: '',
       savingDeliveredDate: false,
@@ -1712,6 +1756,36 @@ createApp({
     },
     ...SharedMethods,
 
+    // งานไม่เข้าประมูล (สถานะยกเลิก + มีเหตุผล): บันทึก Sale ซ้ำกับเหตุผล/หมายเหตุหรือไม่ — ซ้ำ = ไม่ต้องแสดงกล่อง "บันทึก Sale" (2026-10-09)
+    //   เลือกผ่านหน้าจอ: sale_notes = "ชื่อเหตุผล — หมายเหตุ" / แปลงข้อมูลเก่า: sale_notes = win_loss_note (ข้อความเดิม)
+    // คำนำหน้า + สีของเหตุผลบนการ์ด / ตาราง / Excel ตามสถานะ — ยกเลิกที่มีเหตุผล = ไม่เข้าประมูล (เหตุผลประเภท no_bid) (2026-10-10)
+    resultPrefix(card) {
+      if (['ชนะการประมูล', 'ส่งมอบแล้ว'].includes(card.status)) return 'ชนะ';
+      if (card.status === 'ยกเลิก') return this.isCustomerCancelled(card) ? 'ยกเลิก' : 'ไม่เข้าประมูล';
+      return 'แพ้';
+    },
+    // ยกเลิกหลังยื่นซอง / หลังชนะ = หน่วยงาน/ลูกค้ายกเลิก — ไม่มีรหัสเหตุผล มีแต่สาเหตุที่พิมพ์ (win_loss_note) (2026-10-10)
+    isCustomerCancelled(card) {
+      return card.status === 'ยกเลิก' && !card.win_loss_reason && String(card.win_loss_note || '').trim() !== '';
+    },
+    // ข้อความผลที่แสดงบนการ์ด / ตาราง / Excel — ชื่อเหตุผล หรือสาเหตุที่ลูกค้ายกเลิก ('' = ไม่แสดง)
+    resultReasonText(card) {
+      return card.win_loss_reason || (this.isCustomerCancelled(card) ? String(card.win_loss_note).trim() : '');
+    },
+    resultTextClass(card) {
+      if (['ชนะการประมูล', 'ส่งมอบแล้ว'].includes(card.status)) return 'text-emerald-700';
+      if (card.status === 'ยกเลิก') return 'text-slate-500';
+      return 'text-rose-600';
+    },
+
+    noBidNotesDuplicate(d) {
+      if (d.status !== 'ยกเลิก' || !d.win_loss_reason) return false;
+      const notes = String(d.sale_notes || '').trim();
+      const reason = String(d.win_loss_reason || '').trim();
+      const note = String(d.win_loss_note || '').trim();
+      return notes === note || notes === reason || notes === `${reason} — ${note}`;
+    },
+
     // override SharedMethods.closeModal เฉพาะหน้านี้: ถ้ากำลังดู quotation-detail (เปิดทับ modal เดิมไว้) ให้ย้อนกลับไป modal ก่อนหน้าแทนที่จะปิดหมด
     closeModal() {
       if (this.modal.type === 'quotation-detail' && this.previousModal) {
@@ -1846,9 +1920,8 @@ createApp({
         {
           data: null, title: 'หมายเหตุ', orderable: false,
           render: (d, type, card) => {
-            if (card.win_loss_reason) {
-              const cls = ['ชนะการประมูล','ส่งมอบแล้ว'].includes(card.status) ? 'text-emerald-600' : 'text-rose-500';
-              return `<span class="text-xs ${cls}">${self.esc(card.win_loss_reason)}</span>`;
+            if (self.resultReasonText(card)) {
+              return `<span class="text-xs ${self.resultTextClass(card)}"><span class="font-semibold">${self.resultPrefix(card)}:</span> ${self.esc(self.resultReasonText(card))}</span>`;
             }
             if (card.status === 'รอประกาศผล') return `<span class="text-xs text-violet-500">⏳ รอผล</span>`;
             return `<span class="text-xs text-slate-300">—</span>`;
@@ -1908,7 +1981,7 @@ createApp({
       const cards = $('#bidPipelineTable').DataTable().rows({ search: 'applied' }).data().toArray();
       const rows = cards.map(card => {
         let noteText = '—';
-        if (card.win_loss_reason) noteText = card.win_loss_reason;
+        if (this.resultReasonText(card)) noteText = `${this.resultPrefix(card)}: ${this.resultReasonText(card)}`;
         else if (card.status === 'รอประกาศผล') noteText = 'รอผล';
         const row = [card.project_code || '', card.project_no, card.project_name, card.unit_name];
         if (this.isManager) row.push(card.sale_name || '');
@@ -1973,8 +2046,8 @@ createApp({
       const card = this.modal.data;
       const confirmText = {
         'ชนะการประมูล': ['ยืนยันสถานะเดิม?', `"${card.project_name}" ยังชนะการประมูล — รอส่งมอบ (ไม่เปลี่ยนสถานะ)`, 'ยืนยัน ยังชนะอยู่'],
-        'ยกเลิก':       ['ยกเลิกงานนี้?', `"${card.project_name}" จะเปลี่ยนสถานะเป็น ยกเลิก`, 'ยืนยัน ยกเลิกงาน'],
       }[status];
+      if (status === 'ยกเลิก') { this.openCancel(card); return; }   // หน้าต่างยกเลิกใส่เหตุผลแทนการยืนยัน (2026-10-10)
       if (confirmText && !(await this.showConfirm(...confirmText))) return;   // ส่งมอบแล้ว → หน้าต่างใส่วันส่งมอบจริงแทนการยืนยัน
       if (status === 'ชนะการประมูล') { await this.confirmBidImportReview(card); return; }
       this.closeModal();
@@ -2001,6 +2074,36 @@ createApp({
     todayIso() {
       const d = new Date();
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+
+    // ยกเลิกงาน (2026-10-10): ระบบเลือกแบบให้จากสถานะตอนนี้ — ก่อนยื่นซอง = ไม่เข้าประมูล / หลังยื่นซองหรือชนะ = หน่วยงาน/ลูกค้ายกเลิก
+    openCancel(card) {
+      this.cancelForm = { noBid: BID_PRE_SUBMIT_STATUSES.includes(card.status), win_loss_reason_id: null, win_loss_note: '', saving: false };
+      this.previousModal = null;
+      this.modal = { type: 'cancel', data: card };
+    },
+
+    async submitCancel() {
+      const f = this.cancelForm, card = this.modal.data;
+      const note = String(f.win_loss_note || '').trim();
+      if (f.noBid) {
+        if (!f.win_loss_reason_id) { await this.showAlert('กรุณาเลือกเหตุผลที่ไม่เข้าประมูล', 'error'); return; }
+        if (this.$refs.cancelNoBid?.needsNote && !note) { await this.showAlert('กรุณาระบุหมายเหตุว่าเพราะอะไร', 'error'); return; }
+      } else if (!note) { await this.showAlert('กรุณาระบุสาเหตุที่ยกเลิก', 'error'); return; }
+      f.saving = true;
+      let res;
+      try {
+        res = await apiCall('POST', 'api/assignments.php?action=update', {
+          project_code: card.project_code, status: 'ยกเลิก',
+          win_loss_reason_id: f.noBid ? Number(f.win_loss_reason_id) : null, win_loss_note: note,
+        });
+      } catch {
+        res = { success: false, message: 'ระบบขัดข้อง บันทึกไม่สำเร็จ กรุณาแจ้งผู้ดูแลระบบ' };   // คำตอบไม่ใช่ JSON (เช่น PHP error) — ไม่ให้ปุ่มค้าง (2026-10-10)
+      } finally {
+        f.saving = false;
+      }
+      if (res.success) { this.closeModal(); this.loadData(); await this.showAlert('ยกเลิกงานแล้ว', 'success'); }
+      else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 
     async submitDelivered() {

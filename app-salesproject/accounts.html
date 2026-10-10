@@ -580,6 +580,17 @@
                 </div>
               </div>
             </div>
+
+            <!-- ประวัติผู้ดูแล (account_history Field History — 2026-10-09) ทุก role ดูได้ — หัวหน้าดูย้อนหลังว่าใครเปลี่ยนเมื่อไหร่ -->
+            <div v-if="accountDetail.history.length" class="border-t border-slate-100 pt-4 mt-4">
+              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติผู้ดูแล</div>
+              <div v-for="h in accountDetail.history" :key="h.account_history_id" class="py-2 border-b border-slate-50 text-sm text-slate-600">
+                <span class="text-slate-500">{{ formatDateTime(h.changed_at) }}</span> ·
+                {{ h.old_display || 'ส่วนกลาง' }} → <b class="text-slate-700">{{ h.new_display || 'ส่วนกลาง' }}</b>
+                <span v-if="h.changed_by_name"> · โดย {{ h.changed_by_name }}</span>
+                <span v-if="h.note" class="text-slate-500"> — {{ h.note }}</span>
+              </div>
+            </div>
           </template>
 
         </div>
@@ -595,7 +606,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=65"></script>
+<script src="shared/app.js?v=71"></script>
 <script>
 const { createApp } = Vue;
 
@@ -614,7 +625,7 @@ createApp({
       salesUsers: [],        // รายชื่อ sale สำหรับตัวกรองและช่องผู้ดูแล
       dupDialog: { list: null, confirmLabel: '' },   // หน้าต่างพบลูกค้าที่อาจซ้ำ (2026-09-28)
       accountForm: { id: null, account_code: '', account_type: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' },
-      accountDetail: { contacts: [], deals: [], erp_codes: [], merge_logs: [], potential_duplicates: [] },
+      accountDetail: { contacts: [], deals: [], erp_codes: [], merge_logs: [], history: [], potential_duplicates: [] },
       erpForm: { show: false, account_erp_code_id: null, erp_customer_code: '', erp_role: '', is_primary: false, note: '' },
       // บทบาทรหัส ERP ตาม SAP Partner Functions — ต้องตรงกับ erpRoles() ใน api/accounts.php
       erpRoleOptions: [
@@ -678,6 +689,10 @@ createApp({
     if (new URLSearchParams(window.location.search).get('tab') === 'erp_pending') this.activeTab = 'erp_pending';
     if (this.isSale) this.ownerFilter = 'mine';
     await Promise.all([this.loadAccounts(), this.loadErpPending(), this.loadSalesUsers(), this.canChangeOwner ? this.loadDupPairs() : null]);
+    // ?account_id= เปิดรายละเอียดลูกค้ารายนั้นทันที (จากกระดิ่ง / ปุ่มใน LINE "ได้รับมอบหมายดูแลลูกค้า" — 2026-10-09)
+    const openId = Number(new URLSearchParams(window.location.search).get('account_id'));
+    const target = openId && this.accounts.find(a => Number(a.id) === openId);
+    if (target) await this.openAccountModal(target);
   },
   methods: {
     ...SharedMethods,
@@ -827,7 +842,7 @@ createApp({
         await this.loadAccountDetail(a.id);
       } else {
         this.accountForm = { id: null, account_code: '', account_type: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' };
-        this.accountDetail = { contacts: [], deals: [], erp_codes: [], merge_logs: [], potential_duplicates: [] };
+        this.accountDetail = { contacts: [], deals: [], erp_codes: [], merge_logs: [], history: [], potential_duplicates: [] };
       }
       this.erpForm.show = false;
       this.modal = { type: 'account', data: a };
@@ -859,7 +874,7 @@ createApp({
           this.accountForm.id = res.data.id;
           this.accountForm.account_code = res.data.account_code;
           this.accountForm.owner_name = this.accounts.find(a => Number(a.id) === Number(res.data.id))?.owner_name || '';
-          this.accountDetail = { contacts: [], deals: [], erp_codes: [], merge_logs: [], potential_duplicates: [] };
+          this.accountDetail = { contacts: [], deals: [], erp_codes: [], merge_logs: [], history: [], potential_duplicates: [] };
         } else {
           this.closeModal();
         }
@@ -890,8 +905,8 @@ createApp({
     async loadAccountDetail(id) {
       const res = await apiCall('GET', `api/accounts.php?action=detail&id=${id}`);
       this.accountDetail = res.success
-        ? { contacts: res.data.contacts, deals: res.data.deals, erp_codes: res.data.erp_codes || [], merge_logs: res.data.merge_logs || [], potential_duplicates: res.data.potential_duplicates || [] }
-        : { contacts: [], deals: [], erp_codes: [], merge_logs: [], potential_duplicates: [] };
+        ? { contacts: res.data.contacts, deals: res.data.deals, erp_codes: res.data.erp_codes || [], merge_logs: res.data.merge_logs || [], history: res.data.history || [], potential_duplicates: res.data.potential_duplicates || [] }
+        : { contacts: [], deals: [], erp_codes: [], merge_logs: [], history: [], potential_duplicates: [] };
     },
 
     erpRoleLabel(val) { return this.erpRoleOptions.find(r => r.val === val)?.label || val; },

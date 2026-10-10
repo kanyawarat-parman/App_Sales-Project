@@ -5,6 +5,7 @@
 // คำนวณจากข้อมูลจริงทุกครั้ง ไม่เก็บ log แยก (แบบ list view / report ของ CRM มาตรฐาน) — ผูกรหัส ERP แล้วหายจากรายการเอง
 // นับเฉพาะดีลที่ชนะตั้งแต่ app_config.erp_pending_start_date (ดีลเก่าก่อนเปิดใช้ฟีเจอร์ไม่นับ)
 // ใช้โดย api/accounts.php (erp_status / erp_pending), api/pipeline_items.php และ api/assignments.php (แจ้งเตือนตอนชนะ)
+require_once __DIR__ . '/notify_helper.php';   // แจ้งธุรการผ่านศูนย์กลางแจ้งเตือน (เรื่อง erp_pending — 2026-10-08)
 
 const ERP_PENDING_WON_STAGES = ['Deal Signed', 'Delivered', 'ชนะการประมูล', 'ส่งมอบแล้ว'];
 
@@ -66,11 +67,17 @@ function notifyErpPendingIfNeeded(PDO $db, int $pipelineItemId, array $user): vo
         ? "{$deal['account_code']} {$deal['account_name']} — {$title} {$wonText} ต้องเปิดหน้าบัญชีก่อนออก SO"
         : "{$title} {$wonText} แต่ยังไม่ได้ผูกลูกค้า";
 
+    // กระดิ่ง + LINE ผ่านศูนย์กลางแจ้งเตือน (2026-10-08) — ฟังก์ชันนี้ถูกเรียกก่อนตอบหน้าเว็บ จึงให้ LINE ส่งหลังตอบกลับ (defer_line)
     $recipients = $db->query("SELECT id FROM users WHERE role = 'salesadmin' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
-    $ins = $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by)
-                         VALUES (?, 'system', 'ลูกค้ารอเปิดหน้าบัญชี ERP', ?, 'erp_pending', ?, ?, ?)");
     foreach ($recipients as $recipientId) {
-        $ins->execute([$recipientId, $body, $pipelineItemId, $user['id'], $user['id']]);
+        notify($db, 'erp_pending', (int)$recipientId, [
+            'title'      => 'ลูกค้ารอเปิดหน้าบัญชี ERP',
+            'body'       => $body,
+            'ref_id'     => $pipelineItemId,
+            'line_title' => '🏦 ลูกค้ารอเปิดหน้าบัญชี ERP',
+            'line_body'  => $body,
+            'defer_line' => true,
+        ], (int)$user['id']);
     }
 }
 

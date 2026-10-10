@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/code_helper.php';
 require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../includes/phone_helper.php';
+require_once __DIR__ . '/../includes/notify_helper.php';   // แจ้ง Sale ผู้ดูแลคนใหม่ (2026-10-09)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -254,6 +255,8 @@ function getAccountDetail(PDO $db, int $id): void {
 
     // ประวัติการรวมลูกค้า (รายที่ถูกรวมเข้ารายนี้) — ทุก role ดูได้ (2026-09-30)
     $account['merge_logs'] = accountMergeLogs($db, $id);
+    // ประวัติการเปลี่ยน Sale ผู้ดูแล (Field History — 2026-10-09) ทุก role ดูได้
+    $account['history'] = accountHistory($db, $id);
     // ลูกค้าที่อาจซ้ำกับรายนี้ — คำเตือนบนหน้ารายละเอียด ทุก role เห็น (2026-09-30)
     $account['potential_duplicates'] = findPotentialDuplicatesFor($db, $id);
 
@@ -274,7 +277,7 @@ function updateAccount(PDO $db, array $user): void {
     // account_code ไม่รับจากหน้าเว็บ — รหัสไม่เปลี่ยนหลังออกแล้ว
     $taxId = normalizeTaxId($body['tax_id'] ?? '');
     // เบอร์: ตรวจรูปแบบเฉพาะช่องที่แก้ — เบอร์เก่าที่ยังไม่ได้แก้ไม่ขวางการบันทึกช่องอื่น (includes/phone_helper.php)
-    $old = $db->prepare('SELECT name, tax_id, phone, mobile, owner_user_id FROM accounts WHERE id = ?');
+    $old = $db->prepare('SELECT account_code, name, tax_id, phone, mobile, owner_user_id FROM accounts WHERE id = ?');
     $old->execute([$id]);
     $oldRow = $old->fetch();
     if (!$oldRow) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
@@ -291,6 +294,18 @@ function updateAccount(PDO $db, array $user): void {
              : ($oldRow['owner_user_id'] !== null ? (int)$oldRow['owner_user_id'] : null);
     $db->prepare('UPDATE accounts SET account_type = ?, owner_user_id = ?, name = ?, tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
        ->execute([$type, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $id]);
+
+    // เปลี่ยน Sale ผู้ดูแล → บันทึกประวัติ (หัวหน้าดูย้อนหลังในรายละเอียดลูกค้า) + แจ้ง Sale คนใหม่ (ไม่แจ้งคนเดิม / ไม่แจ้งเมื่อเป็นส่วนกลาง)
+    // ตามมาตรฐาน Salesforce Change Owner — ยืนยันจากผู้ใช้ 2026-10-09
+    $oldOwnerId = $oldRow['owner_user_id'] !== null ? (int)$oldRow['owner_user_id'] : null;
+    if ($oldOwnerId !== $ownerId) {
+        logAccountOwnerChange($db, $id, $oldRow['account_code'], $oldOwnerId, $ownerId, (int)$user['id']);
+        if ($ownerId) {
+            respondThenContinue(null, 'บันทึกสำเร็จ');
+            notifyAccountOwnerAssigned($db, $id, $oldOwnerId, $ownerId, $user);
+            return;
+        }
+    }
     jsonResponse(true, null, 'บันทึกสำเร็จ');
 }
 

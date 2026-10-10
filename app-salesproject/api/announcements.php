@@ -4,6 +4,8 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/account_helper.php';
+require_once __DIR__ . '/../includes/notify_helper.php';   // แจ้งธุรการเมื่อนำเข้าประกาศใหม่ (2026-10-09)
+require_once __DIR__ . '/../includes/win_loss_reason_helper.php';   // เหตุผลไม่เข้าประมูล (no_bid — 2026-10-09)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -304,6 +306,7 @@ function importData(PDO $db, array $user): void {
     $updated   = 0;
     $unchanged = 0;
     $errors    = [];
+    $newItems  = [];   // ประกาศที่เพิ่มใหม่ในการนำเข้าครั้งนี้ (ไม่นับที่อัปเดต/ซ้ำ)
 
     foreach ($items as $item) {
         $itemSource = in_array($item['source_type'] ?? '', $allowedSources) ? $item['source_type'] : $bodySource;
@@ -334,7 +337,10 @@ function importData(PDO $db, array $user): void {
             // นับจากจำนวนแถวที่ MySQL แจ้งกลับของ INSERT ... ON DUPLICATE KEY UPDATE: 1 = เพิ่มใหม่, 2 = อัพเดต, 0 = มีอยู่แล้วข้อมูลเหมือนเดิม
             // (แก้ 2026-09-26: เดิมใช้ lastInsertId() ซึ่งจำค่าของรายการก่อนหน้าไว้ ประกาศเดิมที่นำเข้าซ้ำจึงถูกนับเป็น "เพิ่มใหม่")
             $affected = $stmt->rowCount();
-            if ($affected === 1)     $inserted++;
+            if ($affected === 1) {
+                $inserted++;
+                $newItems[] = ['filter_status' => $item['filter_status'] ?? 'ตรง', 'close_date' => $item['close_date'] ?? null];   // ใช้สรุปแจ้งธุรการ
+            }
             elseif ($affected === 0) $unchanged++;
             else                     $updated++;
         } catch (PDOException $e) {
@@ -350,12 +356,19 @@ function importData(PDO $db, array $user): void {
                    . (count($failedNos) > 5 ? ' และอื่นๆ' : '') . ')';
     }
 
-    jsonResponse(true, [
+    $result = [
         'inserted'  => $inserted,
         'updated'   => $updated,
         'unchanged' => $unchanged,
         'errors'    => $errors,
-    ], $message);
+    ];
+    // มีประกาศใหม่ → ตอบหน้าจอก่อน แล้วแจ้งธุรการเบื้องหลัง (ครั้งเดียวต่อการนำเข้า — ยืนยันจากผู้ใช้ 2026-10-09)
+    if ($newItems) {
+        respondThenContinue($result, $message);
+        notifyAnnouncementsImported($db, $newItems, $user);
+        return;
+    }
+    jsonResponse(true, $result, $message);
 }
 
 function getSummary(PDO $db): void {
@@ -395,12 +408,23 @@ function decideBid(PDO $db, array $user): void {
         jsonResponse(false, null, 'ข้อมูลไม่ถูกต้อง', 400);
         return;
     }
-    $reason = $body['decision_reason'] ?? null;
+    $reason   = $body['decision_reason'] ?? null;
+    $reasonId = null;
+    // ไม่เข้าประมูล: เลือกเหตุผลจากรายการ (ประเภท no_bid) + หมายเหตุ ("อื่นๆ" บังคับ) — ยืนยันจากผู้ใช้ 2026-10-09
+    // decision_reason เก็บข้อความรวม "ชื่อเหตุผล — หมายเหตุ" หน้าที่แสดงข้อความเดิมจึงไม่ต้องแก้
+    if ($decision === 'ไม่เข้าประมูล') {
+        $noBid = findWinLossReason($db, $body['decision_reason_id'] ?? null, 'no_bid', 'ebidding');
+        if (!$noBid) jsonResponse(false, null, 'กรุณาเลือกเหตุผลที่ไม่เข้าประมูล', 400);
+        $note = trim((string)($body['decision_note'] ?? ''));
+        if ($err = winLossNoteError($noBid, ['win_loss_note' => $note])) jsonResponse(false, null, $err, 400);
+        $reasonId = (int)$noBid['win_loss_reason_id'];
+        $reason   = $noBid['win_loss_reason_name'] . ($note !== '' ? " — {$note}" : '');
+    }
     $stmt = $db->prepare("
         UPDATE announcements
-        SET bid_decision = ?, decision_reason = ?, decided_by = ?, decided_at = NOW(), updated_by = ?
+        SET bid_decision = ?, decision_reason = ?, decision_reason_id = ?, decided_by = ?, decided_at = NOW(), updated_by = ?
         WHERE id = ?
     ");
-    $stmt->execute([$decision, $reason, $user['id'], $user['id'], $id]);
+    $stmt->execute([$decision, $reason, $reasonId, $user['id'], $user['id'], $id]);
     jsonResponse(true, null, 'บันทึกเรียบร้อย');
 }

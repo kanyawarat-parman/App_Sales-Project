@@ -126,6 +126,9 @@ function listAssignments(PDO $db, array $user): void {
         SELECT pi.id, pi.project_code, pi.stage AS status, pi.priority, pi.sla_status, pi.secretary_notes,
                pi.notes AS sale_notes, pi.value AS bid_amount, pi.expected_delivery_date, pi.delivered_date, pi.sla_deadline,
                pi.created_at AS assigned_at, pi.updated_at, pi.line_notified_at,
+               -- ผล/เหตุผลปิดงาน ไว้แสดงบนการ์ดหน้าจัดการงานประมูล (2026-10-10) — ชุดเดียวกับ getKanban()
+               COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason, pi.win_loss_reason_id, pi.win_loss_note,
+               wc.competitor_name AS winner_name,
                a.id AS ann_id, a.project_no, a.project_name, a.unit_name,
                a.announce_date, a.close_date, a.price_median, a.can_bid, a.url, a.keyword_match,
                u1.id AS sale_id, u1.full_name AS sale_name, u1.avatar_color AS sale_color, u1.photo_url AS sale_photo_url,
@@ -134,6 +137,8 @@ function listAssignments(PDO $db, array $user): void {
         JOIN announcements a ON a.id = pi.announcement_id
         JOIN users u1 ON u1.id = pi.assigned_to
         JOIN users u2 ON u2.id = pi.assigned_by
+        LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id
+        LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id
         $whereStr
         ORDER BY
             FIELD(pi.sla_status,'เกิน','ใกล้ถึง','ปกติ'),
@@ -276,16 +281,18 @@ function transferBidImport(PDO $db, array $user): void {
     if (!$ok->fetchColumn()) jsonResponse(false, null, 'ไม่พบ Sale ที่เลือก', 404);
 
     markImportReviewed($db, $user, null, (int)$job['announcement_id'], ['sale', 'salesadmin', 'admin']);
-    reassignAssignment($db, $user, true);   // ย้ายงาน + กระดิ่งผู้รับ แล้วตอบกลับ "มอบหมายใหม่สำเร็จ" ก่อน
+    // ย้ายงาน + ตอบกลับ "มอบหมายใหม่สำเร็จ" ก่อน + แจ้งผู้รับ (กระดิ่ง/LINE) — คืนรหัสกระดิ่งไว้ผูกกับบันทึกการส่งอีเมล
+    $notificationId = reassignAssignment($db, $user, true);
 
-    // เบื้องหลัง: อีเมลแจ้งผู้รับโอน ตามการตั้งค่าแจ้งเตือนของผู้รับ (ยืนยันจากผู้ใช้ 2026-10-01)
+    // เบื้องหลัง: อีเมลแจ้งผู้รับโอน (ยืนยันจากผู้ใช้ 2026-10-01) — sendTransferEmail เช็คหน้าตั้งค่าการแจ้งเตือน
+    // (เรื่อง "เปลี่ยนผู้รับผิดชอบ / โอนงานประมูล") + การตั้งค่าผู้รับ แล้วบันทึกผลการส่ง (2026-10-08)
     $info = $db->prepare('SELECT pa.project_code, ann.project_name AS title, ann.unit_name AS client, pa.status,
                                  COALESCE(pa.bid_amount, ann.price_median) AS value, u.full_name AS from_name
                           FROM project_assignments pa JOIN announcements ann ON ann.id = pa.announcement_id
                           JOIN users u ON u.id = ? WHERE pa.project_code = ?');
     $info->execute([$user['id'], $body['project_code']]);
     $row = $info->fetch(PDO::FETCH_ASSOC);
-    if ($row) sendTransferEmail($db, $newSale, $row + ['kind' => 'งาน', 'page' => 'bid-pipeline.html']);
+    if ($row) sendTransferEmail($db, $newSale, $row + ['kind' => 'งาน', 'page' => 'bid-pipeline.html'], 'bid_reassigned', $notificationId, (int)$user['id']);
 }
 
 // เปลี่ยนประเภท งานประมูลย้อนหลัง (นำเข้าจากใบเสนอราคา) → ดีลขายตรง (Change Record Type แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-01)
@@ -497,10 +504,6 @@ function createAssignment(PDO $db, array $user): void {
     respondThenContinue(['id' => $assignmentId], 'มอบหมายงานสำเร็จ');
 
     // ── งานเบื้องหลัง: ส่งแจ้งเตือน (ผลลัพธ์ไม่กระทบ response ที่ส่งไปแล้ว) ──
-    $notifyEnabled  = (bool)($saleUser['notify_enabled']  ?? false);
-    $notifyChannel  = $saleUser['notify_channel'] ?? 'line';
-    $canEmail       = $notifyEnabled && in_array($notifyChannel, ['email', 'both']);
-
     // กระดิ่ง + LINE ผ่านศูนย์กลางแจ้งเตือน (ประเภท bid_assigned — 2026-10-08) / ผู้ทำให้เกิด = ผู้มอบหมาย
     if ($ann) {
         $projName = mb_strlen($ann['project_name']) > 80 ? mb_substr($ann['project_name'], 0, 80) . '...' : $ann['project_name'];
@@ -520,10 +523,14 @@ function createAssignment(PDO $db, array $user): void {
         }
     }
 
-    if ($canEmail && $saleUser && !empty($saleUser['email']) && $ann) {
-        $subject   = 'งานใหม่มอบหมายให้คุณ: ' . mb_substr($ann['project_name'] ?? '', 0, 60);
-        $htmlBody  = buildAssignmentEmailHtml($ann, $saleUser['full_name'], $priority, $notes);
-        if (sendEmail($saleUser['email'], $saleUser['full_name'], $subject, $htmlBody)) {
+    // อีเมลผ่าน notifyEmail(): เช็คหน้าตั้งค่าการแจ้งเตือน + การตั้งค่าผู้รับ + บันทึกผลการส่ง/การกดดู (2026-10-08)
+    if ($ann) {
+        $emailed = notifyEmail($db, 'bid_assigned', $assignedTo, $sent['notification_id'] ?? null,
+            function (array $to, string $url) use ($ann, $priority, $notes): bool {
+                $subject = 'งานใหม่มอบหมายให้คุณ: ' . mb_substr($ann['project_name'] ?? '', 0, 60);
+                return sendEmail($to['email'], $to['full_name'], $subject, buildAssignmentEmailHtml($ann, $to['full_name'], $priority, $notes, $url));
+            }, (int)$user['id']);
+        if ($emailed) {
             $db->prepare('UPDATE project_assignments SET email_notified_at = NOW(), updated_at = updated_at WHERE id = ?')
                ->execute([$assignmentId]);
         }
@@ -585,6 +592,29 @@ function validateWonResult(PDO $db, array $body): void {
     $reason = findWinLossReason($db, $body['win_loss_reason_id'], 'won', 'ebidding');
     if (!$reason) jsonResponse(false, null, 'เหตุผลที่ชนะไม่อยู่ในรายการ', 400);
     requireNoteForReason($reason, $body);
+}
+
+// สถานะก่อนยื่นซอง — ยกเลิกจากสถานะเหล่านี้ = "ไม่เข้าประมูล" (เราตัดสินใจเอง) / ยกเลิกหลังยื่นซองหรือหลังชนะ = หน่วยงาน/ลูกค้ายกเลิก
+// แบ่งตาม "ยื่นซองแล้วหรือยัง" แบบ Bid / No-Bid vs Customer Cancelled (ยืนยันจากผู้ใช้ 2026-10-10) — ต้องตรงกับ BID_PRE_SUBMIT_STATUSES ใน bid-pipeline.html / assignments.html
+// เป็นฟังก์ชัน ไม่ใช่ const — const ระดับไฟล์ถูกสร้างตอนรันถึงบรรทัดนั้น แต่ switch ด้านบนไฟล์เรียก updateAssignment() ก่อน → Undefined constant (บั๊ก 2026-10-10)
+function bidPreSubmitStatuses(): array {
+    return ['รอดำเนินการ', 'รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ'];
+}
+
+// กติกาบันทึก "ยกเลิก" (เข้าจากสถานะอื่น) — คืนข้อความประวัติ เช่น "ไม่เข้าประมูล: เวลาเตรียมยื่นไม่ทัน — ..." / "หน่วยงาน/ลูกค้ายกเลิก: ..."
+//   ก่อนยื่นซอง: บังคับเหตุผลประเภท no_bid (+ หมายเหตุถ้าเหตุผลตั้ง requires_note) — นับในการวิเคราะห์ไม่เข้าประมูล
+//   หลังยื่นซอง / ชนะแล้ว: บังคับพิมพ์สาเหตุ (win_loss_note) ไม่มีรหัสเหตุผล — ไม่นับเป็นไม่เข้าประมูล
+function validateCancelResult(PDO $db, array $body, string $fromStatus): string {
+    $note = trim((string)($body['win_loss_note'] ?? ''));
+    if (in_array($fromStatus, bidPreSubmitStatuses(), true)) {
+        $reason = findWinLossReason($db, $body['win_loss_reason_id'] ?? null, 'no_bid', 'ebidding');
+        if (!$reason) jsonResponse(false, null, 'กรุณาเลือกเหตุผลที่ไม่เข้าประมูล', 400);
+        requireNoteForReason($reason, $body);
+        return 'ไม่เข้าประมูล: ' . $reason['win_loss_reason_name'] . ($note !== '' ? " — {$note}" : '');
+    }
+    if (!empty($body['win_loss_reason_id'])) jsonResponse(false, null, 'งานที่ยื่นซองแล้วไม่ต้องเลือกเหตุผลไม่เข้าประมูล — ให้พิมพ์สาเหตุที่ยกเลิก', 400);
+    if ($note === '') jsonResponse(false, null, 'กรุณาระบุสาเหตุที่หน่วยงาน/ลูกค้ายกเลิก', 400);
+    return "หน่วยงาน/ลูกค้ายกเลิก: {$note}";
 }
 
 // Phase 4c: เปลี่ยนให้รับ project_code แทน id
@@ -693,11 +723,22 @@ function updateAssignment(PDO $db, array $user): void {
         // ชนะก็บังคับเหตุผลทุกครั้งที่บันทึกด้วยสถานะชนะ (ยืนยันจากผู้ใช้ 2026-09-25 — เดิมบังคับแค่ตอนเปลี่ยนเป็นชนะ ผู้ใช้ขอให้บังคับเสมอ)
         // งานที่ชนะไปก่อนมีกติกานี้ (ไม่มีเหตุผล) จึงต้องเลือกเหตุผลย้อนหลังตอนแก้ไขครั้งถัดไปด้วย
         validateWonResult($db, $body);
+    } elseif ($newStatus === 'ยกเลิก' && $current['status'] !== 'ยกเลิก') {
+        // ยกเลิกต้องมีเหตุผลเสมอ (เดิมไม่บังคับ — ปิดช่องโหว่ 2026-10-10) ข้อความประวัติสร้างที่นี่ ถ้าหน้าเว็บไม่ได้ส่ง note มา
+        $cancelNote = validateCancelResult($db, $body, $current['status']);
+        if (empty($body['note'])) $body['note'] = $cancelNote;
+        if (!array_key_exists('win_loss_reason_id', $body)) {   // หลังยื่นซอง: ล้างเหตุผลเดิม (เช่น เหตุผลที่ชนะ) — ค่าเดิมอยู่ในประวัติแล้ว
+            $fields[] = 'win_loss_reason_id = NULL'; $fields[] = 'win_loss_reason = NULL';
+            $piFields[] = 'win_loss_reason_id = NULL'; $piFields[] = 'win_loss_reason = NULL';
+        }
     }
     // ย้ายจากสถานะที่มีผลแล้ว (ชนะ/ส่งมอบ/แพ้) กลับไปสถานะที่ยังไม่จบ (เช่น แก้สถานะผิด) → ล้างผลแพ้/ชนะที่ตัวงาน (ยืนยันจากผู้ใช้ 2026-09-25)
     // ค่าเดิมไม่หาย เพราะถูกเก็บไว้ในแถวประวัติตอนบันทึกผลแล้ว (ดู snapshot ด้านล่าง) — ล้างเฉพาะช่องที่ไม่ได้ส่งมา กันกำหนดคอลัมน์ซ้ำใน UPDATE
     $resultStatuses = ['ชนะการประมูล', 'ส่งมอบแล้ว', 'แพ้การประมูล'];
-    $leavingResult  = $newStatus !== null && in_array($current['status'], $resultStatuses, true) && !in_array($newStatus, $resultStatuses, true);
+    // ดึงงานที่ "ยกเลิก" กลับมาทำต่อ ก็ล้างเหตุผลเหมือนกัน (แก้บั๊ก 2026-10-10 — เดิมเหตุผลไม่เข้าประมูลค้าง การ์ดในคอลัมน์ที่ยังทำอยู่ขึ้นว่า "แพ้: ...")
+    $leavingResult  = $newStatus !== null && (
+        (in_array($current['status'], $resultStatuses, true) && !in_array($newStatus, $resultStatuses, true))
+        || ($current['status'] === 'ยกเลิก' && $newStatus !== 'ยกเลิก'));
     if ($leavingResult) {
         $clearColumns = ['win_loss_reason_id' => ['win_loss_reason_id', 'win_loss_reason'], 'win_loss_note' => ['win_loss_note'],
                          'winner_competitor_id' => ['winner_competitor_id'], 'winning_price' => ['winning_price']];
@@ -767,7 +808,8 @@ function updateAssignment(PDO $db, array $user): void {
         // เปลี่ยนเป็นสถานะที่มีผล (ชนะ/ส่งมอบ/แพ้) → เก็บผลแพ้/ชนะ ณ ตอนนี้ไว้ในแถวประวัติด้วย (ยืนยันจากผู้ใช้ 2026-09-25)
         // อ่านค่าหลัง UPDATE แล้ว จึงได้ค่าที่บันทึกจริง / ผู้ชนะ+ราคาผู้ชนะเก็บเฉพาะแพ้
         $snap = ['win_loss_reason_id' => null, 'win_loss_note' => null, 'winner_competitor_id' => null, 'winning_price' => null, 'bid_amount' => null];
-        if (in_array($body['status'], $resultStatuses, true)) {
+        // ยกเลิกก็เก็บเหตุผล/สาเหตุไว้ในประวัติด้วย (2026-10-10)
+        if (in_array($body['status'], $resultStatuses, true) || $body['status'] === 'ยกเลิก') {
             $snapStmt = $db->prepare('SELECT win_loss_reason_id, win_loss_note, winner_competitor_id, winning_price, bid_amount FROM project_assignments WHERE id = ?');
             $snapStmt->execute([$id]);
             $snap = $snapStmt->fetch();
@@ -829,6 +871,16 @@ function updateAssignment(PDO $db, array $user): void {
         if ($piId && in_array($body['status'], ERP_PENDING_WON_STAGES, true)) {
             notifyErpPendingIfNeeded($db, (int)$piId, $user);
         }
+
+        // เพิ่งชนะการประมูล → แจ้งหัวหน้า (ครั้งเดียวต่องาน ไม่นับงานย้อนหลัง — ยืนยันจากผู้ใช้ 2026-10-08)
+        if ($body['status'] === 'ชนะการประมูล' && $current['status'] !== 'ชนะการประมูล') {
+            notifyDealWon($db, 'bid', $id, $user);
+        }
+        // เพิ่งแพ้การประมูล / ยกเลิก → แจ้งหัวหน้า (ครั้งเดียวต่องาน ไม่นับงานย้อนหลัง — ยืนยันจากผู้ใช้ 2026-10-08)
+        $lostStatuses = ['แพ้การประมูล', 'ยกเลิก'];
+        if (in_array($body['status'], $lostStatuses, true) && !in_array($current['status'], $lostStatuses, true)) {
+            notifyDealLost($db, 'bid', $id, $user);
+        }
     }
 
     // งานย้อนหลัง "ตรวจแล้ว" เฉพาะเมื่อเลื่อนสถานะ — บันทึกหมายเหตุ/ราคาเฉยๆ ไม่นับ (ยืนยันจากผู้ใช้ 2026-09-30)
@@ -845,10 +897,18 @@ function acceptAssignment(PDO $db, array $user): void {
     $body        = getJsonBody();
     $projectCode = $body['project_code'] ?? '';
     $canBid      = $body['can_bid']       ?? '';
-    $reason      = trim($body['reason']   ?? '');
+    $note        = trim($body['win_loss_note'] ?? '');
 
     if (!$projectCode || !$canBid) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
-    if ($canBid === 'ไม่ได้' && !$reason) jsonResponse(false, null, 'กรุณาระบุเหตุผล', 400);
+    // ไม่เข้าประมูล: เลือกเหตุผลจากรายการ (ประเภท no_bid) + หมายเหตุ ("อื่นๆ" บังคับ) — เดิมพิมพ์อิสระ วิเคราะห์ไม่ได้ (ยืนยันจากผู้ใช้ 2026-10-09)
+    $noBid = null;
+    if ($canBid === 'ไม่ได้') {
+        $noBid = findWinLossReason($db, $body['win_loss_reason_id'] ?? null, 'no_bid', 'ebidding');
+        if (!$noBid) jsonResponse(false, null, 'กรุณาเลือกเหตุผลที่ไม่เข้าประมูล', 400);
+        if ($err = winLossNoteError($noBid, $body)) jsonResponse(false, null, $err, 400);
+    }
+    // ข้อความรวม (ชื่อเหตุผล — หมายเหตุ) เขียนลงช่องเดิม sale_notes / ประวัติ หน้าที่แสดงข้อความเดิมจึงไม่ต้องแก้
+    $reason = $noBid ? $noBid['win_loss_reason_name'] . ($note !== '' ? " — {$note}" : '') : '';
 
     $stmt = $db->prepare('SELECT * FROM project_assignments WHERE project_code = ? AND assigned_to = ?');
     $stmt->execute([$projectCode, $user['id']]);
@@ -863,24 +923,35 @@ function acceptAssignment(PDO $db, array $user): void {
 
     $db->prepare("UPDATE project_assignments SET status = ?, sale_notes = ?, updated_by = ? WHERE id = ?")
        ->execute([$newStatus, $newNotes, $user['id'], $id]);
+    if ($noBid) {
+        // เหตุผลไม่เข้าประมูล (รหัส + ชื่อ ณ วันที่บันทึก + หมายเหตุ) — ใช้ในหน้าวิเคราะห์และข้อความแจ้งหัวหน้า
+        $db->prepare('UPDATE project_assignments SET win_loss_reason_id = ?, win_loss_reason = ?, win_loss_note = ? WHERE id = ?')
+           ->execute([$noBid['win_loss_reason_id'], $noBid['win_loss_reason_name'], $note !== '' ? $note : null, $id]);
+    }
 
     // sync ไปที่ pipeline_items mirror ด้วย (แก้บั๊กพร้อมกันรอบนี้ — ดู comment ด้านบนฟังก์ชัน)
     $db->prepare("UPDATE pipeline_items SET stage = ?, notes = ?, updated_by = ? WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'")
        ->execute([$newStatus, $newNotes, $user['id'], $current['announcement_id'], $current['assigned_to']]);
 
-    $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note) VALUES (?, ?, ?, 'รอดำเนินการ', ?, ?)")
-       ->execute([$id, $current['project_code'], $user['id'], $newStatus, $histNote]);
+    // ประวัติเก็บรหัสเหตุผลไม่เข้าประมูลด้วย (2026-10-09) — ดีลคู่ใช้รหัสเดียวกัน
+    $reasonId = $noBid ? (int)$noBid['win_loss_reason_id'] : null;
+    $db->prepare("INSERT INTO assignment_history (assignment_id, project_code, changed_by, old_status, new_status, note, win_loss_reason_id) VALUES (?, ?, ?, 'รอดำเนินการ', ?, ?, ?)")
+       ->execute([$id, $current['project_code'], $user['id'], $newStatus, $histNote, $reasonId]);
 
     // Phase 5b: sync ประวัติไปที่ pipeline_item_history ด้วย
     $piIdStmt = $db->prepare("SELECT id FROM pipeline_items WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'");
     $piIdStmt->execute([$current['announcement_id'], $current['assigned_to']]);
     $piId = $piIdStmt->fetchColumn();
     if ($piId) {
-        $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, 'รอดำเนินการ', ?, ?)")
-           ->execute([$piId, $current['project_code'], $user['id'], $newStatus, $histNote]);
+        if ($reasonId) $db->prepare('UPDATE pipeline_items SET win_loss_reason_id = ?, win_loss_reason = ?, win_loss_note = ? WHERE id = ?')
+                          ->execute([$reasonId, $noBid['win_loss_reason_name'], $note !== '' ? $note : null, $piId]);
+        $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note, win_loss_reason_id) VALUES (?, ?, ?, 'รอดำเนินการ', ?, ?, ?)")
+           ->execute([$piId, $current['project_code'], $user['id'], $newStatus, $histNote, $reasonId]);
     }
 
     markImportReviewed($db, $user, null, (int)$current['announcement_id']);   // งานย้อนหลัง "ตรวจแล้ว" (2026-09-30)
+    // Sale แจ้งไม่เข้าประมูล (สถานะยกเลิก) → แจ้งหัวหน้า (ยืนยันจากผู้ใช้ 2026-10-08 ให้แจ้งยกเลิกด้วย)
+    if ($newStatus === 'ยกเลิก') notifyDealLost($db, 'bid', $id, $user, true);
     jsonResponse(true, ['status' => $newStatus], 'บันทึกผลสำเร็จ');
 }
 
@@ -1090,7 +1161,8 @@ function getMyCalendar(PDO $db, array $user): void {
     แจ้งเตือนแบบ in-app เท่านั้น (ไม่ยิง LINE/email ซ้ำ) กัน notify ซ้ำซ้อน/ไปกวนคนที่ไม่เกี่ยวข้องโดยไม่ตั้งใจ
     Phase 4c: เปลี่ยนให้รับ project_code แทน id */
 // $continueAfter = true: ตอบกลับผู้ใช้ก่อน แล้วให้ผู้เรียกทำงานเบื้องหลังต่อ (เช่น ส่งอีเมลแจ้งโอนงาน — 2026-10-01)
-function reassignAssignment(PDO $db, array $user, bool $continueAfter = false): void {
+//   คืนรหัสกระดิ่งที่แจ้งผู้รับ (ผูกกับบันทึกการส่งอีเมล — 2026-10-08) / $continueAfter = false จบสคริปต์ในฟังก์ชันนี้
+function reassignAssignment(PDO $db, array $user, bool $continueAfter = false): ?int {
     $body          = getJsonBody();
     $projectCode   = $body['project_code'] ?? '';
     $newAssignedTo = (int)($body['assigned_to'] ?? 0);
@@ -1132,15 +1204,27 @@ function reassignAssignment(PDO $db, array $user, bool $continueAfter = false): 
            ->execute([$piId, $current['project_code'], $user['id'], $current['status'], $current['status'], "มอบหมายใหม่จาก {$oldName} ไป {$newSale['full_name']}"]);
     }
 
-    $ann = $db->prepare('SELECT project_name FROM announcements WHERE id = ?');
+    $ann = $db->prepare('SELECT project_name, unit_name FROM announcements WHERE id = ?');
     $ann->execute([$current['announcement_id']]);
-    $projName = $ann->fetchColumn() ?: 'งานประมูล';
+    $annRow   = $ann->fetch() ?: [];
+    $projName = $annRow['project_name'] ?? 'งานประมูล';
 
-    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by) VALUES (?, 'new_assignment', 'มอบหมายงานให้คุณ (เปลี่ยนผู้รับผิดชอบ)', ?, 'assignment', ?, ?, ?)")
-       ->execute([$newAssignedTo, $projName, $id, $user['id'], $user['id']]);
-
-    if ($continueAfter) { respondThenContinue(null, 'มอบหมายใหม่สำเร็จ'); return; }
-    jsonResponse(true, null, 'มอบหมายใหม่สำเร็จ');
+    // ตอบกลับก่อน แล้วแจ้งผู้รับ (กระดิ่ง + LINE ตามหน้าตั้งค่าการแจ้งเตือน) เบื้องหลัง — LINE ช้าไม่ทำให้หน้าจอค้าง (2026-10-08)
+    // $continueAfter = true: ผู้เรียก (transferBidImport) ทำงานต่อหลังจากนี้ (ส่งอีเมล)
+    respondThenContinue(null, 'มอบหมายใหม่สำเร็จ');
+    $actorName = $db->prepare('SELECT full_name FROM users WHERE id = ?');
+    $actorName->execute([$user['id']]);
+    $sent = notify($db, 'bid_reassigned', $newAssignedTo, [
+        'title'      => 'มอบหมายงานให้คุณ (เปลี่ยนผู้รับผิดชอบ)',
+        'body'       => $projName,
+        'ref_id'     => $id,
+        'line_title' => '📋 มีงานประมูลมอบหมายให้คุณ (เปลี่ยนผู้รับผิดชอบ)',
+        'line_body'  => "{$current['project_code']} " . (mb_strlen($projName) > 80 ? mb_substr($projName, 0, 80) . '...' : $projName)
+                      . "\nหน่วยงาน: " . (($annRow['unit_name'] ?? '') ?: '-') . "\nสถานะ: {$current['status']}"
+                      . "\nเดิม: {$oldName}\nโดย: " . ($actorName->fetchColumn() ?: '-'),
+    ], (int)$user['id']);
+    if ($continueAfter) return $sent['notification_id'];
+    exit;
 }
 
 /** ส่งข้อความเร่งงานแบบ in-app notification จาก salesadmin ถึง sale ที่รับผิดชอบงานนี้ — ไม่ยิง LINE/email
@@ -1153,15 +1237,25 @@ function nudgeAssignment(PDO $db, array $user): void {
     if (!$projectCode) jsonResponse(false, null, 'ข้อมูลไม่ครบ', 400);
     if (!$text) jsonResponse(false, null, 'กรุณาระบุข้อความ', 400);
 
-    $stmt = $db->prepare('SELECT id, assigned_to FROM project_assignments WHERE project_code = ?');
-    $stmt->execute([$projectCode]);
+    $stmt = $db->prepare('SELECT pa.id, pa.assigned_to, pa.project_code, ann.project_name, u.full_name AS from_name
+                          FROM project_assignments pa
+                          LEFT JOIN announcements ann ON ann.id = pa.announcement_id
+                          JOIN users u ON u.id = ?
+                          WHERE pa.project_code = ?');
+    $stmt->execute([$user['id'], $projectCode]);
     $row = $stmt->fetch();
     if (!$row) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
 
-    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by) VALUES (?, 'message', 'ข้อความจากธุรการ', ?, 'assignment', ?, ?, ?)")
-       ->execute([$row['assigned_to'], $text, $row['id'], $user['id'], $user['id']]);
-
-    jsonResponse(true, null, 'ส่งข้อความสำเร็จ');
+    // ตอบกลับก่อน แล้วแจ้ง sale (กระดิ่ง + LINE ตามหน้าตั้งค่าการแจ้งเตือน — 2026-10-08)
+    respondThenContinue(null, 'ส่งข้อความสำเร็จ');
+    $projName = (string)($row['project_name'] ?? '');
+    notify($db, 'bid_nudge', (int)$row['assigned_to'], [
+        'title'      => 'ข้อความจากธุรการ',
+        'body'       => $text,
+        'ref_id'     => (int)$row['id'],
+        'line_title' => "💬 ข้อความจาก {$row['from_name']}",
+        'line_body'  => $text . "\n\nงาน: {$row['project_code']} " . (mb_strlen($projName) > 80 ? mb_substr($projName, 0, 80) . '...' : $projName),
+    ], (int)$user['id']);
 }
 
 function periodDateRange(string $period): ?array {

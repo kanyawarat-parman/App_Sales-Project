@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/usage_helper.php';
 require_once __DIR__ . '/../includes/mail_helper.php';
 require_once __DIR__ . '/../includes/delivery_helper.php';
+require_once __DIR__ . '/../includes/notify_helper.php';   // ศูนย์กลางแจ้งเตือน (โอนดีล — 2026-10-08)
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -548,6 +549,9 @@ function createItem(PDO $db, array $user, array $body): void {
     $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, ?, 'สร้างดีลใหม่')")
        ->execute([$id, $projectCode, $user['id'], $body['stage'] ?? 'Interest']);
 
+    // สร้างดีลที่ขั้นปิดดีลได้เลย → แจ้งหัวหน้า (2026-10-08)
+    if (in_array($body['stage'] ?? 'Interest', ['Deal Signed', 'Delivered'], true)) notifyDealWon($db, 'direct', (int)$id, $user);
+
     echo json_encode(['success' => true, 'id' => $id, 'message' => 'เพิ่มรายการสำเร็จ'], JSON_UNESCAPED_UNICODE);
 }
 
@@ -848,6 +852,13 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
 
         // ปิดดีลแล้วแต่ลูกค้ายังไม่มีหน้าบัญชี ERP → แจ้งธุรการขาย (ครั้งเดียวต่อดีล — ยืนยันจากผู้ใช้ 2026-09-28)
         notifyErpPendingIfNeeded($db, $id, $user);
+
+        // เพิ่งปิดดีลได้ (จากขั้นที่ยังไม่ชนะ) → แจ้งหัวหน้า — ดีลคู่ของงานประมูล/ดีลย้อนหลังข้ามในฟังก์ชัน (ยืนยันจากผู้ใช้ 2026-10-08)
+        if (in_array($body['stage'], ['Deal Signed', 'Delivered'], true) && !in_array($row['stage'], ['Deal Signed', 'Delivered'], true)) {
+            notifyDealWon($db, 'direct', $id, $user);
+        }
+        // ดีลไม่สำเร็จ (Lost) → แจ้งหัวหน้า — ดีลคู่ของงานประมูล/ดีลย้อนหลังข้ามในฟังก์ชัน (ยืนยันจากผู้ใช้ 2026-10-08)
+        if ($body['stage'] === 'Lost') notifyDealLost($db, 'direct', $id, $user);
     }
 
     // ข้อมูลย้อนหลัง "ตรวจแล้ว" (รายงานการใช้งาน — ยืนยันจากผู้ใช้ 2026-09-30)
@@ -918,19 +929,26 @@ function transferImportDeal(PDO $db, array $user, int $id, int $newSale): void {
     $note = "โอนดีลจาก {$row['old_name']} ไป {$newName} (ไม่ใช่งานของผู้โอน — ตรวจข้อมูลย้อนหลัง)";
     $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
        ->execute([$id, $row['project_code'], $user['id'], $row['stage'], $row['stage'], $note]);
-    $db->prepare("INSERT INTO notifications (user_id, type, title, body, ref_type, ref_id, created_by, updated_by)
-                  VALUES (?, 'system', 'มีดีลขายตรงโอนมาให้คุณ', ?, 'pipeline_item', ?, ?, ?)")
-       ->execute([$newSale, "{$row['project_code']} {$row['title']} — โอนมาจาก {$row['old_name']}", $id, $user['id'], $user['id']]);
-
-    // ตอบกลับก่อน แล้วส่งอีเมลแจ้งผู้รับโอนเบื้องหลัง ตามการตั้งค่าแจ้งเตือนของผู้รับ (ยืนยันจากผู้ใช้ 2026-10-01)
+    // ตอบกลับก่อน แล้วแจ้งผู้รับโอนเบื้องหลัง (ยืนยันจากผู้ใช้ 2026-10-01)
+    // กระดิ่ง + LINE ผ่านศูนย์กลางแจ้งเตือน / อีเมลตามหน้าตั้งค่าการแจ้งเตือน + การตั้งค่าของผู้รับ (2026-10-08)
     respondThenContinue(null, 'โอนดีลแล้ว');
     $fromName = $db->prepare('SELECT full_name FROM users WHERE id = ?');
     $fromName->execute([$user['id']]);
+    $from = $fromName->fetchColumn() ?: $row['old_name'];
+    $value = $row['value'] !== null ? number_format((float)$row['value'], 0, '.', ',') . ' บาท' : '-';
+    $sent = notify($db, 'deal_transferred', $newSale, [
+        'title'      => 'มีดีลขายตรงโอนมาให้คุณ',
+        'body'       => "{$row['project_code']} {$row['title']} — โอนมาจาก {$row['old_name']}",
+        'ref_id'     => $id,
+        'line_title' => '🔄 มีดีลขายตรงโอนมาให้คุณ',
+        'line_body'  => "{$row['project_code']} {$row['title']}\nลูกค้า: " . ($row['client_name'] ?: '-') . "\nมูลค่า: {$value}\nสถานะ: ส่ง PI / ใบเสนอราคา\nโอนโดย: {$from}",
+    ], (int)$user['id']);
+    // sendTransferEmail เช็คหน้าตั้งค่าการแจ้งเตือน + การตั้งค่าผู้รับ แล้วบันทึกผลการส่ง (2026-10-08)
     sendTransferEmail($db, $newSale, [
         'kind' => 'ดีล', 'page' => 'sales-pipeline.html', 'project_code' => $row['project_code'], 'title' => $row['title'],
         'client' => $row['client_name'], 'value' => $row['value'], 'status' => 'ส่ง PI / ใบเสนอราคา',
-        'from_name' => $fromName->fetchColumn() ?: $row['old_name'],
-    ]);
+        'from_name' => $from,
+    ], 'deal_transferred', $sent['notification_id'], (int)$user['id']);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

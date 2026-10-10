@@ -39,6 +39,7 @@ const PAGE_LABELS = {
   'usage-report.html': 'การใช้งานระบบ',
   'delivery-forecast.html': 'คาดการณ์ส่งมอบ',
   'users.html': 'ผู้ใช้งาน',
+  'notification-settings.html': 'ตั้งค่าการแจ้งเตือน',
   'import.html': 'นำเข้าข้อมูล',
   'holidays.html': 'วันหยุด',
   'announcements.html': 'ประกาศ',
@@ -519,8 +520,10 @@ const AppNav = {
         g.push({ href:'duty-calendar.html', page:'duty-calendar', label:'สร้างเวรรายปีงานประมูล', icon:'calendar' });
       }
 
+      // แยกหมวด "รายงาน" กับ "ตั้งค่าระบบ" ออกจากหมวด "ระบบ" เดิม ตามมาตรฐาน CRM (Reports แยกจาก Setup — ยืนยันจากผู้ใช้ 2026-10-08)
+      // หมวดตั้งค่าระบบเป็นของ admin เท่านั้น role อื่นจึงเห็นแค่หมวดรายงาน
       if (this.isManager || this.isSale || this.isAdmin || this.isSalesAdmin) {
-        g.push({ type:'section', label:'ระบบ' });
+        g.push({ type:'section', label:'รายงาน' });
         if (this.isManager || this.isSale) {
           g.push({ href:'analytics.html', page:'analytics', label:'รายงานวิเคราะห์', icon:'analytics' });
         }
@@ -535,12 +538,15 @@ const AppNav = {
           g.push({ href:'delivery-forecast.html', page:'delivery-forecast', label:'คาดการณ์ส่งมอบ', icon:'calendar' });
         }
         if (this.isAdmin) {
+          g.push({ type:'section', label:'ตั้งค่าระบบ' });
           g.push({ href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' });
           // รายชื่อคู่แข่ง (master) — admin เท่านั้นเป็นคนเพิ่ม/แก้ไข/ซ่อน ตามมาตรฐาน CRM, sale เลือกจากรายการในฟอร์มดีลอย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-24)
           g.push({ href:'competitors.html', page:'competitors', label:'คู่แข่ง', icon:'competitors' });
           // เหตุผลปิดงาน (ชนะ/แพ้) master ใช้ทั้งงานประมูลและงานขายตรง — admin เท่านั้นเป็นคนแก้รายการ (ยืนยันจากผู้ใช้ 2026-09-25)
           g.push({ href:'win-loss-reasons.html', page:'win-loss-reasons', label:'เหตุผลปิดงาน (ชนะ/แพ้)', icon:'win_loss' });
           g.push({ href:'users.html', page:'users', label:'ผู้ใช้งาน', icon:'users' });
+          // ตั้งค่าการแจ้งเตือนรายเรื่อง (อีเมล/LINE) — admin เท่านั้น วางต่อจากผู้ใช้งาน เพราะใช้คู่กับการตั้งค่ารายคน (ยืนยันจากผู้ใช้ 2026-10-08)
+          g.push({ href:'notification-settings.html', page:'notification-settings', label:'ตั้งค่าการแจ้งเตือน', icon:'bell' });
           g.push({ href:'import.html', page:'import', label:'นำเข้าข้อมูล', icon:'import' });
         }
       }
@@ -586,6 +592,14 @@ const AppNav = {
       if (n.ref_type === 'assignment') window.location.href = 'my-assignments.html';
       // ดีลขายตรงที่ถูกโอนมาให้ (ไม่ใช่งานของฉัน — ตรวจข้อมูลย้อนหลัง 2026-10-01) → หน้างานขายตรง
       if (n.ref_type === 'pipeline_item') window.location.href = 'sales-pipeline.html';
+      // ชนะงาน / ปิดดีล → แจ้งหัวหน้า (2026-10-08) — งานประมูลเปิดหน้างานประมูล / ขายตรงเปิดหน้างานขายตรง
+      // แพ้ / ยกเลิก / ดีลไม่สำเร็จ → แจ้งหัวหน้า (2026-10-08)
+      if (n.ref_type === 'bid_won' || n.ref_type === 'bid_lost') window.location.href = 'bid-pipeline.html';
+      if (n.ref_type === 'deal_won' || n.ref_type === 'deal_lost') window.location.href = 'sales-pipeline.html';
+      // ได้รับมอบหมายดูแลลูกค้า → เปิดรายละเอียดลูกค้ารายนั้น (2026-10-09)
+      if (n.ref_type === 'account' && n.ref_id) window.location.href = 'accounts.html?account_id=' + n.ref_id;
+      // นำเข้าประกาศ e-GP ใหม่ → หน้า "ประกาศวันนี้" ให้ธุรการคัดกรอง (2026-10-09)
+      if (n.ref_type === 'announcements_imported') window.location.href = 'bid_decision.html';
     },
     async markAllRead() {
       await apiCall('POST', 'api/notifications.php?action=read_all');
@@ -630,6 +644,7 @@ const AppNav = {
         kpi:            '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
         users:          '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
         settings:       '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>',
+        bell:           '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>',
         master_data:    '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
       };
       return icons[name] || '';
@@ -880,6 +895,45 @@ const AppErpWarning = {
     <div v-else class="font-bold">ดีลนี้ยังไม่ได้ผูกลูกค้า</div>
     <div>ก่อนออก SO ต้องแจ้งบัญชีเปิดหน้าบัญชีก่อน บันทึกผลได้ตามปกติ — ระบบจะใส่ไว้ในรายการ "รอเปิดหน้าบัญชี" และแจ้งธุรการขายให้</div>
   </div>
+</div>
+  `,
+};
+
+/* ── AppNoBidReasons: เลือกเหตุผลที่ไม่เข้าประมูล + หมายเหตุ (Bid / No-Bid — ยืนยันจากผู้ใช้ 2026-10-09) ──
+   รายการจาก master win_loss_reasons ประเภท no_bid (admin จัดการที่หน้าเหตุผลปิดงาน) — แทนการพิมพ์เหตุผลอิสระที่นับรวมไม่ได้
+   ปุ่มใหญ่กดง่าย (ผู้ใช้วัย 50-60) / เลือกได้ข้อเดียว / เหตุผลที่ตั้ง requires_note (เช่น อื่นๆ) บังคับหมายเหตุ
+   ใช้: <app-no-bid-reasons v-model:reason-id="form.reason_id" v-model:note="form.note"></app-no-bid-reasons>
+   ใช้ใน my-assignments.html (Sale ตอนรับงาน) และ bid_decision.html (ธุรการตอนคัดกรอง) — หน้าที่เรียกตรวจ needsNote ก่อนส่งเองด้วย ref */
+const AppNoBidReasons = {
+  props: { reasonId: { default: null }, note: { type: String, default: '' } },
+  emits: ['update:reasonId', 'update:note'],
+  data() { return { reasons: [], loaded: false }; },
+  computed: {
+    selected() { return this.reasons.find(r => String(r.win_loss_reason_id) === String(this.reasonId)) || null; },
+    needsNote() { return !!this.selected && Number(this.selected.requires_note) === 1; },
+  },
+  async mounted() {
+    const res = await apiCall('GET', 'api/win_loss_reasons.php?action=list');
+    if (res.success) this.reasons = res.data.filter(r => r.win_loss_type === 'no_bid' && Number(r.is_active) === 1);
+    this.loaded = true;
+  },
+  template: `
+<div>
+  <div class="block text-sm font-semibold text-slate-600 mb-2">เหตุผลที่ไม่เข้าประมูล <span class="text-red-500">*</span></div>
+  <div v-if="!loaded" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเหตุผล…</div>
+  <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+    <button v-for="r in reasons" :key="r.win_loss_reason_id" type="button" @click="$emit('update:reasonId', r.win_loss_reason_id)"
+      class="text-left px-3 py-2 rounded-lg border-[1.5px] text-[.85rem] font-medium cursor-pointer transition-colors leading-snug"
+      :class="String(reasonId) === String(r.win_loss_reason_id) ? 'border-red-400 bg-red-50 text-red-800' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'">
+      {{ r.win_loss_reason_name }}
+    </button>
+  </div>
+  <label class="block text-sm font-semibold text-slate-600 mt-3 mb-1">
+    หมายเหตุ <span v-if="needsNote" class="text-red-500">* ระบุว่าเพราะอะไร</span><span v-else class="font-normal text-slate-400">(ไม่บังคับ)</span>
+  </label>
+  <textarea :value="note" @input="$emit('update:note', $event.target.value)" rows="2"
+    :placeholder="needsNote ? 'ระบุเหตุผล...' : 'รายละเอียดเพิ่มเติม เช่น ต้องเสนอพร้อมคอมพิวเตอร์ / ได้รับงาน 2 วันก่อนปิดรับ'"
+    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
 </div>
   `,
 };

@@ -174,21 +174,22 @@
               <p class="text-xs text-slate-400">ใช้จับคู่ข้อมูลใบเสนอราคาเก่าและอ้างอิงงานขาย ต้องไม่ซ้ำกับคนอื่น</p>
             </div>
             <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">เบอร์โทรศัพท์</label>
+              <input v-model="userForm.phone" placeholder="08x-xxx-xxxx"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="block text-sm font-semibold text-slate-600">Email</label>
+              <input v-model="userForm.email" type="email" placeholder="example@email.com"
+                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <!-- LINE User ID ยาว 33 ตัว — ใช้เต็มแถวให้เห็นครบ และวางติดส่วนการแจ้งเตือน (ปรับตามผู้ใช้ 2026-10-08) -->
+            <div class="flex flex-col gap-1 col-span-2">
               <label class="block text-sm font-semibold text-slate-600">LINE User ID</label>
               <input v-model="userForm.line_user_id" placeholder="Uxxxxxxxx..."
                 class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white font-mono">
               <p class="text-xs text-slate-400">รหัสผู้ใช้จาก LINE OA ของบริษัท ขึ้นต้นด้วย U ยาว 33 ตัว (ไม่ใช่ LINE ID ที่ใช้ค้นหาเพื่อน) — บันทึกแล้วกด "ทดสอบส่ง LINE" ในตารางเพื่อตรวจ</p>
               <p v-if="userForm.line_user_id && !/^U[0-9a-f]{32}$/.test(userForm.line_user_id.trim())" class="text-xs text-amber-700">รูปแบบรหัสยังไม่ถูกต้อง</p>
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="block text-sm font-semibold text-slate-600">เบอร์โทรศัพท์</label>
-              <input v-model="userForm.phone" placeholder="08x-xxx-xxxx"
-                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-            </div>
-            <div class="flex flex-col gap-1 col-span-2">
-              <label class="block text-sm font-semibold text-slate-600">Email</label>
-              <input v-model="userForm.email" type="email" placeholder="example@email.com"
-                class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
             </div>
             <div class="flex flex-col gap-2 col-span-2">
               <label class="block text-sm font-semibold text-slate-600">การแจ้งเตือน</label>
@@ -211,6 +212,11 @@
                   <span class="text-sm text-slate-500">{{ userForm.notify_enabled ? 'เปิดแจ้งเตือน' : 'ปิดแจ้งเตือน' }}</span>
                 </label>
               </div>
+              <!-- ชั้นผู้ใช้ของการแจ้งเตือน — ใช้คู่กับหน้าตั้งค่าการแจ้งเตือนรายเรื่อง (ชั้นองค์กร) ส่งเมื่อผ่านทั้ง 2 ชั้น (ยืนยันจากผู้ใช้ 2026-10-08) -->
+              <p class="text-xs text-slate-400 leading-relaxed">ช่องทางที่ผู้ใช้คนนี้รับ — จะได้อีเมล / LINE เฉพาะเรื่องที่เปิดไว้ใน
+                <a href="notification-settings.html" target="_blank" class="text-teal-700 font-semibold underline underline-offset-2">ตั้งค่าการแจ้งเตือน</a>
+                (กระดิ่งในระบบได้ทุกเรื่องเสมอ) · เลือก LINE ต้องใส่ LINE User ID ด้วย</p>
+              <p v-for="w in notifyWarnings" :key="w" class="text-xs text-amber-700">{{ w }}</p>
             </div>
             <div class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">สีอวตาร</label>
@@ -269,7 +275,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=65"></script>
+<script src="shared/app.js?v=71"></script>
 <script>
 const { createApp } = Vue;
 
@@ -286,6 +292,15 @@ createApp({
     };
   },
   computed: {
+    // เตือนสีส้มในฟอร์มเมื่อการตั้งค่าแจ้งเตือนรับไม่ได้จริง (ไม่บล็อกการบันทึก) — 2026-10-08
+    notifyWarnings() {
+      const f = this.userForm, w = [];
+      if (!f.notify_enabled) return ['ปิดแจ้งเตือนอยู่ — ผู้ใช้คนนี้จะได้แค่กระดิ่งในระบบ ไม่ได้อีเมล / LINE'];
+      const lineOk = /^U[0-9a-f]{32}$/.test((f.line_user_id || '').trim());
+      if (['line', 'both'].includes(f.notify_channel) && !lineOk) w.push('ยังไม่ได้ใส่ LINE User ID ที่ถูกต้อง — จะไม่ได้รับ LINE');
+      if (['email', 'both'].includes(f.notify_channel) && !(f.email || '').trim()) w.push('ยังไม่ได้ใส่อีเมล — จะไม่ได้รับอีเมล');
+      return w;
+    },
     tabItems() {
       return [
         { label:'ภาพรวม', icon:'home', href:'dashboard.html' },

@@ -41,15 +41,20 @@ function listWinLossReasons(PDO $db): void {
                (SELECT COUNT(*) FROM project_assignments pa
                 WHERE pa.win_loss_reason_id = r.win_loss_reason_id
                   AND ((r.win_loss_type = 'won'  AND pa.status IN ('ชนะการประมูล','ส่งมอบแล้ว'))
-                    OR (r.win_loss_type = 'lost' AND pa.status = 'แพ้การประมูล')))
+                    OR (r.win_loss_type = 'lost' AND pa.status = 'แพ้การประมูล')
+                    OR (r.win_loss_type = 'no_bid' AND pa.status = 'ยกเลิก')))
              + (SELECT COUNT(*) FROM pipeline_items pi
                 WHERE pi.source_type <> 'ebidding' AND pi.win_loss_reason_id = r.win_loss_reason_id
                   AND ((r.win_loss_type = 'won'  AND pi.stage IN ('Deal Signed','Delivered'))
-                    OR (r.win_loss_type = 'lost' AND pi.stage = 'Lost'))) AS used_count
+                    OR (r.win_loss_type = 'lost' AND pi.stage = 'Lost')))
+             -- ไม่เข้าประมูล: Sale ตอนรับงาน (project_assignments ด้านบน) + ธุรการตอนคัดกรอง (announcements.decision_reason_id — 2026-10-09)
+             + (SELECT COUNT(*) FROM announcements an
+                WHERE r.win_loss_type = 'no_bid' AND an.bid_decision = 'ไม่เข้าประมูล' AND an.decision_reason_id = r.win_loss_reason_id) AS used_count
         FROM win_loss_reasons r
         LEFT JOIN users uu ON uu.id = r.updated_by
         -- เรียงตามลำดับการแสดงผล (sort_order) อย่างเดียว — เดิมเรียงกลุ่ม applies_to ก่อน ทำให้ อื่นๆ (9) ไปอยู่กลาง dropdown (แก้ 2026-09-25)
-        ORDER BY r.win_loss_type DESC, r.sort_order, r.win_loss_reason_name
+        -- กลุ่ม: แพ้ → ชนะ → ไม่เข้าประมูล (คงลำดับเดิมของแพ้/ชนะ — ไม่เข้าประมูลเพิ่ม 2026-10-09)
+        ORDER BY FIELD(r.win_loss_type, 'lost', 'won', 'no_bid'), r.sort_order, r.win_loss_reason_name
     ")->fetchAll();
     jsonResponse(true, $rows);
 }
@@ -60,7 +65,9 @@ function winLossReasonFields(array $body): array {
     $appliesTo = $body['applies_to'] ?? '';
     if (!in_array($appliesTo, ['ebidding', 'sales', 'both'], true)) jsonResponse(false, null, 'กรุณาเลือกว่าใช้กับงานประมูลหรืองานขายตรง', 400);
     $name = trim(preg_replace('/\s+/u', ' ', $body['win_loss_reason_name'] ?? ''));
-    if (!in_array($type, ['won', 'lost'], true)) jsonResponse(false, null, 'กรุณาเลือกว่าเป็นเหตุผลที่ชนะหรือแพ้', 400);
+    if (!in_array($type, ['won', 'lost', 'no_bid'], true)) jsonResponse(false, null, 'กรุณาเลือกว่าเป็นเหตุผลที่ชนะ แพ้ หรือไม่เข้าประมูล', 400);
+    // ไม่เข้าประมูล (no_bid) ใช้กับงานประมูลเท่านั้น (ธุรการคัดกรอง / Sale ตอนรับงาน — 2026-10-09)
+    if ($type === 'no_bid') $appliesTo = 'ebidding';
     if ($name === '') jsonResponse(false, null, 'กรุณาระบุเหตุผล', 400);
     if (mb_strlen($name) > 100) jsonResponse(false, null, 'เหตุผลยาวเกินไป (ไม่เกิน 100 ตัวอักษร)', 400);
     // requires_winner ใช้กับเหตุผลที่แพ้เท่านั้น
@@ -95,10 +102,11 @@ function updateWinLossReason(PDO $db, array $user): void {
     $currentType = $cur->fetchColumn();
     if ($currentType === false) jsonResponse(false, null, 'ไม่พบเหตุผลที่ต้องการแก้ไข', 404);
     if ($currentType !== $type) {
-        $used = $db->prepare('SELECT (SELECT COUNT(*) FROM project_assignments WHERE win_loss_reason_id = ?) + (SELECT COUNT(*) FROM pipeline_items WHERE win_loss_reason_id = ?)');
-        $used->execute([$id, $id]);
+        $used = $db->prepare('SELECT (SELECT COUNT(*) FROM project_assignments WHERE win_loss_reason_id = ?) + (SELECT COUNT(*) FROM pipeline_items WHERE win_loss_reason_id = ?)
+                              + (SELECT COUNT(*) FROM announcements WHERE decision_reason_id = ?)');
+        $used->execute([$id, $id, $id]);
         if ((int)$used->fetchColumn() > 0) {
-            jsonResponse(false, null, 'เปลี่ยนผลชนะ/แพ้ไม่ได้ เพราะมีงานใช้เหตุผลนี้แล้ว — ให้เพิ่มเหตุผลใหม่แล้วซ่อนอันเดิมแทน', 400);
+            jsonResponse(false, null, 'เปลี่ยนประเภทเหตุผล (ชนะ / แพ้ / ไม่เข้าประมูล) ไม่ได้ เพราะมีงานใช้เหตุผลนี้แล้ว — ให้เพิ่มเหตุผลใหม่แล้วซ่อนอันเดิมแทน', 400);
         }
     }
     $dup = $db->prepare('SELECT 1 FROM win_loss_reasons WHERE win_loss_type = ? AND win_loss_reason_name = ? AND win_loss_reason_id <> ?');

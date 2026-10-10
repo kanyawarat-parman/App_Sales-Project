@@ -65,7 +65,7 @@
 
       <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
 
-        <p class="text-sm text-slate-500 mb-4 max-w-[760px]">รายการเหตุผลที่ sale เลือกตอนปิดงาน — <b>งานประมูล</b>: ชนะการประมูล / แพ้การประมูล · <b>งานขายตรง</b>: ปิดดีลได้ / ไม่สำเร็จ (Lost) — admin เป็นคนเพิ่ม/แก้ไขจากหน้านี้เท่านั้น ฝั่งไม่สำเร็จต้องเลือกผู้ชนะทุกครั้ง ส่วนเหตุผลที่ติ๊ก "ต้องกรอกราคา" จะบังคับกรอกราคาผู้ชนะและราคาของเราด้วย เลิกใช้เหตุผลไหนให้ "ซ่อน" แทนการลบ งานเดิมยังแสดงข้อความเดิม</p>
+        <p class="text-sm text-slate-500 mb-4 max-w-[760px]">รายการเหตุผลที่ sale เลือกตอนปิดงาน — <b>งานประมูล</b>: ชนะการประมูล / แพ้การประมูล · <b>งานขายตรง</b>: ปิดดีลได้ / ไม่สำเร็จ (Lost) — admin เป็นคนเพิ่ม/แก้ไขจากหน้านี้เท่านั้น ฝั่งไม่สำเร็จต้องเลือกผู้ชนะทุกครั้ง ส่วนเหตุผลที่ติ๊ก "ต้องกรอกราคา" จะบังคับกรอกราคาผู้ชนะและราคาของเราด้วย เลิกใช้เหตุผลไหนให้ "ซ่อน" แทนการลบ งานเดิมยังแสดงข้อความเดิม · <b>ไม่เข้าประมูล</b>: ธุรการเลือกตอนคัดกรองประกาศ และ Sale เลือกตอนรับงาน ใช้วิเคราะห์ว่าทำไมไม่ไปต่อ</p>
 
         <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100">
           <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 gap-3 flex-wrap">
@@ -143,8 +143,9 @@
           </div>
           <div>
             <label class="block text-sm font-semibold text-slate-700 mb-1">ผล <span class="text-red-500">*</span></label>
-            <div class="grid grid-cols-2 gap-2">
-              <button v-for="t in ['won','lost']" :key="t" type="button" @click="form.win_loss_type = t"
+            <!-- ไม่เข้าประมูล (no_bid) ใช้กับงานประมูลเท่านั้น — เลือกแล้วตั้ง "ใช้กับงาน" เป็นงานประมูลให้ (2026-10-09) -->
+            <div class="grid grid-cols-3 gap-2">
+              <button v-for="t in ['won','lost','no_bid']" :key="t" type="button" @click="form.win_loss_type = t; if (t === 'no_bid') form.applies_to = 'ebidding'"
                 class="border-2 rounded-xl py-2.5 px-2 text-center text-[.9rem] font-semibold cursor-pointer transition-all" :class="form.win_loss_type===t ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
                 {{ resultLabel(t, form.applies_to) }}
               </button>
@@ -188,7 +189,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=65"></script>
+<script src="shared/app.js?v=71"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -206,7 +207,7 @@ createApp({
       // ใช้กับงานไหน — งานประมูล / งานขายตรง / ใช้ทั้ง 2 ฝั่ง (เพิ่ม 2026-09-25)
       appliesToOptions: [{ val: 'both', label: 'ทั้ง 2 ฝั่ง' }, { val: 'ebidding', label: 'งานประมูล' }, { val: 'sales', label: 'งานขายตรง' }],
       scopeTab: 'all',
-      scopeTabs: [{ val: 'all', label: 'ทั้งหมด' }, { val: 'ebidding', label: 'งานประมูล' }, { val: 'sales', label: 'งานขายตรง' }],
+      scopeTabs: [{ val: 'all', label: 'ทั้งหมด' }, { val: 'ebidding', label: 'งานประมูล' }, { val: 'sales', label: 'งานขายตรง' }, { val: 'no_bid', label: 'ไม่เข้าประมูล' }],
     };
   },
   computed: {
@@ -233,7 +234,9 @@ createApp({
     this.bindTableEvents();
     $.fn.dataTable.ext.search.push((settings, searchData, index, rowData) => {
       if (settings.nTable.id !== 'wlrTable') return true;
-      if (this.scopeTab !== 'all' && rowData.applies_to !== this.scopeTab && rowData.applies_to !== 'both') return false;
+      // แท็บ "ไม่เข้าประมูล" กรองตามประเภทเหตุผล (no_bid — 2026-10-09) / แท็บอื่นกรองตามงาน
+      if (this.scopeTab === 'no_bid') { if (rowData.win_loss_type !== 'no_bid') return false; }
+      else if (this.scopeTab !== 'all' && rowData.applies_to !== this.scopeTab && rowData.applies_to !== 'both') return false;
       return this.showHidden || Number(rowData.is_active) === 1;
     });
     await this.loadReasons();
@@ -246,9 +249,9 @@ createApp({
     // ชื่อผลตามงาน: งานประมูล ชนะ/แพ้การประมูล · งานขายตรง ปิดดีลได้/ไม่สำเร็จ (Lost) · ทั้ง 2 ฝั่ง แสดงคู่กัน
     resultLabel(type, appliesTo) {
       const map = {
-        ebidding: { won: 'ชนะการประมูล', lost: 'แพ้การประมูล' },
-        sales:    { won: 'ปิดดีลได้',     lost: 'ไม่สำเร็จ (Lost)' },
-        both:     { won: 'ชนะ / ปิดดีลได้', lost: 'แพ้ / ไม่สำเร็จ' },
+        ebidding: { won: 'ชนะการประมูล', lost: 'แพ้การประมูล', no_bid: 'ไม่เข้าประมูล' },
+        sales:    { won: 'ปิดดีลได้',     lost: 'ไม่สำเร็จ (Lost)', no_bid: 'ไม่เข้าประมูล' },
+        both:     { won: 'ชนะ / ปิดดีลได้', lost: 'แพ้ / ไม่สำเร็จ', no_bid: 'ไม่เข้าประมูล' },
       };
       return (map[appliesTo] || map.both)[type] || type;
     },
@@ -287,7 +290,7 @@ createApp({
           {
             data: 'win_loss_type', title: 'ผล',
             render: (d, type, row) => {
-              const cls = d === 'lost' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700';
+              const cls = d === 'lost' ? 'bg-rose-50 text-rose-700' : d === 'no_bid' ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700';
               return `<span class="inline-block whitespace-nowrap text-[11px] font-bold px-2 py-0.5 rounded-full ${cls}">${self.esc(self.resultLabel(d, row.applies_to))}</span>`;
             },
           },

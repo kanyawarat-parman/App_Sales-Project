@@ -16,11 +16,11 @@
   </div>
 
   <template v-else>
-    <!-- app-nav อยู่ในคอนเทนเนอร์เดียวกับ header/main เสมอ (ไม่ใช่ sibling แยก) กันปัญหาสูงเกิน 100vh ตอนมุมมองปฏิทินล็อกเป็น h-screen
-         (ดูปัญหาเดียวกันที่เคยเจอใน company-calendar.html/duty-calendar.html) — โหมด gantt/รายการ ยังเลื่อนจอได้ตามปกติเหมือนเดิม
+    <!-- app-nav อยู่ในคอนเทนเนอร์เดียวกับ header/main เสมอ (ไม่ใช่ sibling แยก) — เดิมกันปัญหาสูงเกิน 100vh ตอนมุมมองปฏิทินล็อก h-screen
+         (มุมมองปฏิทินเอาออกแล้ว 2026-10-10 — ซ้ำกับเมนู "ปฏิทินคัดกรองประกาศ" company-calendar.html)
          ⚠️ ห้ามใส่ md:ml-60 ที่ div นี้ (คอนเทนเนอร์รวม) — <app-nav> เป็นลูกอยู่ข้างในอยู่แล้ว header ของ AppNav เองมี md:ml-60 built-in
          ถ้าใส่ซ้ำที่นี่อีกชั้นจะเลื่อนซ้อนกัน 2 เท่าเกิดช่องว่างขาว (ยืนยันบั๊กจากผู้ใช้ 2026-09-21) — ห่อ header+main ด้วย div ml-60 แยกแทน -->
-    <div class="flex flex-col" :class="view==='calendar' ? 'h-screen overflow-hidden' : 'min-h-screen'">
+    <div class="flex flex-col min-h-screen">
       <app-nav :user="currentUser" page="assignments" ref="nav"></app-nav>
       <div class="md:ml-60 flex-1 min-h-0 flex flex-col">
       <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] shrink-0">
@@ -32,83 +32,19 @@
           </svg>
           จัดการงานประมูล
         </h1>
-        <!-- สลับมุมมอง: ปฏิทิน (ค่าเริ่มต้น รวมทั้งทีมต่อวัน หน้าตาแบบ company-calendar.html) / Gantt (รายคน×วัน) / รายการ (list การ์ด กรองได้) -->
+        <!-- สลับมุมมอง: รายการ (ค่าเริ่มต้น — List View มาตรฐาน CRM) / Gantt (รายคน×วัน)
+             มุมมองปฏิทินเอาออก 2026-10-10 (ยืนยันจากผู้ใช้) — ซ้ำกับเมนู "ปฏิทินคัดกรองประกาศ" ที่แสดงมอบหมาย/กดรับต่อวันอยู่แล้ว -->
         <div class="ml-auto flex items-center gap-1 bg-slate-100 rounded-xl p-1">
-          <button type="button" @click="view='calendar'; loadCalendarView()"
+          <button type="button" @click="view='list'; loadAssignments()"
             class="px-3 py-1.5 rounded-lg text-xs font-semibold border-0 cursor-pointer"
-            :class="view==='calendar' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">ปฏิทิน</button>
+            :class="view==='list' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">รายการ</button>
           <button type="button" @click="view='gantt'; loadGanttData()"
             class="px-3 py-1.5 rounded-lg text-xs font-semibold border-0 cursor-pointer"
             :class="view==='gantt' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">Gantt</button>
-          <button type="button" @click="view='list'"
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold border-0 cursor-pointer"
-            :class="view==='list' ? 'bg-white text-teal-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">รายการ</button>
         </div>
       </header>
 
-      <main class="w-full max-w-[1280px] mx-auto px-4 md:px-6"
-        :class="view==='calendar' ? 'flex-1 min-h-0 flex flex-col overflow-hidden py-3' : 'flex-1 pb-24 pt-5 md:py-6'">
-        <!-- Calendar view: ภาพรวมทั้งทีมต่อวัน "จำนวนมอบหมาย / จำนวนกดรับ" หน้าตาแบบเดียวกับ company-calendar.html — พอดี 1 จอไม่ต้องเลื่อน -->
-        <div v-if="view==='calendar'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-4 flex-1 min-h-0 flex flex-col">
-          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <div class="flex items-center gap-2">
-              <button @click="prevCalMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-              </button>
-              <div class="text-sm font-bold text-slate-700 min-w-[130px] text-center">{{ calMonthLabel }}</div>
-              <button @click="nextCalMonth" class="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-slate-500">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-              </button>
-            </div>
-            <div class="flex items-center gap-4 flex-wrap text-xs text-slate-500 shrink-0">
-              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-orange-200 inline-block"></span> วันหยุดบริษัท</span>
-              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block"></span> มอบหมาย / กดรับ</span>
-              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-teal-500 inline-block"></span> เวร sale ที่รับผิดชอบ</span>
-              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full border-2 border-dashed border-amber-400 inline-block"></span> คาดการณ์ (ยังไม่ได้สร้างเวรจริง)</span>
-              <span class="text-slate-400">คลิกวันที่เพื่อดูรายละเอียด</span>
-            </div>
-          </div>
-
-          <div v-if="calLoading" class="flex-1 flex items-center justify-center text-slate-400"><div class="spinner w-8 h-8"></div></div>
-          <template v-else>
-            <div class="grid grid-cols-7 gap-1.5 mb-1.5 shrink-0">
-              <div v-for="d in dayLabels" :key="d" class="text-center text-xs font-bold text-slate-400 py-1">{{ d }}</div>
-            </div>
-            <!-- โครงสร้าง/ขนาดช่องเดียวกับ company-calendar.html ทุกจุด (badge มุมขวาบน + เวร sale กลางช่อง) -->
-            <div class="grid grid-cols-7 gap-1.5 flex-1 min-h-0" :style="{ gridTemplateRows: `repeat(${calNumWeeks}, 1fr)` }">
-              <div v-for="(cell, idx) in calendarCells" :key="idx"
-                   class="rounded-xl border p-2 flex flex-col transition-colors overflow-hidden"
-                   :class="[
-                     cell ? 'cursor-pointer hover:ring-2 hover:ring-teal-200' : 'bg-transparent border-transparent',
-                     cell && cell.isOff ? 'bg-orange-50 border-orange-200' : cell ? 'bg-white border-slate-100' : '',
-                     cell && cell.isToday ? 'ring-2 ring-teal-400' : ''
-                   ]"
-                   @click="cell && openCalDay(cell.date)">
-                <template v-if="cell">
-                  <div class="flex items-center justify-between shrink-0">
-                    <span class="text-xs font-semibold text-slate-400 leading-none">{{ cell.day }}</span>
-                    <span v-if="cell.info?.assigned" class="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500 text-white font-bold leading-none whitespace-nowrap shadow-sm shadow-sky-200">{{ cell.info.assigned }}/{{ cell.info.accepted }}</span>
-                  </div>
-
-                  <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-1 overflow-hidden">
-                    <span v-if="cell.info?.holiday" class="text-[11px] text-orange-700 font-semibold text-center leading-tight line-clamp-2">{{ cell.info.holiday }}</span>
-                    <template v-else-if="cell.info?.duty">
-                      <img v-if="cell.info.duty.photo_url" :src="cell.info.duty.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"
-                           :class="cell.info.duty.computed ? 'opacity-60 border-2 border-dashed border-amber-400' : ''"/>
-                      <div v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
-                           :class="cell.info.duty.computed ? 'opacity-60 border-2 border-dashed border-amber-400' : ''"
-                           :style="{background: cell.info.duty.avatar_color || '#64748b'}">{{ avatarInitials(cell.info.duty.full_name) }}</div>
-                      <span class="text-xs truncate" :class="cell.info.duty.computed ? 'text-amber-600 italic' : 'text-slate-600'">{{ (cell.info.duty.full_name||'').split(' ')[0] }}</span>
-                    </template>
-                    <span v-else-if="!cell.isWorkDay" class="text-[11px] text-orange-600 font-semibold text-center">วันหยุดสุดสัปดาห์</span>
-                    <span v-else class="text-sm text-slate-300">-</span>
-                  </div>
-                </template>
-              </div>
-            </div>
-          </template>
-        </div>
-
+      <main class="w-full max-w-[1280px] mx-auto px-4 md:px-6 flex-1 pb-24 pt-5 md:py-6">
         <!-- Gantt view -->
         <div v-if="view==='gantt'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-4 mb-4">
           <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -184,36 +120,47 @@
         <!-- Filter bar -->
         <div v-if="view==='list'" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 mb-4">
           <div class="px-4 py-3.5">
+            <!-- มุมมองงานค้างสำเร็จรูปพร้อมตัวเลข (Saved List Views มาตรฐาน CRM — ยืนยันจากผู้ใช้ 2026-10-10) แทน dropdown สถานะ + ปุ่มกรองเดิม
+                 4 อันแรก = งานที่ต้องติดตาม (ตัวเลขแดงเมื่อมีงาน) / ตัวเลขนับตาม Sale ที่เลือก / กดแล้วรายการเปลี่ยนทันที — นิยามอยู่ที่ listViews -->
+            <div class="text-xs font-semibold text-slate-500 mb-1.5">งานที่ต้องติดตาม</div>
+            <div class="flex flex-wrap items-center gap-2 mb-3.5">
+              <template v-for="(v, i) in listViews" :key="v.key">
+                <span v-if="i === 4" class="w-px h-6 bg-slate-200 mx-1"></span>
+                <button type="button" @click="filter.view = v.key"
+                  class="inline-flex items-center gap-1.5 pl-3.5 pr-1.5 py-1.5 rounded-full text-sm font-semibold cursor-pointer transition-colors"
+                  :class="filter.view === v.key ? 'border-2 border-teal-600 bg-teal-50 text-teal-800' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'">
+                  {{ v.label }}
+                  <span class="min-w-[24px] px-1.5 py-0.5 rounded-full text-xs font-bold text-center"
+                    :class="filter.view === v.key ? 'bg-teal-600 text-white' : (v.attention && viewCounts[v.key] ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600')">{{ viewCounts[v.key] }}</span>
+                </button>
+              </template>
+            </div>
             <div class="flex flex-wrap gap-3 items-end">
-              <div class="flex flex-col gap-1">
-                <label class="block text-xs font-semibold text-slate-500">สถานะ</label>
-                <select v-model="filter.status"
-                  class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-                  <option value="">ทั้งหมด</option>
-                  <option>รอดำเนินการ</option>
-                  <option>รับงาน/ศึกษา TOR</option>
-                  <option>จัดเตรียมยื่นข้อเสนอ</option>
-                  <option>รอประกาศผล</option>
-                  <option>ชนะการประมูล</option>
-                  <option>ส่งมอบแล้ว</option>
-                  <option>แพ้การประมูล</option>
-                  <option>ยกเลิก</option>
-                </select>
+              <!-- ช่องค้นหา (List View search มาตรฐาน CRM — ยืนยันจากผู้ใช้ 2026-10-10) แบบเดียวกับหน้างานประมูล: กรองทันทีที่พิมพ์ ค้นชื่อโครงการ/หน่วยงาน/รหัสงาน/เลขที่โครงการ (matchesSearch) -->
+              <div class="flex flex-col gap-1 flex-1 min-w-[260px]">
+                <label class="block text-xs font-semibold text-slate-500">ค้นหา</label>
+                <div class="relative">
+                  <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input v-model="filter.search" type="text" placeholder="ค้นหาชื่อโครงการ, หน่วยงาน, รหัสงาน..."
+                    class="w-full border-2 border-slate-200 rounded-xl pl-11 pr-10 py-2 text-base outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white placeholder:text-slate-400">
+                  <button v-if="filter.search" type="button" @click="filter.search = ''" title="ล้างคำค้น" aria-label="ล้างคำค้น"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 bg-transparent border-0 cursor-pointer text-lg leading-none">✕</button>
+                </div>
               </div>
               <div v-if="isSecretary" class="flex flex-col gap-1">
                 <label class="block text-xs font-semibold text-slate-500">Sales</label>
-                <select v-model="filter.assigned_to"
+                <select v-model="filter.assigned_to" @change="loadAssignments"
                   class="border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
                   <option value="">ทุกคน</option>
                   <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
                 </select>
               </div>
-              <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer"
-                @click="loadAssignments">กรอง</button>
             </div>
             <button type="button" @click="showStatusLegend=!showStatusLegend"
-              class="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 p-0 mt-3 cursor-pointer">
-              ℹ️ ลำดับสถานะงาน {{ showStatusLegend ? '▲' : '▼' }}
+              class="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 p-0 mt-3 cursor-pointer">
+              <!-- ไอคอน i วงกลมเทา แบบเดียวกับปุ่มคำอธิบายในหน้างานประมูล (bid-pipeline.html) แทน emoji ℹ️ (2026-10-10) -->
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white text-[10px] font-black leading-none shrink-0">i</span>
+              ลำดับสถานะงาน {{ showStatusLegend ? '▲' : '▼' }}
             </button>
             <div v-if="showStatusLegend" class="bg-slate-50 rounded-xl p-3 mt-2 text-xs text-slate-600 leading-relaxed">
               รอดำเนินการ → รับงาน/ศึกษา TOR → จัดเตรียมยื่นข้อเสนอ → รอประกาศผล → <strong class="text-emerald-700">ชนะการประมูล</strong> → ส่งมอบแล้ว
@@ -226,55 +173,57 @@
         <div v-if="loading" class="flex flex-col items-center justify-center py-12 text-slate-400">
           <div class="spinner w-8 h-8 mx-auto"></div>
         </div>
-        <div v-else-if="!assignments.length" class="flex flex-col items-center justify-center py-12 text-slate-400">
-          <div class="text-4xl mb-3">📭</div><p>ไม่พบงาน</p>
+        <div v-else-if="!filteredAssignments.length" class="flex flex-col items-center justify-center py-12 text-slate-400">
+          <!-- ไอคอนเส้นสีเทา (รูปคลิปบอร์ดเดียวกับหัวหน้านี้) แทน emoji 📭 (2026-10-10) -->
+          <svg class="w-10 h-10 mb-3 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+          <p>{{ filter.search && assignments.length ? 'ไม่พบงานที่ค้นหา' : 'ไม่มีงานในมุมมองนี้' }}</p>
         </div>
         <div v-else class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
-          <div v-for="a in assignments" :key="a.id"
-            class="bg-white rounded-xl p-4 shadow-sm ring-1 cursor-pointer hover:shadow-md transition-shadow"
-            :class="a.sla_status==='เกิน' ? 'ring-red-300 bg-red-50' : a.sla_status==='ใกล้ถึง' ? 'ring-amber-200 bg-amber-50' : 'ring-slate-100'"
+          <!-- การ์ดแบบใหม่ (ยืนยันจากผู้ใช้ + mockup 2026-10-10): พื้นขาวทุกใบ / สีเฉพาะป้ายสถานะ + ข้อความเตือนจุดเดียว
+               บรรทัดผลตามสถานะ (cardResult) — ยังไม่ยื่นซองนับวันปิดรับ / ยื่นแล้วรอผล / จบแล้วแสดงผล+เหตุผล
+               ปุ่มท้ายการ์ด: งานยังไม่จบ = อัพเดตสถานะ/มอบหมายใหม่/เร่งงาน, งานจบแล้ว = อัพเดตสถานะ — กดส่วนอื่นของการ์ดเปิดรายละเอียด -->
+          <div v-for="a in filteredAssignments" :key="a.id"
+            class="bg-white rounded-xl p-4 shadow-sm ring-1 ring-slate-100 cursor-pointer hover:shadow-md transition-shadow flex flex-col"
             @click="openDetail(a.project_code, 'assign-detail')">
 
-            <!-- badges row -->
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between gap-2 mb-2">
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="statusBadge(a.status)">{{ a.status }}</span>
-              <div class="flex items-center gap-1.5">
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(a.priority)">{{ a.priority }}</span>
-                <span class="w-2 h-2 rounded-full"
-                  :class="a.sla_status==='เกิน'?'bg-red-500':a.sla_status==='ใกล้ถึง'?'bg-amber-400':'bg-green-500'"></span>
-              </div>
+              <span v-if="a.priority==='เร่งด่วน'" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700">เร่งด่วน</span>
             </div>
 
-            <!-- price hero -->
+            <!-- รหัสงานกลาง (ป้ายม่วง) + เลขที่โครงการ e-GP -->
+            <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+              <span v-if="a.project_code" class="text-[.7rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ a.project_code }}</span>
+              <span v-if="a.project_no" class="text-xs text-slate-400 font-mono">{{ a.project_no }}</span>
+            </div>
+
             <div v-if="a.price_median" class="text-xl font-bold text-slate-800 mb-1">฿{{ Number(a.price_median).toLocaleString() }}</div>
-
-            <!-- project title -->
             <h4 class="font-bold text-slate-800 text-sm mb-0.5 line-clamp-2">{{ a.project_name }}</h4>
-
-            <!-- organization -->
             <p class="text-xs text-slate-400 mb-2">{{ a.unit_name }}</p>
 
-            <div class="border-t border-slate-100 my-2"></div>
-
-            <!-- deadline + progress -->
-            <div v-if="a.close_date">
-              <div class="flex items-center justify-between mb-1">
-                <span class="text-xs text-slate-500">ปิดรับ {{ formatDateThai(a.close_date) }}</span>
-                <span class="text-xs font-bold" :style="{color: countdownColor(daysToClose(a.close_date))}">{{ countdownText(daysToClose(a.close_date)) }}</span>
-              </div>
-              <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-2">
-                <div class="h-full rounded-full" :style="{width: countdownBarWidth(a.close_date, a.assigned_at)+'%', background: countdownColor(daysToClose(a.close_date))}"></div>
-              </div>
+            <!-- บรรทัดผลตามสถานะ -->
+            <div class="border-t border-slate-100 pt-2 flex items-start justify-between gap-2 text-xs text-slate-500">
+              <span class="min-w-0 line-clamp-2"><span v-if="cardResult(a).prefix" class="font-semibold" :class="cardResult(a).prefixClass">{{ cardResult(a).prefix }}:</span> {{ cardResult(a).text }}</span>
+              <span v-if="cardResult(a).right" class="shrink-0 font-semibold" :class="cardResult(a).rightClass">{{ cardResult(a).right }}</span>
             </div>
 
-            <!-- sale person -->
-            <div class="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              <span>{{ a.sale_name }}</span>
+            <div class="text-xs text-slate-500 mt-1.5">
+              {{ a.sale_name }}<span v-if="a.status==='รอดำเนินการ' && a.sla_status==='เกิน'" class="text-red-600 font-semibold"> · ยังไม่กดรับ เกิน SLA</span>
             </div>
+            <div v-if="a.secretary_notes" class="text-xs text-slate-500 mt-1 line-clamp-2">หมายเหตุ: {{ a.secretary_notes }}</div>
 
-            <!-- notes -->
-            <div v-if="a.secretary_notes" class="mt-2 text-xs bg-blue-50 text-blue-800 rounded-lg px-3 py-2">{{ a.secretary_notes }}</div>
+            <!-- ปุ่มท้ายการ์ด — @click.stop กันไม่ให้เปิดรายละเอียดซ้อน -->
+            <div class="flex gap-1.5 mt-auto pt-3" @click.stop>
+              <button type="button" @click.stop="openStatusFromCard(a)"
+                class="flex-1 px-2 py-2 rounded-lg text-xs font-semibold border-0 cursor-pointer min-h-[36px]"
+                :class="isClosedStatus(a.status) ? 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-teal-700 hover:bg-teal-800 text-white'">อัพเดตสถานะ</button>
+              <template v-if="!isClosedStatus(a.status)">
+                <button type="button" @click.stop="openReassignModal({ ...a, assigned_to: a.sale_id })"
+                  class="flex-1 px-2 py-2 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[36px]">มอบหมายใหม่</button>
+                <button type="button" @click.stop="openNudgeModal(a)"
+                  class="flex-1 px-2 py-2 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[36px]">เร่งงาน</button>
+              </template>
+            </div>
           </div>
         </div>
         </template>
@@ -291,39 +240,20 @@
     <div class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] p-4 overflow-y-auto"
       v-if="modal.type" @click.self="closeModal">
 
-      <!-- Calendar Day Detail Modal: งานที่มอบหมายในวันที่คลิกจากมุมมองปฏิทิน (เป็น modal แทนที่จะดันความสูงหน้าเพจ กันเลื่อนจอตอน view==='calendar' ที่ล็อกเป็น h-screen) -->
-      <div v-if="modal.type==='cal-day'" class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden my-8">
-        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
-          <h3 class="font-bold text-lg">งานที่มอบหมายวันที่ {{ formatThaiDate(modal.data.date) }}</h3>
-          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
-        </div>
-        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
-          <div v-if="!modal.data.items.length" class="text-sm text-slate-400 py-2">ไม่มีงานมอบหมายวันนี้</div>
-          <div v-for="item in modal.data.items" :key="item.id"
-            class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 py-2.5 border-t border-slate-100 first:border-t-0">
-            <div class="min-w-0">
-              <p class="text-sm text-slate-700 mb-1 break-words">{{ item.project_name }}</p>
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-xs text-slate-500">{{ item.sale_name }}</span>
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
-                  :class="item.accepted ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
-                  {{ item.accepted ? 'รับงานแล้ว' : 'ยังไม่กดรับ' }}
-                </span>
-              </div>
-            </div>
-            <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer shrink-0"
-              @click="openDetail(item.project_code, 'assign-detail')">ดูรายละเอียด</button>
-          </div>
-        </div>
-      </div>
-
       <!-- Assignment Detail Modal -->
-      <div v-if="modal.type==='assign-detail'" class="bg-white rounded-2xl w-full max-w-[680px] shadow-2xl overflow-hidden my-8">
-        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
-          <h3 class="font-bold text-lg">รายละเอียดงาน</h3>
-          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+      <!-- หน้าต่างแบบมาตรฐานของระบบ (ยืนยันจากผู้ใช้ 2026-10-10 — ทั้ง 4 หน้าต่างของหน้านี้): หัวขาว + รหัสงาน / เนื้อหาเลื่อนได้ / ปุ่มติดล่าง -->
+      <div v-if="modal.type==='assign-detail'" class="bg-white rounded-2xl w-full shadow-2xl overflow-hidden my-[4vh] max-h-[92vh] flex flex-col max-w-[680px]">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">รายละเอียดงาน</h3>
+            <div class="flex items-center gap-1.5 mt-1 min-w-0">
+              <span v-if="modal.data?.project_code" class="text-[.7rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 shrink-0">{{ modal.data.project_code }}</span>
+              <span class="text-xs text-slate-400 truncate">{{ modal.data?.project_name }}</span>
+            </div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
-        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
+        <div class="p-5 overflow-y-auto flex-1">
           <div class="flex gap-2 flex-wrap mb-4">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
@@ -451,61 +381,119 @@
             </div>
           </div>
         </div>
-        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
-          <button v-if="isSecretary" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="openNudgeModal(modal.data)">ส่งข้อความเร่งงาน</button>
-          <button v-if="isSecretary" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="openReassignModal(modal.data)">มอบหมายใหม่</button>
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="openStatusModal(modal.data)">อัพเดตสถานะ</button>
+        <div class="px-5 py-4 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ปิด</button>
+          <template v-if="isSecretary && !isClosedStatus(modal.data.status)">
+            <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="openNudgeModal(modal.data)">เร่งงาน</button>
+            <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="openReassignModal(modal.data)">มอบหมายใหม่</button>
+          </template>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 text-white min-h-[44px] bg-teal-700 hover:bg-teal-800 cursor-pointer disabled:opacity-50" @click="openStatusModal(modal.data)">อัพเดตสถานะ</button>
         </div>
       </div>
 
-      <!-- Reassign Modal -->
-      <div v-if="modal.type==='reassign'" class="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden my-8">
-        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
-          <h3 class="font-bold text-lg">มอบหมายใหม่</h3>
-          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+      <!-- มอบหมายใหม่ — แบบมาตรฐาน + เลือก Sale เป็นปุ่มรายชื่อพร้อมรูป แทน dropdown (ผู้ใช้วัย 50-60 / แบบเดียวกับหน้าต่างโอนงานในหน้างานประมูล — 2026-10-10) -->
+      <div v-if="modal.type==='reassign'" class="bg-white rounded-2xl w-full shadow-2xl overflow-hidden my-[4vh] max-h-[92vh] flex flex-col max-w-[560px]">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">มอบหมายใหม่</h3>
+            <div class="flex items-center gap-1.5 mt-1 min-w-0">
+              <span v-if="modal.data?.project_code" class="text-[.7rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 shrink-0">{{ modal.data.project_code }}</span>
+              <span class="text-xs text-slate-400 truncate">{{ modal.data?.project_name }}</span>
+            </div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
-        <div class="p-5">
-          <p class="text-sm text-slate-500 mb-3">ย้ายงาน "<strong class="text-slate-700">{{ modal.data.project_name }}</strong>" จาก <strong class="text-slate-700">{{ modal.data.sale_name }}</strong> ไปให้:</p>
-          <select v-model="reassignForm.assigned_to"
-            class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-            <option value="">เลือก sale</option>
-            <option v-for="u in salesUsers" :key="u.id" :value="u.id" :disabled="u.id===modal.data.assigned_to">{{ u.full_name }}</option>
-          </select>
+        <div class="p-5 overflow-y-auto flex-1 space-y-4">
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ผู้รับผิดชอบตอนนี้</h3>
+            </div>
+            <div class="text-[.95rem] font-semibold text-slate-800">{{ modal.data.sale_name || '-' }}</div>
+            <div class="text-sm text-slate-500">สถานะงาน: {{ modal.data.status }}</div>
+          </section>
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ย้ายงานไปให้ <span class="text-red-500">*</span></h3>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button v-for="u in salesUsers.filter(u => Number(u.id) !== Number(modal.data.assigned_to ?? modal.data.sale_id))" :key="u.id" type="button"
+                @click="reassignForm.assigned_to = u.id"
+                class="flex items-center gap-2 text-left px-3.5 py-2.5 rounded-xl border-2 text-base font-semibold cursor-pointer"
+                :class="Number(reassignForm.assigned_to) === Number(u.id) ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400'">
+                <img v-if="u.photo_url" :src="u.photo_url" class="w-7 h-7 rounded-full object-cover shrink-0"/>
+                <span v-else class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" :style="{background: u.avatar_color || '#64748b'}">{{ avatarInitials(u.full_name) }}</span>
+                <span class="flex-1 min-w-0 truncate">{{ u.full_name }}</span>
+                <span v-if="Number(reassignForm.assigned_to) === Number(u.id)" class="shrink-0">✓</span>
+              </button>
+            </div>
+            <div v-if="!salesUsers.length" class="text-sm text-slate-500">กำลังโหลดรายชื่อ Sale…</div>
+            <div class="text-sm text-slate-500">Sale คนใหม่จะได้รับแจ้งเตือนทันที</div>
+          </section>
         </div>
-        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="submitReassign">ยืนยันมอบหมายใหม่</button>
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 text-white min-h-[44px] bg-teal-700 hover:bg-teal-800 cursor-pointer disabled:opacity-50" :disabled="!reassignForm.assigned_to" @click="submitReassign">ยืนยันมอบหมายใหม่</button>
         </div>
       </div>
 
-      <!-- Nudge Message Modal -->
-      <div v-if="modal.type==='message'" class="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden my-8">
-        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
-          <h3 class="font-bold text-lg">ส่งข้อความเร่งงาน</h3>
-          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+      <!-- ส่งข้อความเร่งงาน — แบบมาตรฐาน (2026-10-10) -->
+      <div v-if="modal.type==='message'" class="bg-white rounded-2xl w-full shadow-2xl overflow-hidden my-[4vh] max-h-[92vh] flex flex-col max-w-[560px]">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">ส่งข้อความเร่งงาน</h3>
+            <div class="flex items-center gap-1.5 mt-1 min-w-0">
+              <span v-if="modal.data?.project_code" class="text-[.7rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 shrink-0">{{ modal.data.project_code }}</span>
+              <span class="text-xs text-slate-400 truncate">{{ modal.data?.project_name }}</span>
+            </div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
-        <div class="p-5">
-          <p class="text-sm text-slate-500 mb-3">ส่งข้อความถึง <strong class="text-slate-700">{{ modal.data.sale_name }}</strong> เกี่ยวกับงาน "<strong class="text-slate-700">{{ modal.data.project_name }}</strong>" (ขึ้นที่กระดิ่งแจ้งเตือนของ sale)</p>
-          <textarea v-model="nudgeForm.message" rows="3" placeholder="เช่น รบกวนอัพเดตความคืบหน้าด้วยครับ"
-            class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+        <div class="p-5 overflow-y-auto flex-1 space-y-4">
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ส่งถึง</h3>
+            </div>
+            <div class="text-[.95rem] font-semibold text-slate-800">{{ modal.data.sale_name || '-' }}</div>
+            <div class="text-sm text-slate-500">ขึ้นที่กระดิ่งแจ้งเตือนของ Sale</div>
+          </section>
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ข้อความ <span class="text-red-500">*</span></h3>
+            </div>
+            <textarea v-model="nudgeForm.message" rows="3" placeholder="เช่น รบกวนอัพเดตความคืบหน้าด้วยครับ"
+              class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+          </section>
         </div>
-        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="submitNudge">ส่ง</button>
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 text-white min-h-[44px] bg-teal-700 hover:bg-teal-800 cursor-pointer disabled:opacity-50" @click="submitNudge">ส่งข้อความ</button>
         </div>
       </div>
 
-      <!-- Status Update Modal -->
-      <div v-if="modal.type==='status'" class="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden my-8">
-        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
-          <h3 class="font-bold text-lg">อัพเดตสถานะงาน</h3>
-          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
+      <!-- อัพเดตสถานะงาน — แบบมาตรฐาน (2026-10-10): ① สถานะใหม่ ② ผล (ขึ้นตามสถานะที่เลือก) ③ บันทึก / หมายเหตุ — ช่องและกติกาเดิมทั้งหมด -->
+      <div v-if="modal.type==='status'" class="bg-white rounded-2xl w-full shadow-2xl overflow-hidden my-[4vh] max-h-[92vh] flex flex-col max-w-[600px]">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">อัพเดตสถานะงาน</h3>
+            <div class="flex items-center gap-1.5 mt-1 min-w-0">
+              <span v-if="modal.data?.project_code" class="text-[.7rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 shrink-0">{{ modal.data.project_code }}</span>
+              <span class="text-xs text-slate-400 truncate">{{ modal.data?.project_name }}</span>
+            </div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
-        <div class="p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
-          <div class="flex flex-col gap-4">
+        <div class="p-5 overflow-y-auto flex-1 space-y-4">
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">สถานะใหม่</h3>
+            </div>
             <div class="flex flex-col gap-1">
-              <label class="block text-sm font-semibold text-slate-600">สถานะใหม่</label>
+              <div class="text-sm text-slate-500">สถานะตอนนี้: <span class="font-semibold text-slate-700">{{ statusForm.orig_status }}</span></div>
               <select v-model="statusForm.status"
                 class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
                 <option value="รอดำเนินการ">รอดำเนินการ</option>
@@ -518,6 +506,12 @@
                 <option value="ยกเลิก">ยกเลิก</option>
               </select>
             </div>
+          </section>
+          <section v-if="statusHasResultSection" class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">{{ statusResultTitle }}</h3>
+            </div>
             <div v-if="['จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล'].includes(statusForm.status)" class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">ราคาที่เสนอ (บาท)</label>
               <input type="number" v-model="statusForm.bid_amount" placeholder="0.00"
@@ -527,7 +521,7 @@
             <!-- กล่องพื้นเทาอ่อนเป็นกลาง + ป้าย ✓/✕ บอกผล แทนการทาพื้นเขียว/ชมพู — แบบเดียวกับ bid-pipeline.html (ปรับตามผู้ใช้ 2026-09-25) -->
             <!-- ลูกค้ายังไม่มีหน้าบัญชี ERP → เตือน ไม่บล็อก (ยืนยันจากผู้ใช้ 2026-09-28) — component อยู่ใน shared/app.js -->
             <app-erp-warning v-if="statusForm.status==='ชนะการประมูล'" :project-code="statusForm.project_code" class="!mb-0"></app-erp-warning>
-            <div v-if="statusForm.status==='ชนะการประมูล'" class="flex flex-col gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div v-if="statusForm.status==='ชนะการประมูล'" class="flex flex-col gap-3">
               <div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">✓ ชนะ</span> <span class="text-xs font-bold text-slate-500 ml-1">เหตุผล</span></div>
               <div class="flex flex-col gap-1">
                 <label class="block text-sm font-semibold text-slate-600">เหตุผลที่ชนะ <span class="text-red-500">*</span></label>
@@ -549,14 +543,14 @@
               </div>
             </div>
             <!-- วันที่ส่งมอบจริง — เปลี่ยนเป็นส่งมอบแล้ว (ตั้งต้นวันนี้ แก้ได้ ห้ามเกินวันนี้ — ยืนยันจากผู้ใช้ 2026-10-07) -->
-            <div v-if="statusForm.status==='ส่งมอบแล้ว'" class="flex flex-col gap-1 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div v-if="statusForm.status==='ส่งมอบแล้ว'" class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">วันที่ส่งมอบจริง <span v-if="statusForm.orig_status !== 'ส่งมอบแล้ว'" class="text-red-500">*</span></label>
               <input type="date" v-model="statusForm.delivered_date" :max="todayIso()" class="w-full sm:max-w-xs border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
               <div class="text-xs text-slate-500">ตั้งต้นเป็นวันนี้ แก้เป็นวันที่ส่งมอบจริงได้ (ห้ามเกินวันนี้) — ยอดรายได้รายเดือนนับตามวันนี้</div>
             </div>
             <!-- ปิดช่องโหว่: เดิมเลือก "แพ้การประมูล" จากหน้านี้ได้โดยไม่ต้องระบุเหตุผล — ตอนนี้ใช้กติกาเดียวกับ bid-pipeline.html
                  (เหตุผลจาก master win_loss_reasons + ผู้ชนะจาก master คู่แข่ง เมื่อเหตุผลนั้นบังคับ) ยืนยันจากผู้ใช้ 2026-09-25 — API เช็คซ้ำ -->
-            <div v-if="statusForm.status==='แพ้การประมูล'" class="flex flex-col gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <div v-if="statusForm.status==='แพ้การประมูล'" class="flex flex-col gap-3">
               <div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800">✕ แพ้</span> <span class="text-xs font-bold text-slate-500 ml-1">เหตุผล ผู้ชนะ และราคา</span></div>
               <div class="flex flex-col gap-1">
                 <label class="block text-sm font-semibold text-slate-600">เหตุผลที่แพ้ <span class="text-red-500">*</span></label>
@@ -590,6 +584,22 @@
                 </div>
               </div>
             </div>
+            <!-- ยกเลิกต้องมีเหตุผลเสมอ (ปิดช่องโหว่ 2026-10-10) — ระบบเลือกแบบจากสถานะเดิม: ก่อนยื่นซอง = ไม่เข้าประมูล (รายการ no_bid) / หลังยื่นซองหรือชนะ = หน่วยงาน/ลูกค้ายกเลิก (พิมพ์สาเหตุ) — API เช็คซ้ำ -->
+            <div v-if="statusForm.status==='ยกเลิก' && statusForm.orig_status!=='ยกเลิก'" class="flex flex-col gap-3">
+              <div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200 text-slate-700">{{ cancelIsNoBid ? 'ไม่เข้าประมูล' : 'หน่วยงาน / ลูกค้ายกเลิก' }}</span></div>
+              <app-no-bid-reasons v-if="cancelIsNoBid" ref="cancelNoBid" v-model:reason-id="statusForm.cancel_reason_id" v-model:note="statusForm.cancel_note"></app-no-bid-reasons>
+              <div v-else class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">สาเหตุที่ยกเลิก <span class="text-red-500">*</span></label>
+                <textarea v-model="statusForm.cancel_note" rows="3" placeholder="เช่น หน่วยงานยกเลิกประกาศ / ลูกค้ายกเลิกสัญญาเพราะงบถูกตัด" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+                <p class="text-xs text-slate-500 m-0">งานนี้ยื่นซองแล้ว ({{ statusForm.orig_status }}) จึงไม่นับเป็น "ไม่เข้าประมูล"</p>
+              </div>
+            </div>
+          </section>
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">{{ statusHasResultSection ? 3 : 2 }}</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">บันทึก / หมายเหตุ</h3>
+            </div>
             <div class="flex flex-col gap-1">
               <label class="block text-sm font-semibold text-slate-600">บันทึก / ความคืบหน้า</label>
               <textarea v-model="statusForm.sale_notes" rows="3" placeholder="ระบุความคืบหน้า, ปัญหา, หรือผลลัพธ์..."
@@ -600,11 +610,11 @@
               <input type="text" v-model="statusForm.note" placeholder="(ไม่บังคับ)"
                 class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
             </div>
-          </div>
+          </section>
         </div>
-        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
-          <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer" @click="submitStatusUpdate">บันทึก</button>
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 text-white min-h-[44px] bg-teal-700 hover:bg-teal-800 cursor-pointer disabled:opacity-50" @click="submitStatusUpdate">บันทึก</button>
         </div>
       </div>
 
@@ -613,12 +623,12 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=65"></script>
+<script src="shared/app.js?v=71"></script>
 <script>
 const { createApp } = Vue;
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal, AppErpWarning },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppNoBidReasons },
   data() {
     return {
       authReady: false,
@@ -630,26 +640,19 @@ createApp({
       loading: false,
       assignments: [],
       salesUsers: [],
-      filter: { status: '', assigned_to: '' },
+      filter: { view: 'all', assigned_to: '', search: '' },   // view = มุมมองงานค้าง (listViews) / search = ช่องค้นหา — กรองฝั่งหน้าเว็บทันที (2026-10-10)
       statusForm: { project_code: null, status: '', sale_notes: '', bid_amount: null, note: '', win_loss_reason_id: '', win_loss_note: '', winner_competitor_id: '', winning_price: '' },
       winLossReasons: [], // master เหตุผลแพ้/ชนะ (api/win_loss_reasons.php) — ใช้ตอนเลือก "แพ้การประมูล"
       competitors: [],    // master คู่แข่ง (api/competitors.php) — ตัวเลือกผู้ชนะ
       reassignForm: { project_code: null, assigned_to: '' },
       nudgeForm: { project_code: null, message: '' },
-      view: 'calendar',
+      view: 'list',   // เปิดหน้าเข้ารายการก่อน (เดิมปฏิทิน — เอาออก 2026-10-10)
       ganttYear: new Date().getFullYear(),
       ganttMonth: new Date().getMonth() + 1,
       ganttData: [],
       ganttLoading: false,
       ganttTodayStr: null,
       ganttDetail: null,
-      // มุมมองปฏิทิน (view==='calendar') — ภาพรวมทั้งทีมต่อวัน หน้าตาแบบเดียวกับ company-calendar.html
-      calYear: new Date().getFullYear(),
-      calMonth: new Date().getMonth() + 1,
-      calData: {}, // merge จาก 2 แหล่ง: api/calendar.php (holiday+เวร sale) + api/assignments.php (มอบหมาย/กดรับ) คีย์ด้วยวันที่เดียวกัน
-      companyWorkDays: [1,2,3,4,5,6], // ค่า default ระหว่างรอโหลดปฏิทิน CAL-01 จริง (จ-ส)
-      calLoading: false,
-      dayLabels: ['จ','อ','พ','พฤ','ศ','ส','อา'],
       thMonths: ['','มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'],
     };
   },
@@ -682,6 +685,48 @@ createApp({
       return this.winLossReasons.find(r => String(r.win_loss_reason_id) === String(this.statusForm.win_loss_reason_id)) || null;
     },
     // เหตุผลที่ admin ตั้ง "ต้องกรอกรายละเอียด" (requires_note เช่น อื่นๆ) — เดิมเช็คชื่อ "อื่นๆ" ตรงตัว
+    // มุมมองงานค้างสำเร็จรูป (Saved List Views — ยืนยันจากผู้ใช้ 2026-10-10) — attention = งานที่ต้องติดตาม (ตัวเลขแดงเมื่อมีงาน)
+    //   "ใกล้ / เลยวันปิดรับ" = ยังไม่ยื่นซอง และวันปิดรับเหลือ ≤ 3 วันหรือเลยแล้ว (3 วัน = กฎธุรกิจ ปรับได้ที่นี่)
+    listViews() {
+      const preSubmit = ['รอดำเนินการ', 'รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ'];
+      const nearClose = a => { const d = this.daysToClose(a.close_date); return d !== null && d <= 3; };
+      return [
+        { key: 'unaccepted', label: 'Sale ยังไม่กดรับ',      attention: true, match: a => a.status === 'รอดำเนินการ' },
+        { key: 'closing',    label: 'ใกล้ / เลยวันปิดรับ',  attention: true, match: a => preSubmit.includes(a.status) && nearClose(a) },
+        { key: 'awaiting',   label: 'รอประกาศผล',          attention: true, match: a => a.status === 'รอประกาศผล' },
+        { key: 'won',        label: 'ชนะ รอส่งมอบ',        attention: true, match: a => a.status === 'ชนะการประมูล' },
+        { key: 'preparing',  label: 'กำลังเตรียมยื่น',      match: a => ['รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ'].includes(a.status) },
+        { key: 'closed',     label: 'ปิดแล้ว',             match: a => ['ส่งมอบแล้ว', 'แพ้การประมูล', 'ยกเลิก'].includes(a.status) },
+        { key: 'all',        label: 'ทั้งหมด',             match: () => true },
+      ];
+    },
+    // ตัวเลขของแต่ละมุมมอง — นับจากงานที่โหลดมา (กรอง Sale แล้วที่ API) ไม่ขึ้นกับช่องค้นหา
+    viewCounts() {
+      const counts = {};
+      this.listViews.forEach(v => { counts[v.key] = this.assignments.filter(v.match).length; });
+      return counts;
+    },
+    // รายการที่แสดง = มุมมองที่เลือก แล้วกรองด้วยช่องค้นหา — 4 ช่องเดียวกับ matchesSearch() ใน bid-pipeline.html (2026-10-10)
+    filteredAssignments() {
+      const view = this.listViews.find(v => v.key === this.filter.view) || this.listViews[this.listViews.length - 1];
+      const rows = this.assignments.filter(view.match);
+      const q = (this.filter.search || '').trim().toLowerCase();
+      if (!q) return rows;
+      return rows.filter(a => [a.project_name, a.unit_name, a.project_code, a.project_no]
+        .some(v => (v || '').toLowerCase().includes(q)));
+    },
+    // ยกเลิกจากสถานะก่อนยื่นซอง = ไม่เข้าประมูล (ต้องตรงกับ BID_PRE_SUBMIT_STATUSES ใน api/assignments.php — 2026-10-10)
+    cancelIsNoBid() { return ['รอดำเนินการ', 'รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ'].includes(this.statusForm.orig_status); },
+    // หน้าต่างอัพเดตสถานะ: กล่อง ② "ผล" ขึ้นเมื่อสถานะที่เลือกมีช่องต้องกรอก (ราคา / ชนะ / ส่งมอบ / แพ้ / ยกเลิก) — 2026-10-10
+    statusHasResultSection() {
+      const st = this.statusForm.status;
+      if (st === 'ยกเลิก') return this.statusForm.orig_status !== 'ยกเลิก';
+      return ['จัดเตรียมยื่นข้อเสนอ', 'รอประกาศผล', 'ชนะการประมูล', 'ส่งมอบแล้ว', 'แพ้การประมูล'].includes(st);
+    },
+    statusResultTitle() {
+      return { 'จัดเตรียมยื่นข้อเสนอ': 'ราคาที่เสนอ', 'รอประกาศผล': 'ราคาที่เสนอ', 'ชนะการประมูล': 'ผลชนะการประมูล',
+               'ส่งมอบแล้ว': 'วันที่ส่งมอบ', 'แพ้การประมูล': 'ผลแพ้การประมูล', 'ยกเลิก': 'เหตุผลที่ยกเลิก' }[this.statusForm.status] || 'ผล';
+    },
     statusNoteRequired() { return Number(this.statusSelectedReason?.requires_note) === 1; },
     ganttMonthLabel() { return `${this.thMonths[this.ganttMonth]} ${this.ganttYear + 543}`; },
     ganttDaysInMonth() { return new Date(this.ganttYear, this.ganttMonth, 0).getDate(); },
@@ -690,28 +735,6 @@ createApp({
       const [y, m, d] = this.ganttTodayStr.split('-').map(Number);
       return (y === this.ganttYear && m === this.ganttMonth) ? d : null;
     },
-    calMonthLabel() { return `${this.thMonths[this.calMonth]} ${this.calYear + 543}`; },
-    calendarCells() {
-      const first = new Date(this.calYear, this.calMonth - 1, 1);
-      const startOffset = (first.getDay() + 6) % 7; // จันทร์=0
-      const daysInMonth = new Date(this.calYear, this.calMonth, 0).getDate();
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const cells = [];
-      for (let i = 0; i < startOffset; i++) cells.push(null);
-      for (let d = 1; d <= daysInMonth; d++) {
-        const mm = String(this.calMonth).padStart(2, '0');
-        const dd = String(d).padStart(2, '0');
-        const date = `${this.calYear}-${mm}-${dd}`;
-        const dow = new Date(this.calYear, this.calMonth - 1, d).getDay();
-        const isoDow = dow === 0 ? 7 : dow;
-        const isWorkDay = this.companyWorkDays.includes(isoDow);
-        const info = this.calData[date] || null;
-        cells.push({ date, day: d, isToday: date === todayStr, info, isWorkDay, isOff: !!info?.holiday || !isWorkDay });
-      }
-      return cells;
-    },
-    // จำนวนแถวจริงของเดือนนี้ (5 หรือ 6) — ให้แต่ละแถวยืด/หดเท่ากันจนเต็มพื้นที่ที่เหลือพอดี เหมือน company-calendar.html
-    calNumWeeks() { return Math.ceil(this.calendarCells.length / 7); },
     tabItems() {
       return [
         { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
@@ -751,15 +774,14 @@ createApp({
       }
     } catch { window.location.href = 'login.html'; return; }
     this.authReady = true;
-    this.loadCalendarView();
+    this.loadAssignments();
     if (this.isSecretary) this.loadSales();
   },
   methods: {
     // เรียกโหลดข้อมูลของมุมมองที่กำลังเปิดอยู่ตอนนี้ใหม่ — ใช้หลังอัพเดตสถานะ/มอบหมายใหม่จาก modal
-    // ซึ่งเปิดได้จากทุกมุมมอง (ปฏิทิน/Gantt/รายการ) กันข้อมูลค้างของมุมมองที่ผู้ใช้กำลังดูอยู่
+    // ซึ่งเปิดได้จากทุกมุมมอง (Gantt/รายการ) กันข้อมูลค้างของมุมมองที่ผู้ใช้กำลังดูอยู่
     refreshActiveView() {
-      if (this.view === 'calendar') this.loadCalMonth();
-      else if (this.view === 'gantt') this.loadGanttData();
+      if (this.view === 'gantt') this.loadGanttData();
       else if (this.view === 'list') this.loadAssignments();
     },
 
@@ -768,7 +790,7 @@ createApp({
     async loadAssignments() {
       this.loading = true;
       const q = new URLSearchParams({ action: 'list' });
-      if (this.filter.status)      q.set('status', this.filter.status);
+      // ไม่ส่ง status — โหลดทุกสถานะแล้วแบ่งมุมมอง/นับตัวเลขฝั่งหน้าเว็บ (listViews) (2026-10-10)
       if (this.filter.assigned_to) q.set('assigned_to', this.filter.assigned_to);
       const res = await apiCall('GET', `api/assignments.php?${q}`);
       if (res.success) this.assignments = res.data;
@@ -788,6 +810,7 @@ createApp({
         winning_price:   assignment.winning_price || '',
         expected_delivery_date: assignment.expected_delivery_date || '',   // วันคาดส่งมอบ (บังคับตอนชนะ — 2026-10-07)
         orig_status:     assignment.status,
+        cancel_reason_id: null, cancel_note: '',   // เหตุผลยกเลิก (2026-10-10) แยกจากช่องเหตุผลแพ้/ชนะ กันค่าเดิมติดมา
         delivered_date:  assignment.delivered_date || (assignment.status === 'ส่งมอบแล้ว' ? '' : this.todayIso()),   // วันส่งมอบจริง (2026-10-07)
       };
       this.modal = { type: 'status', data: assignment };
@@ -847,11 +870,21 @@ createApp({
         }
         payload.winner_competitor_id = payload.winner_competitor_id || null;
         payload.winning_price = payload.winning_price === '' ? null : payload.winning_price;
+      } else if (payload.status === 'ยกเลิก' && this.statusForm.orig_status !== 'ยกเลิก') {
+        const note = String(payload.cancel_note || '').trim();
+        if (this.cancelIsNoBid) {
+          if (!payload.cancel_reason_id) { await this.showAlert('กรุณาเลือกเหตุผลที่ไม่เข้าประมูล', 'error'); return; }
+          if (this.$refs.cancelNoBid?.needsNote && !note) { await this.showAlert('กรุณาระบุหมายเหตุว่าเพราะอะไร', 'error'); return; }
+        } else if (!note) { await this.showAlert('กรุณาระบุสาเหตุที่ยกเลิก', 'error'); return; }
+        payload.win_loss_reason_id = this.cancelIsNoBid ? Number(payload.cancel_reason_id) : null;
+        payload.win_loss_note = note;
+        delete payload.winner_competitor_id; delete payload.winning_price;
       } else {
         // สถานะอื่นไม่ส่งช่องผลแพ้ไป กันเขียนทับเหตุผลชนะ/แพ้ที่บันทึกไว้จากหน้าอื่น
         delete payload.win_loss_reason_id; delete payload.win_loss_note;
         delete payload.winner_competitor_id; delete payload.winning_price;
       }
+      delete payload.cancel_reason_id; delete payload.cancel_note;   // ช่องในฟอร์มเท่านั้น ส่งไปเป็น win_loss_reason_id / win_loss_note แล้ว
       const res = await apiCall('POST', 'api/assignments.php?action=update', payload);
       if (res.success) {
         this.closeModal();
@@ -888,59 +921,44 @@ createApp({
       this.ganttDetail = { saleId: sale.sale_id, saleName: sale.sale_name, day, items: sale.days[day].items };
     },
 
-    formatThaiDate(dateStr) {
-      const [y, m, d] = dateStr.split('-');
-      return `${parseInt(d)} ${this.thMonths[parseInt(m)]} ${parseInt(y) + 543}`;
-    },
+    // งานจบแล้ว (ส่งมอบ / แพ้ / ยกเลิก) — การ์ดเหลือปุ่มอัพเดตสถานะปุ่มเดียว (2026-10-10)
+    isClosedStatus(status) { return ['ส่งมอบแล้ว', 'แพ้การประมูล', 'ยกเลิก'].includes(status); },
 
-    async loadCalendarView() {
-      await this.loadCompanyWorkDays();
-      await this.loadCalMonth();
-    },
-
-    async loadCompanyWorkDays() {
-      const res = await apiCall('GET', 'api/calendars.php?action=list');
-      const cal = res.success ? res.data.find(c => c.code === 'CAL-01') : null;
-      this.companyWorkDays = cal ? cal.work_days.split(',').map(Number) : [1,2,3,4,5,6];
-    },
-
-    // รวมข้อมูล 2 แหล่งต่อวัน: วันหยุด+เวร sale (ของ e-Bidding เดียวกับที่ company-calendar.html ใช้) และจำนวนมอบหมาย/กดรับของหน้านี้เอง
-    async loadCalMonth() {
-      this.calLoading = true;
-      const [companyRes, assignRes] = await Promise.all([
-        apiCall('GET', `api/calendar.php?action=company_month&year=${this.calYear}&month=${this.calMonth}&source_type=egp`),
-        apiCall('GET', `api/assignments.php?action=calendar&year=${this.calYear}&month=${this.calMonth}`),
-      ]);
-      const merged = {};
-      if (companyRes.success) {
-        Object.keys(companyRes.data).forEach(date => {
-          merged[date] = { holiday: companyRes.data[date].holiday?.name || null, duty: companyRes.data[date].duty || null };
-        });
+    // บรรทัดผลบนการ์ดตามสถานะ (2026-10-10) — คำนำหน้าชุดเดียวกับการ์ดหน้างานประมูล (resultPrefix ใน bid-pipeline.html)
+    cardResult(a) {
+      const preSubmit = ['รอดำเนินการ', 'รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ'];
+      if (preSubmit.includes(a.status)) {
+        if (!a.close_date) return { text: 'ยังไม่มีวันปิดรับ' };
+        const d = this.daysToClose(a.close_date);
+        return {
+          text: 'ปิดรับ ' + this.formatDateThai(a.close_date),
+          right: d < 0 ? `เลยกำหนด ${-d} วัน` : d === 0 ? 'ปิดรับวันนี้' : `เหลือ ${d} วัน`,
+          rightClass: d < 0 ? 'text-red-600' : d <= 3 ? 'text-amber-600' : 'text-slate-500',   // ≤ 3 วัน = ใกล้ปิดรับ (ตรงกับมุมมอง "ใกล้ / เลยวันปิดรับ")
+        };
       }
-      if (assignRes.success) {
-        Object.keys(assignRes.data).forEach(date => {
-          if (!merged[date]) merged[date] = { holiday: null, duty: null };
-          merged[date].assigned = assignRes.data[date].assigned;
-          merged[date].accepted = assignRes.data[date].accepted;
-          merged[date].items    = assignRes.data[date].items;
-        });
+      if (a.status === 'รอประกาศผล') return { text: 'ยื่นซองแล้ว รอผล' };
+      if (a.status === 'ชนะการประมูล') return {
+        prefix: a.win_loss_reason ? 'ชนะ' : '', prefixClass: 'text-emerald-700', text: a.win_loss_reason || 'ชนะการประมูล',
+        right: a.expected_delivery_date ? 'คาดส่ง ' + this.formatDateThai(a.expected_delivery_date) : '',
+      };
+      if (a.status === 'ส่งมอบแล้ว') return { text: a.delivered_date ? 'ส่งมอบแล้ว ' + this.formatDateThai(a.delivered_date) : 'ส่งมอบแล้ว' };
+      if (a.status === 'แพ้การประมูล') return {
+        prefix: 'แพ้', prefixClass: 'text-rose-600',
+        text: (a.win_loss_reason || 'ไม่ระบุเหตุผล') + (a.winner_name ? ` · แพ้ให้ ${a.winner_name}` : ''),
+      };
+      if (a.status === 'ยกเลิก') {
+        if (a.win_loss_reason) return { prefix: 'ไม่เข้าประมูล', text: a.win_loss_reason };
+        const note = String(a.win_loss_note || '').trim();
+        return { prefix: 'ยกเลิก', text: note || (a.sale_notes || 'ไม่ระบุสาเหตุ') };
       }
-      this.calData = merged;
-      this.calLoading = false;
+      return { text: '' };
     },
 
-    prevCalMonth() {
-      this.calMonth--; if (this.calMonth < 1) { this.calMonth = 12; this.calYear--; }
-      this.loadCalMonth();
-    },
-    nextCalMonth() {
-      this.calMonth++; if (this.calMonth > 12) { this.calMonth = 1; this.calYear++; }
-      this.loadCalMonth();
-    },
-
-    openCalDay(date) {
-      const info = this.calData[date];
-      this.modal = { type: 'cal-day', data: { date, items: info?.items || [] } };
+    // ปุ่ม "อัพเดตสถานะ" บนการ์ด — โหลดรายละเอียดเต็มก่อน (ผู้ชนะ/ราคาผู้ชนะ ฯลฯ ไม่ได้มากับรายการ) แล้วเปิดหน้าต่างเดิม
+    async openStatusFromCard(a) {
+      const res = await apiCall('GET', `api/assignments.php?action=detail&project_code=${encodeURIComponent(a.project_code)}`);
+      if (!res.success) { await this.showAlert(res.message || 'โหลดข้อมูลงานไม่สำเร็จ', 'error'); return; }
+      this.openStatusModal(res.data);
     },
 
     openReassignModal(assignment) {

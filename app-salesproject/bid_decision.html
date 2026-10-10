@@ -452,66 +452,79 @@
 
     <!-- ══════════════ Decision Modal ══════════════ -->
     <div v-if="modal.type==='decide'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
-      <div class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden">
-        <div class="bg-teal-600 text-white px-6 py-5">
-          <h3 class="text-[1.1rem] font-bold m-0">ตัดสินใจประมูล</h3>
-          <div class="text-[.82rem] opacity-75 mt-1">เลือกผลการตัดสินใจสำหรับประกาศนี้</div>
+      <!-- หน้าต่างแบบมาตรฐานของระบบ เหมือนหน้าต่างมอบหมายงาน / ฟอร์มดีล: หัวขาว + ปุ่ม × / กล่องเทาแบ่งส่วนมีเลขหัวข้อ / แถบปุ่มล่าง (ปรับตามผู้ใช้ 2026-10-09)
+           สูงไม่เกินจอ — หัวและปุ่มบันทึกติดอยู่เสมอ เนื้อหาเลื่อนได้ -->
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+        <div class="px-6 py-5 flex items-start justify-between gap-3 border-b border-slate-100 shrink-0">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">ตัดสินใจประมูล</h3>
+            <div class="text-sm text-slate-500 mt-1 overflow-hidden text-ellipsis whitespace-nowrap">{{ modal.data?.project_name }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
-        <div class="p-6">
-          <div class="text-base font-bold text-slate-800 mb-3 leading-snug">{{ modal.data.project_name }}</div>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-3 mb-5 text-sm">
-            <div>
-              <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">หน่วยงาน</div>
-              <div class="text-slate-700 font-semibold text-[.88rem]">{{ modal.data.unit_name || '-' }}</div>
+        <div class="p-5 overflow-y-auto flex-1">
+          <!-- ① ข้อมูลประกาศ -->
+          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ข้อมูลประกาศ</h3>
             </div>
-            <div>
-              <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">ราคากลาง</div>
-              <div class="font-semibold text-blue-800">{{ formatPrice(modal.data.price_median) }}</div>
-            </div>
-            <div>
-              <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">AI แนะนำ</div>
-              <span class="inline-flex px-2 py-0.5 rounded-full text-[.75rem] font-semibold whitespace-nowrap" :class="canBidBadgeClass(modal.data.can_bid)">{{ modal.data.can_bid }}</span>
-            </div>
-            <div>
-              <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">ปิดรับ</div>
-              <div class="font-semibold text-[.88rem]" :style="{color: countdownColor(daysToClose(modal.data.close_date))}">
-                {{ formatDateThai(modal.data.close_date) }}<br>
-                <small class="font-normal">{{ countdownText(daysToClose(modal.data.close_date)) }}</small>
+            <div class="text-[.95rem] font-semibold text-slate-800 leading-snug">{{ modal.data.project_name }}</div>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <div>
+                <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">หน่วยงาน</div>
+                <div class="text-slate-700 font-semibold">{{ modal.data.unit_name || '-' }}</div>
+              </div>
+              <div>
+                <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">ราคากลาง</div>
+                <div class="font-semibold text-blue-800">{{ formatPrice(modal.data.price_median) }}</div>
+              </div>
+              <div>
+                <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">AI แนะนำ</div>
+                <span class="inline-flex px-2 py-0.5 rounded-full text-[.75rem] font-semibold whitespace-nowrap" :class="canBidBadgeClass(modal.data.can_bid)">{{ modal.data.can_bid }}</span>
+              </div>
+              <div>
+                <div class="text-[.78rem] text-slate-400 font-semibold mb-0.5">ปิดรับ</div>
+                <div class="font-semibold" :style="{color: countdownColor(daysToClose(modal.data.close_date))}">
+                  {{ formatDateThai(modal.data.close_date) }}
+                  <small class="font-normal">· {{ countdownText(daysToClose(modal.data.close_date)) }}</small>
+                </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div class="text-[.85rem] font-bold text-slate-600 mb-2">เลือกผลการตัดสินใจ:</div>
-          <div class="grid grid-cols-2 gap-4 my-5">
-            <button class="p-4 rounded-xl text-[1rem] font-bold border-[2.5px] cursor-pointer transition-all flex flex-col items-center gap-1 font-sans"
-                    :class="decideForm.bid_decision==='เข้าประมูล' ? 'bg-green-600 border-green-600 text-white' : 'bg-green-50 border-green-500 text-green-700 hover:bg-green-600 hover:text-white'"
-                    @click="decideForm.bid_decision='เข้าประมูล'">
-              <span class="text-[1.6rem]">✅</span>
-              เข้าประมูล
-            </button>
-            <button class="p-4 rounded-xl text-[1rem] font-bold border-[2.5px] cursor-pointer transition-all flex flex-col items-center gap-1 font-sans"
-                    :class="decideForm.bid_decision==='ไม่เข้าประมูล' ? 'bg-red-600 border-red-600 text-white' : 'bg-red-50 border-red-500 text-red-600 hover:bg-red-600 hover:text-white'"
-                    @click="decideForm.bid_decision='ไม่เข้าประมูล'">
-              <span class="text-[1.6rem]">❌</span>
-              ไม่เข้าประมูล
-            </button>
-          </div>
-
-          <div v-if="decideForm.bid_decision==='ไม่เข้าประมูล'" class="mt-1">
-            <label class="block text-[.85rem] font-bold text-slate-600 mb-1.5">เหตุผล / หมายเหตุ <span class="text-red-500">*</span></label>
-            <textarea v-model="decideForm.decision_reason"
-                      class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white resize-y font-sans"
-                      rows="3" placeholder="ระบุเหตุผลที่ไม่เข้าประมูล เช่น ไม่ตรง spec, ราคาต่ำกว่าทุน..."></textarea>
-          </div>
-          <div v-if="decideForm.bid_decision==='เข้าประมูล'" class="mt-3 bg-green-50 border border-green-200 rounded-xl px-3.5 py-2.5 text-[.85rem] text-green-700 font-semibold">
-            หลังบันทึก ระบบจะเปิดหน้ามอบหมายงานให้ Sale ทันที
-          </div>
+          <!-- ② ผลการตัดสินใจ -->
+          <section class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <h3 class="text-base font-bold text-slate-800 m-0">ผลการตัดสินใจ <span class="text-red-500">*</span></h3>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <button type="button" class="px-3 py-2.5 rounded-xl text-[.95rem] font-bold border-2 cursor-pointer transition-all flex items-center justify-center gap-2 font-sans"
+                      :class="decideForm.bid_decision==='เข้าประมูล' ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-green-500 text-green-700 hover:bg-green-50'"
+                      @click="decideForm.bid_decision='เข้าประมูล'">
+                <span>✅</span> เข้าประมูล
+              </button>
+              <button type="button" class="px-3 py-2.5 rounded-xl text-[.95rem] font-bold border-2 cursor-pointer transition-all flex items-center justify-center gap-2 font-sans"
+                      :class="decideForm.bid_decision==='ไม่เข้าประมูล' ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-red-500 text-red-600 hover:bg-red-50'"
+                      @click="decideForm.bid_decision='ไม่เข้าประมูล'">
+                <span>❌</span> ไม่เข้าประมูล
+              </button>
+            </div>
+            <!-- เหตุผลไม่เข้าประมูลแบบเลือกจากรายการ + หมายเหตุ (เดิมพิมพ์อิสระ — ยืนยันจากผู้ใช้ 2026-10-09) -->
+            <div v-if="decideForm.bid_decision==='ไม่เข้าประมูล'" class="pt-1">
+              <app-no-bid-reasons ref="noBid" v-model:reason-id="decideForm.decision_reason_id" v-model:note="decideForm.decision_note"></app-no-bid-reasons>
+            </div>
+            <div v-if="decideForm.bid_decision==='เข้าประมูล'" class="text-sm text-green-700">
+              หลังบันทึก ระบบจะเปิดหน้ามอบหมายงานให้ Sale ทันที
+            </div>
+          </section>
         </div>
-        <div class="px-6 py-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-100">
-          <button class="px-4 py-2 rounded-xl text-sm font-medium bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ยกเลิก</button>
-          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   @click="saveDecide"
-                  :disabled="!decideForm.bid_decision || (decideForm.bid_decision==='ไม่เข้าประมูล' && !decideForm.decision_reason.trim())">
+                  :disabled="!decideForm.bid_decision || (decideForm.bid_decision==='ไม่เข้าประมูล' && !decideForm.decision_reason_id)">
             บันทึก
           </button>
         </div>
@@ -617,10 +630,10 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=65"></script>
+<script src="shared/app.js?v=71"></script>
 <script>
 const SalesAdminApp = {
-  components: { AppNav, AppModal, AppBidAccountPicker, AppDuplicateAccounts },
+  components: { AppNav, AppModal, AppBidAccountPicker, AppDuplicateAccounts, AppNoBidReasons },
   data() {
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     return {
@@ -643,7 +656,7 @@ const SalesAdminApp = {
       detailData: null,
       docs: null,
       docsLoading: false,
-      decideForm: { bid_decision: null, decision_reason: '' },
+      decideForm: { bid_decision: null, decision_reason_id: null, decision_note: '' },
       assignForm: { assigned_to: null, priority: 'ปกติ', secretary_notes: '' },
       assignAccount: null,   // ลูกค้าที่เลือกในหน้าต่างมอบหมาย { account_id } | { new_account } (2026-09-29)
       changeAccountConfirmed: false,   // ยืนยันเปลี่ยนลูกค้าของประกาศที่ผูกแล้ว (ถามครั้งเดียวต่อการเปิดหน้าต่าง)
@@ -802,20 +815,22 @@ const SalesAdminApp = {
     },
 
     openDecide(row) {
-      this.decideForm = { bid_decision: null, decision_reason: '' };
+      this.decideForm = { bid_decision: null, decision_reason_id: null, decision_note: '' };
       this.modal = { type: 'decide', data: { ...row } };
     },
 
     async saveDecide() {
       if (!this.decideForm.bid_decision) return;
-      if (this.decideForm.bid_decision === 'ไม่เข้าประมูล' && !this.decideForm.decision_reason.trim()) {
-        await this.showAlert('กรุณาระบุเหตุผล', 'error'); return;
-      }
       const decision = this.decideForm.bid_decision;
-      const reason   = this.decideForm.decision_reason.trim() || null;
+      if (decision === 'ไม่เข้าประมูล') {
+        if (!this.decideForm.decision_reason_id) { await this.showAlert('กรุณาเลือกเหตุผลที่ไม่เข้าประมูล', 'error'); return; }
+        if (this.$refs.noBid?.needsNote && !this.decideForm.decision_note.trim()) { await this.showAlert('กรุณาระบุหมายเหตุว่าเพราะอะไร', 'error'); return; }
+      }
       const annData  = { ...this.modal.data };
       const r = await apiCall('POST', 'api/announcements.php?action=decide', {
-        id: annData.id, bid_decision: decision, decision_reason: reason,
+        id: annData.id, bid_decision: decision,
+        decision_reason_id: decision === 'ไม่เข้าประมูล' ? this.decideForm.decision_reason_id : null,
+        decision_note: this.decideForm.decision_note.trim(),
       });
       if (!r.success) { await this.showAlert(r.message || 'เกิดข้อผิดพลาด', 'error'); return; }
       this.closeModal();
