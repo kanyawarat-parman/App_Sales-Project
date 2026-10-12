@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Analytics</title>
+<title>ยอดขายและ Pipeline</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="shared/tailwind-config.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -25,7 +25,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
           </svg>
-          รายงานวิเคราะห์
+          ยอดขายและ Pipeline
         </h1>
         <div class="ml-auto">
           <select v-model="months" @change="loadAll"
@@ -105,9 +105,10 @@
                   class="w-4 h-4 flex items-center justify-center rounded-full bg-slate-300 text-white hover:bg-slate-400 border-0 cursor-pointer shrink-0 transition-colors text-[10px] font-black leading-none" title="Avg Sales Cycle คืออะไร">i</button>
               </div>
               <div class="text-[1.7rem] font-black leading-tight text-purple-700">
-                {{ kpi.avg_cycle_days ?? '-' }}<span v-if="kpi.avg_cycle_days" class="text-lg font-medium"> วัน</span>
+                {{ kpi.avg_cycle_days ?? '—' }}<span v-if="kpi.avg_cycle_days !== null && kpi.avg_cycle_days !== undefined" class="text-lg font-medium"> วัน</span>
               </div>
-              <div class="text-[.72rem] text-slate-400 mt-1.5">เฉลี่ยจากสร้างดีลถึง Delivered</div>
+              <!-- นับเฉพาะดีลที่สร้างตั้งแต่วันเริ่มใช้ระบบ (2026-10-10) — บอกจำนวนดีลที่ใช้คำนวณ -->
+              <div class="text-[.72rem] text-slate-400 mt-1.5">{{ kpi.avg_cycle_count ? `เฉลี่ยจาก ${kpi.avg_cycle_count} ดีลที่ส่งมอบแล้ว (สร้างตั้งแต่ ${formatDateThai(kpi.avg_cycle_since)})` : 'ยังไม่มีดีลที่ส่งมอบตั้งแต่เริ่มใช้ระบบ' }}</div>
             </div>
           </div>
 
@@ -633,9 +634,9 @@
         </div>
         <div class="p-5 text-sm text-slate-600 leading-relaxed">
           <p>จำนวนวันเฉลี่ยตั้งแต่สร้างดีลจนถึงส่งมอบสำเร็จ (Delivered)</p>
-          <p class="mt-2 text-xs text-slate-400">สูตรที่ใช้: <code>Delivered Date − Created At</code> (เฉลี่ยของทุกดีลที่ส่งมอบแล้ว)</p>
+          <p class="mt-2 text-xs text-slate-400">สูตรที่ใช้: <code>Delivered Date − Created At</code> (เฉลี่ยของดีลที่ส่งมอบแล้ว)</p>
+          <p class="mt-2">นับเฉพาะดีลที่<b>สร้างในระบบตั้งแต่วันเริ่มใช้งานจริง</b>{{ kpi.avg_cycle_since ? ' (' + formatDateThai(kpi.avg_cycle_since) + ')' : '' }} — ดีลเก่าที่คีย์เข้าระบบย้อนหลัง วันสร้างในระบบไม่ใช่วันที่เริ่มขายจริง จึงไม่นับ (แบบเดียวกับ Salesforce ที่ไม่นับข้อมูลย้ายจากระบบเก่า)</p>
           <p class="mt-2 text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠️ นับ<b>เฉพาะงานขายตรงเท่านั้น</b> — งานประมูลยังไม่มีข้อมูลวันที่ส่งมอบแยกให้คำนวณรอบเวลาแบบเดียวกัน จึงไม่ได้รวมอยู่ในตัวเลขนี้</p>
-          <p class="mt-2 text-red-700 bg-red-50 rounded-lg px-3 py-2">⚠️ <b>ปัญหาที่เจอ</b>: <code>Created At</code> ในระบบตอนนี้ไม่ใช่วันที่เริ่มดีลจริง แต่เป็นวันที่ import ข้อมูลเข้าระบบครั้งเดียว (20 ส.ค. 69) — ตัวเลขนี้ผิดเพราะข้อมูลเก่าจาก Excel ไม่มีวันที่เริ่มดีลจริงให้อ้างอิง ตัวเลขเลยติดลบ</p>
         </div>
       </div>
 
@@ -808,7 +809,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=74"></script>
+<script src="shared/app.js?v=80"></script>
 <script>
 const { createApp } = Vue;
 

@@ -76,23 +76,21 @@
                เพราะ CSS ตัดของที่ล้นกรอบของ ancestor ที่มี overflow ไม่ใช่ visible เสมอไม่ว่าจะกำลังเลื่อนอยู่หรือไม่ (ยืนยันปัญหาจากผู้ใช้ 2026-09-21)
                แก้โดยซ่อนตัวอักษรเหลือแค่ไอคอน+ลูกศรเฉพาะจอมือถือ (hidden sm:inline) แทน ปุ่มเล็กพอจะอยู่แถวเดียวได้โดยไม่ต้อง scroll/wrap เลย -->
           <div class="flex items-center gap-1.5 bg-slate-50 rounded-full p-1 flex-wrap">
-            <div v-if="isSecretary" class="relative shrink-0">
-              <button type="button" @click.stop="spOpenFilterDropdown = spOpenFilterDropdown==='sale' ? null : 'sale'"
-                title="กรองตาม Sale"
+            <!-- ลำดับตัวกรองมาตรฐานทุกหน้า: ช่วงเวลา → ขอบเขตงาน (ประเภท/แหล่งที่มา) → Sale → ปุ่มสั่งงานขวาสุด (กว้าง→แคบ แบบ Salesforce/Power BI — ยืนยันจากผู้ใช้ 2026-10-10) -->
+            <div class="relative shrink-0">
+              <button type="button" @click.stop="spOpenFilterDropdown = spOpenFilterDropdown==='period' ? null : 'period'"
+                title="กรองเฉพาะการ์ดใน Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน"
                 class="flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
-                :class="spFilter.assigned_to ? spHeaderDropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>
-                <span>{{ spSelectedSaleLabel }}</span>
+                :class="spFilter.period!=='all' ? spHeaderDropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <span>{{ spSelectedPeriodLabel }}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-              <div v-if="spOpenFilterDropdown==='sale'" @click.stop
-                class="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl ring-1 ring-slate-100 overflow-hidden z-10 py-1" style="min-width:190px">
-                <a href="#" @click.prevent="spSelectSale('')"
+              <div v-if="spOpenFilterDropdown==='period'" @click.stop
+                class="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl ring-1 ring-slate-100 overflow-hidden z-10 py-1" style="min-width:150px">
+                <a v-for="p in spPeriodOptions" :key="p.value" href="#" @click.prevent="spSelectPeriod(p.value)"
                   class="block px-3.5 py-2.5 text-sm no-underline cursor-pointer hover:bg-slate-50"
-                  :class="!spFilter.assigned_to ? 'text-teal-700 font-semibold' : 'text-slate-600'">— Sales ทั้งหมด —</a>
-                <a v-for="u in salesUsers" :key="u.id" href="#" @click.prevent="spSelectSale(u.id)"
-                  class="block px-3.5 py-2.5 text-sm no-underline cursor-pointer hover:bg-slate-50"
-                  :class="String(spFilter.assigned_to)===String(u.id) ? 'text-teal-700 font-semibold' : 'text-slate-600'">{{ u.full_name }}</a>
+                  :class="spFilter.period===p.value ? 'text-teal-700 font-semibold' : 'text-slate-600'">{{ p.label }}</a>
               </div>
             </div>
             <!-- แหล่งที่มา: เฉพาะ secretary/admin/manager — ยืนยันจากผู้ใช้ 2026-09-21 ข้อมูลจริงพบว่างานของ sale แต่ละคนแทบทั้งหมดเป็นแหล่งเดียวกัน (self_sourced) ฟิลเตอร์นี้จึงมีประโยชน์กับมุมมองทีมมากกว่ามุมมองส่วนตัว -->
@@ -115,20 +113,23 @@
                   :class="spFilter.source_type===s.val ? 'text-teal-700 font-semibold' : 'text-slate-600'">{{ s.label }}</a>
               </div>
             </div>
-            <div class="relative shrink-0">
-              <button type="button" @click.stop="spOpenFilterDropdown = spOpenFilterDropdown==='period' ? null : 'period'"
-                title="กรองเฉพาะการ์ดใน Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน"
+            <div v-if="isSecretary" class="relative shrink-0">
+              <button type="button" @click.stop="spOpenFilterDropdown = spOpenFilterDropdown==='sale' ? null : 'sale'"
+                title="กรองตาม Sale"
                 class="flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border-0 cursor-pointer bg-white ring-1 transition-colors whitespace-nowrap"
-                :class="spFilter.period!=='all' ? spHeaderDropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <span>{{ spSelectedPeriodLabel }}</span>
+                :class="spFilter.assigned_to ? spHeaderDropdownActiveClass : 'ring-slate-200 text-slate-600 hover:bg-slate-50'">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>
+                <span>{{ spSelectedSaleLabel }}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-              <div v-if="spOpenFilterDropdown==='period'" @click.stop
-                class="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl ring-1 ring-slate-100 overflow-hidden z-10 py-1" style="min-width:150px">
-                <a v-for="p in spPeriodOptions" :key="p.value" href="#" @click.prevent="spSelectPeriod(p.value)"
+              <div v-if="spOpenFilterDropdown==='sale'" @click.stop
+                class="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl ring-1 ring-slate-100 overflow-hidden z-10 py-1" style="min-width:190px">
+                <a href="#" @click.prevent="spSelectSale('')"
                   class="block px-3.5 py-2.5 text-sm no-underline cursor-pointer hover:bg-slate-50"
-                  :class="spFilter.period===p.value ? 'text-teal-700 font-semibold' : 'text-slate-600'">{{ p.label }}</a>
+                  :class="!spFilter.assigned_to ? 'text-teal-700 font-semibold' : 'text-slate-600'">— Sales ทั้งหมด —</a>
+                <a v-for="u in salesUsers" :key="u.id" href="#" @click.prevent="spSelectSale(u.id)"
+                  class="block px-3.5 py-2.5 text-sm no-underline cursor-pointer hover:bg-slate-50"
+                  :class="String(spFilter.assigned_to)===String(u.id) ? 'text-teal-700 font-semibold' : 'text-slate-600'">{{ u.full_name }}</a>
               </div>
             </div>
           </div>
@@ -1573,7 +1574,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=74"></script>
+<script src="shared/app.js?v=80"></script>
 <script>
 const { createApp } = Vue;
 

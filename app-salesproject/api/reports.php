@@ -2,6 +2,7 @@
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/usage_helper.php';   // usageConfig() — วันเริ่มใช้ระบบจริง (adoption_start_date) ใช้คำนวณ Avg Sales Cycle
 
 $user = requireAuth();
 $db   = (new Database())->getConnection();
@@ -301,11 +302,20 @@ function kpiSummary(PDO $db, array $user): void {
         FROM pipeline_items WHERE source_type != 'ebidding' $f
     ")->fetch();
 
-    $cycle = $db->query("
-        SELECT AVG(DATEDIFF(COALESCE(delivered_date,order_date,updated_at), created_at)) AS avg_cycle
+    // Avg Sales Cycle = วันส่งมอบ − วันสร้างดีล — นับเฉพาะดีลที่สร้างในระบบตั้งแต่วันเริ่มใช้งานจริง (adoption_start_date)
+    // และวันส่ง/ปิดไม่ก่อนวันสร้าง (ยืนยันจากผู้ใช้ 2026-10-10) — แบบ Salesforce ที่ไม่นับข้อมูลย้ายจากระบบเก่า
+    // เดิมนับทุกดีล: ดีลที่คีย์ย้อนหลัง 20 ส.ค. 69 (ส่งของไปตั้งแต่ ธ.ค. 68 – ม.ค. 69) ได้ค่าติดลบ เฉลี่ยออกมา −118 วัน
+    $cycleSince = usageConfig($db)['adoption_start_date'];
+    $cycleStmt = $db->prepare("
+        SELECT AVG(DATEDIFF(COALESCE(delivered_date,order_date,updated_at), created_at)) AS avg_cycle, COUNT(*) AS cnt
         FROM pipeline_items WHERE stage='Delivered' AND source_type != 'ebidding'
-          AND COALESCE(delivered_date,order_date,updated_at) IS NOT NULL $f
-    ")->fetchColumn();
+          AND COALESCE(delivered_date,order_date,updated_at) IS NOT NULL
+          AND created_at >= ?
+          AND DATEDIFF(COALESCE(delivered_date,order_date,updated_at), created_at) >= 0 $f
+    ");
+    $cycleStmt->execute([$cycleSince . ' 00:00:00']);
+    $cycleRow = $cycleStmt->fetch();
+    $cycle = (int)$cycleRow['cnt'] > 0 ? $cycleRow['avg_cycle'] : null;
 
     // งานประมูล (e-Bidding) — ใช้ project_assignments เป็นแหล่งเดียว (แม่นยำกว่า mirror เพราะ
     // งานที่แพ้ประมูลไม่เคยถูก mirror เข้า pipeline_items เลย นับจาก mirror อย่างเดียวจะขาดยอดแพ้ไปหมด)
@@ -345,7 +355,9 @@ function kpiSummary(PDO $db, array $user): void {
         'win_rate'          => round($wonDeals / $decided * 100),
         'avg_deal_size'     => $valueCnt > 0 ? round($valueSum / $valueCnt) : 0,
         // avg_cycle_days ยังเป็นแค่ของงานขายตรงเท่านั้น (งานประมูลไม่มี delivered_date ให้คำนวณรอบเวลาแบบเดียวกัน)
-        'avg_cycle_days'    => $cycle ? round((float)$cycle) : null,
+        'avg_cycle_days'    => $cycle !== null ? (int)round((float)$cycle) : null,
+        'avg_cycle_count'   => (int)$cycleRow['cnt'],   // จำนวนดีลที่ใช้คำนวณ
+        'avg_cycle_since'   => $cycleSince,             // นับดีลที่สร้างตั้งแต่วันนี้
         // แยกยอดย่อยไว้ให้ frontend แสดงเทียบกันได้
         'bid_active_deals'   => (int)$bidRow['active_deals'],
         'bid_weighted'       => round((float)$bidRow['weighted_pipeline']),
