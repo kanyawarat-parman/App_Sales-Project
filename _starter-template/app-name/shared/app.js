@@ -88,6 +88,38 @@ const SharedMethods = {
     return Number(v).toLocaleString('th-TH');
   },
 
+  // เบอร์โทร: ฐานข้อมูลเก็บตัวเลขล้วน 1 ช่อง = 1 เบอร์ (มาตรฐาน CRM) — ใส่ขีดตอนแสดงผลแบบไทย
+  // มือถือ 092-536-4624 / กทม. 02-963-2951 / ต่างจังหวัด 038-493-561 / มีเบอร์ต่อ "... ต่อ 2616"
+  // รูปแบบอื่น (ต่างประเทศ +, เบอร์สั้น, ข้อมูลเก่า) แสดงตามที่เก็บ — บริษัทต่างประเทศปรับ regex ตรงนี้
+  formatPhone(phone, ext) {
+    if (!phone) return '';
+    const p = String(phone);
+    let text = p;
+    if (/^0[689]\d{8}$/.test(p))  text = `${p.slice(0, 3)}-${p.slice(3, 6)}-${p.slice(6)}`;
+    else if (/^02\d{7}$/.test(p)) text = `${p.slice(0, 2)}-${p.slice(2, 5)}-${p.slice(5)}`;
+    else if (/^0\d{8}$/.test(p))  text = `${p.slice(0, 3)}-${p.slice(3, 6)}-${p.slice(6)}`;
+    return ext ? `${text} ต่อ ${ext}` : text;
+  },
+
+  // ลิงก์กดโทรบนมือถือ — เฉพาะเบอร์ที่เป็นตัวเลขล้วน
+  phoneTelHref(phone) {
+    return /^(0\d{8,9}|1\d{3}|\+\d{6,15})$/.test(String(phone || '')) ? `tel:${phone}` : null;
+  },
+
+  // ตรวจเบอร์ที่กำลังพิมพ์ในฟอร์ม (กติกาเดียวกับ normalizePhone() ใน includes/phone_helper.php) — คืนข้อความเตือน หรือ '' ถ้าใช้ได้/ว่าง
+  phoneInputProblem(value) {
+    // ขีด/ช่องว่างแบบพิเศษที่ติดมาตอนคัดลอกจาก Excel / Word / LINE → ขีด/ช่องว่างปกติ (เหมือน cleanPhoneChars() ฝั่ง PHP)
+    const raw = String(value || '')
+      .replace(/[‐-―−﹘﹣－]/g, '-')
+      .replace(/[  -​  　﻿]/g, ' ')
+      .trim();
+    if (!raw) return '';
+    if (!/^\+?[0-9\s\-().]+$/.test(raw)) return 'ใส่ได้ 1 เบอร์ต่อช่อง — มีหลายเบอร์ให้แยกใส่อีกช่อง / เบอร์ต่อใส่ช่องเบอร์ต่อ';
+    let digits = raw.replace(/\D/g, '');
+    if (raw.startsWith('+')) digits = (digits.startsWith('66') && digits.length >= 10) ? '0' + digits.slice(2) : '+' + digits;
+    return /^(0\d{8,9}|1\d{3}|\+\d{6,15})$/.test(digits) ? '' : 'รูปแบบไม่ถูกต้อง — เบอร์ไทยขึ้นต้น 0 ยาว 9-10 หลัก เช่น 02-963-2951 หรือ 092-536-4624';
+  },
+
   formatNum(v) {
     const n = Number(String(v).replace(/,/g, ''));
     return isNaN(n) ? v : n.toLocaleString('en-US');

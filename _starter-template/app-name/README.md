@@ -5,6 +5,8 @@
 ## มีอะไรให้แล้วบ้าง (ใช้ได้เลยไม่ต้องแก้)
 - `config/database.php` — เชื่อมต่อ MySQL ผ่าน PDO
 - `includes/auth_check.php` — `requireAuth()`, `requireRole()`, `jsonResponse()`, `respondThenContinue()`, `getJsonBody()`
+- `includes/code_helper.php` — `nextCode()` ออกรหัสข้อมูลแบบ `PREFIX-000000` จากตาราง `code_counters` (กันเลขซ้ำตอนกดพร้อมกัน)
+- `includes/phone_helper.php` — เบอร์โทรเก็บตัวเลขล้วน 1 ช่อง = 1 เบอร์ (`normalizePhone()` / `phoneForUpdate()`) คู่กับ `formatPhone()` / `phoneInputProblem()` ใน `shared/app.js`
 - `api/auth.php` — login/logout/me
 - `api/config.php` — public config endpoint (สำหรับหน้า login ที่ยังไม่ login)
 - `shared/app.js` — `apiCall()`, `APP_CONFIG` loader, `SharedMethods` (8 ฟังก์ชันทั่วไป), `AppNav` component (โครงพื้นฐาน)
@@ -15,21 +17,42 @@
 
 ## ขั้นตอนเริ่มโปรเจกต์ใหม่
 1. rename โฟลเดอร์นี้เป็นชื่อแอปจริง (ทำจากขั้นตอนใน [../README.md](../README.md) มาแล้ว)
-2. สร้างฐานข้อมูล MySQL ใหม่ + ตาราง `users` อย่างน้อย:
+2. สร้างฐานข้อมูล MySQL ใหม่ + ตาราง `users` และ `code_counters` อย่างน้อย (ทุกตารางมีช่อง audit 4 ช่อง + COMMENT ภาษาไทยตามกฎใน CLAUDE.md):
    ```sql
    CREATE TABLE users (
      id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'รหัสอ้างอิง',
-     username    VARCHAR(100) NOT NULL UNIQUE COMMENT 'ชื่อผู้ใช้',
+     username    VARCHAR(100) NOT NULL UNIQUE COMMENT 'ชื่อผู้ใช้ (ใช้เป็น code ของผู้ใช้)',
      password    VARCHAR(255) NOT NULL COMMENT 'รหัสผ่าน (เข้ารหัสแล้ว)',
      full_name   VARCHAR(200) NOT NULL COMMENT 'ชื่อ-นามสกุล',
      role        VARCHAR(50) NOT NULL COMMENT 'สิทธิ์การใช้งาน',
      avatar_color VARCHAR(7) DEFAULT '#3B82F6' COMMENT 'สีพื้นหลัง avatar',
      photo_url   TEXT COMMENT 'URL รูปโปรไฟล์',
      is_active   TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'บัญชียังใช้งานอยู่หรือไม่',
-     last_login  TIMESTAMP NULL COMMENT 'วันเวลาเข้าสู่ระบบล่าสุด'
+     last_login  TIMESTAMP NULL COMMENT 'วันเวลาเข้าสู่ระบบล่าสุด',
+     created_by  INT UNSIGNED NULL DEFAULT NULL COMMENT 'ผู้สร้าง (FK -> users.id)',
+     created_at  TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'วันเวลาที่สร้าง',
+     updated_by  INT UNSIGNED NULL DEFAULT NULL COMMENT 'ผู้แก้ไขล่าสุด (FK -> users.id)',
+     updated_at  TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'วันเวลาที่แก้ไขล่าสุด',
+     CONSTRAINT fk_users_created_by FOREIGN KEY (created_by) REFERENCES users (id),
+     CONSTRAINT fk_users_updated_by FOREIGN KEY (updated_by) REFERENCES users (id)
+   );
+
+   -- ตัวนับเลขรหัสข้อมูล ใช้กับ includes/code_helper.php (nextCode) — ดูหัวข้อ "กฎการสร้าง Database" ใน CLAUDE.md
+   CREATE TABLE code_counters (
+     code_type       VARCHAR(10)  NOT NULL PRIMARY KEY COMMENT 'ประเภทรหัส = prefix ของรหัส (เช่น AC)',
+     code_type_name  VARCHAR(100) NOT NULL COMMENT 'ชื่อประเภทรหัส',
+     last_number     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'เลขล่าสุดที่ออกไปแล้ว (เลขรันต่อเนื่อง ไม่รีเซ็ต)',
+     created_by      INT UNSIGNED NULL DEFAULT NULL COMMENT 'ผู้สร้าง (FK -> users.id)',
+     created_at      TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'วันเวลาที่สร้าง',
+     updated_by      INT UNSIGNED NULL DEFAULT NULL COMMENT 'ผู้แก้ไขล่าสุด (FK -> users.id)',
+     updated_at      TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'วันเวลาที่แก้ไขล่าสุด',
+     CONSTRAINT fk_code_counters_created_by FOREIGN KEY (created_by) REFERENCES users (id),
+     CONSTRAINT fk_code_counters_updated_by FOREIGN KEY (updated_by) REFERENCES users (id)
    );
    ```
    (เพิ่ม role/สิทธิ์จริงของโปรเจกต์นี้เข้า `role` ตาม `CHANGE_ME` ใน CLAUDE.md — จะใช้ ENUM หรือ VARCHAR ก็ได้ตามต้องการ)
+
+   แล้วรัน `sql/add_user_activity_logs.sql` — ตารางประวัติการใช้งาน (login/logout/เปิดหน้า) ที่ `api/auth.php` บันทึกลงไป ถ้าไม่สร้าง ระบบยังใช้ได้ปกติ แค่ไม่มีประวัติ
 3. ตั้งค่า DB ผ่าน environment variable (`DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`) หรือแก้ default ใน `config/database.php` ตรงๆ
 4. แก้ `config/config.php` — เปลี่ยนทุกจุดที่เขียนว่า `CHANGE_ME`
 5. รัน dev server **จาก workspace root** (โฟลเดอร์นี้ขึ้นไป 1 ชั้น) ไม่ใช่จากข้างในนี้: `php -S localhost:8000 -t app-name` (เปลี่ยน `app-name` ตามชื่อที่ rename จริง) แล้วเปิด `http://localhost:8000/login.html`

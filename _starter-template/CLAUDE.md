@@ -27,4 +27,6 @@
 
 ## Convention ที่ใช้ร่วมกันทั้ง workspace
 - ทุกตาราง/คอลัมน์ DB ใหม่ต้องมี `COMMENT` ภาษาไทย (หรือภาษาที่ทีมใช้) กำกับเสมอ
+- ทุกตารางต้องมีช่อง audit 4 ช่อง (`created_by`, `created_at`, `updated_by`, `updated_at`) และข้อมูลที่คนอ้างถึงต้องมี code (`PREFIX-000000`) คู่กับ `id` — รายละเอียดเต็มดูหัวข้อ "กฎการสร้าง Database" ใน `app-name/CLAUDE.md`
+- โค้ด PHP ห้ามสร้าง/แก้โครงสร้างตาราง (`CREATE`/`ALTER`/`DROP TABLE`) — โครงสร้าง DB อยู่ในไฟล์ `sql/` เท่านั้น (กฎการสร้าง Database ข้อ 3)
 - ไม่มีระบบ build/npm — static HTML/JS + PHP vanilla ทุกโฟลเดอร์ย่อย

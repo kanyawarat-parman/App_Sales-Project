@@ -11,5 +11,12 @@ Service แยกต่างหาก ไม่ใช่ส่วนหนึ�
 ## ⚠️ ยังไม่ได้ตัดสินใจ (ต้องคุยกันตอนเริ่มสร้างจริง)
 `api/ingest.php` ถูกเรียกแบบ machine-to-machine (Cowork เรียก ไม่ใช่ user login ผ่าน session) — ใช้ `requireAuth()`/session แบบเดิมของ `app-salesproject` ไม่ได้ ต้องมีการยืนยันตัวตนแบบอื่น เช่น API key/secret token ใน header ก่อน insert ข้อมูลจริง ไม่งั้นใครก็ยิง POST ปลอมเข้า `announcements` ได้
 
+## ⚠️ การแจ้งเตือนธุรการเมื่อมีประกาศใหม่ (บันทึก 2026-10-09)
+ตอนนี้ประกาศเข้าระบบโดย admin นำเข้าเองที่หน้า "นำเข้าข้อมูล" (`app-salesproject/import.html` → `api/announcements.php` action `import`) และระบบแจ้งธุรการขายผ่าน `notifyAnnouncementsImported()` (`app-salesproject/includes/notify_helper.php`) — สรุปครั้งเดียวต่อการนำเข้า กระดิ่ง + LINE
+
+เมื่อทำ service นี้ให้นำเข้าอัตโนมัติ: insert ตรงเข้า `announcements` จะ**ไม่มีการแจ้งเตือน** (2 ระบบไม่มีโค้ดร่วมกัน เรียก `notify()` ตรงไม่ได้) ต้องเลือกตอนนั้น:
+- ให้ `app-salesproject` ตรวจประกาศใหม่ที่ยังไม่แจ้งตามเวลา (Cron) แล้วเรียก `notifyAnnouncementsImported()` เอง หรือ
+- ให้ service นี้เรียก endpoint ของ `app-salesproject` หลังนำเข้าเสร็จ (ต้องมี API key แบบเดียวกับ `ingest.php`)
+
 ## ทำไมแยก service
 ตัวดึงข้อมูล (Cowork/e-GP) เปลี่ยนบ่อยตามโครงสร้างเว็บ e-GP ที่เปลี่ยนไป ส่วน `app-salesproject` เปลี่ยนตาม business process ภายใน — คนละวงจรชีวิต จึงแยก deploy คนละโฟลเดอร์ (`sales.thaitaiyo.co.th/egp-import/` คู่กับ `sales.thaitaiyo.co.th/app-salesproject/`)
