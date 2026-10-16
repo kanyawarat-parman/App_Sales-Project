@@ -397,6 +397,10 @@
               <button type="button" @click="spImportFilter = spImportFilter === 'pending' ? '' : 'pending'" class="inline-flex items-center gap-1 px-3.5 py-2 text-sm font-semibold border-0 cursor-pointer border-l border-amber-300"
                 :class="spImportFilter === 'pending' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'">ยังไม่ตรวจ ({{ spImportPendingCount }})</button>
             </div>
+            <!-- ดีลที่ยังไม่ผูกลูกค้าในระบบ (ส่วนใหญ่เป็นดีลนำเข้าย้อนหลังที่มีแค่ชื่อพิมพ์ไว้ — ดีลใหม่บังคับเลือกลูกค้าแล้ว) ให้ Sale ไล่ผูกให้ครบ (Data Quality — ยืนยันจากผู้ใช้ 2026-10-14) — กดซ้ำ = ยกเลิกตัวกรอง -->
+            <button v-if="spNoAccountCount || spNoAccountFilter" type="button" @click="spNoAccountFilter = !spNoAccountFilter"
+              class="inline-flex items-center gap-1 px-3.5 py-2 rounded-full text-sm font-semibold border-0 cursor-pointer ring-1 ring-amber-300 shrink-0"
+              :class="spNoAccountFilter ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'">ยังไม่ผูกลูกค้า ({{ spNoAccountCount }})</button>
             <button @click="modal = {type:'sp-adv-filter'}"
               class="inline-flex items-center gap-1.5 border-[1.5px] border-slate-200 rounded-full px-3 py-2 text-sm font-semibold bg-white text-slate-500 hover:bg-slate-50 cursor-pointer transition-all shrink-0"
               :class="{[spFilterBtnActiveClass]: spAdvFilterCount>0}">
@@ -472,6 +476,10 @@
                     </div>
                     <div v-if="card.project_code" class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-1">{{ card.project_code }}</div>
                     <div v-if="Number(card.import_pending) === 1" class="inline-block ml-1 mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</div>
+                    <!-- คำขอใบเสนอราคาที่ยังไม่ออกใบ (2026-10-14) -->
+                    <!-- ลูกค้ายืนยันสั่งซื้อตามใบแล้ว (ระยะ 3) — ให้ Sale กดปิดดีลเอง (ต้องกรอกวันคาดส่งมอบ) -->
+                    <div v-if="card.quote_confirmed_id && ['Interest','Send PI','Negotiating'].includes(card.stage)" class="inline-block ml-1 mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-emerald-100 text-emerald-800">ลูกค้ายืนยันใบ {{ card.quote_confirmed_id }} แล้ว — กดปิดดีล</div>
+                    <div v-if="card.quote_request_status" class="inline-block ml-1 mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold" :class="card.quote_request_status==='accepted' ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'">{{ card.quote_request_status==='accepted' ? 'ธุรการกำลังออกใบ' : 'รอออกใบเสนอราคา' }}</div>
                     <div class="font-bold text-[.95rem] leading-tight mb-1 text-slate-800">{{ card.title }}</div>
                     <div class="text-[.85rem] text-slate-500 mb-1" v-if="card.client_name">{{ card.client_name }}</div>
                     <div class="text-[1.05rem] font-black text-green-600 mb-2" v-if="card.value">฿{{ formatNumber(card.value) }}</div>
@@ -620,36 +628,68 @@
     <!-- MODALS -->
     <!-- SP: Add / Edit Deal Modal -->
     <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
-      <!-- กว้าง 800px (เดิม 560px) — ฟอร์มมีผู้ติดต่อหลายคน + บทบาท/คนหลัก แคบเกินไป (ยืนยันจากผู้ใช้ 2026-09-29) มือถือยังเต็มจอเหมือนเดิม -->
-      <div class="bg-white rounded-2xl w-full max-w-[800px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
-        <!-- หัว modal อยู่กับที่ (ไม่เลื่อนตามฟอร์ม) — แสดงรหัสงาน/สถานะ/ประเภทดีล/เลขที่ใบเสนอราคา ให้เห็นตลอดว่ากำลังแก้งานไหน
-             (ย้ายขึ้นมาจากเหนือกล่อง ① — ยืนยันจากผู้ใช้ 2026-09-23) ป้ายประเภทดีลอ่านจากค่าที่บันทึกไว้ (modal.data) ไม่ใช่ค่าที่กำลังเลือกในฟอร์ม -->
-        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
-          <div class="min-w-0">
-            <h3 class="font-bold text-lg text-slate-800 m-0">{{ spForm.id ? 'รายละเอียดดีล' : 'สร้างงาน/ดีลใหม่' }}</h3>
-            <div v-if="spForm.id" class="flex flex-wrap items-center gap-1.5 mt-2">
-              <span v-if="spForm.project_code" class="text-xs font-mono font-bold text-purple-700 bg-purple-50 rounded-full px-2.5 py-1">{{ spForm.project_code }}</span>
-              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :style="spStageClass(spForm.stage)">{{ spStageLabel(spForm.stage, spForm.source_type) }}</span>
-              <span v-if="modal.data?.deal_type_id && modal.data.deal_type_id !== 'normal'" class="px-2.5 py-1 rounded-full text-xs font-bold bg-fuchsia-100 text-fuchsia-700">{{ modal.data.deal_type_name }}</span>
+      <!-- กว้าง 896px (max-w-4xl) เท่ากับหน้าต่างรายละเอียดงานประมูล/งานที่ได้รับ (ยืนยันจากผู้ใช้ 2026-10-14 — เดิม 800px, ก่อนนั้น 560px) มือถือยังเต็มจอเหมือนเดิม -->
+      <div class="bg-white rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
+        <!-- หัวสรุปอยู่กับที่ (Highlights Panel — จัดหน้าแบบ Record Page ยืนยันจากผู้ใช้ 2026-10-14): รหัส/สถานะ/ประเภทดีล/ชื่องาน/ลูกค้า/Sale + กล่องตัวเลข 4 กล่อง
+             ค่าในหัวอ่านจากที่บันทึกไว้ (modal.data) ไม่ใช่ค่าที่กำลังแก้ในฟอร์ม / ดีลใหม่ (ยังไม่มีรหัส) แสดงแค่หัวข้อ ไม่มีกล่องตัวเลขและแท็บ -->
+        <div class="px-6 pt-4 pb-3 border-b border-slate-100 shrink-0">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <h3 v-if="!spForm.id" class="font-bold text-lg text-slate-800 m-0">สร้างงาน/ดีลใหม่</h3>
+              <div v-else class="flex flex-wrap items-center gap-1.5">
+                <span v-if="spForm.project_code" class="text-xs font-mono font-bold text-purple-700 bg-purple-50 rounded-full px-2.5 py-1">{{ spForm.project_code }}</span>
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :style="spStageClass(modal.data?.stage || spForm.stage)">{{ spStageLabel(modal.data?.stage || spForm.stage, spForm.source_type) }}</span>
+                <span v-if="modal.data?.deal_type_id && modal.data.deal_type_id !== 'normal'" class="px-2.5 py-1 rounded-full text-xs font-bold bg-fuchsia-100 text-fuchsia-700">{{ modal.data.deal_type_name }}</span>
+              </div>
             </div>
-            <!-- คู่แข่งที่บันทึกไว้ (ไม่ใช่ค่าที่กำลังแก้ในฟอร์ม) ให้เห็นทันทีที่เปิด ไม่ต้องเลื่อนไปหากล่อง ③ -->
-            <div v-if="spForm.id && modal.data?.stage==='Lost' && modal.data?.winner_name" class="text-sm text-rose-700 mt-1.5">
+            <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+          </div>
+          <template v-if="spForm.id && modal.data">
+            <h3 class="font-bold text-lg text-slate-800 mt-2 mb-0 leading-snug line-clamp-2">{{ modal.data.title }}</h3>
+            <!-- ดีลเก่าที่มีแค่ชื่อพิมพ์ไว้ (client_name) ยังไม่ผูกลูกค้าในระบบ → ป้ายส้ม "ยังไม่ผูกลูกค้า" ไม่ให้เข้าใจว่าผูกแล้ว (ยืนยันจากผู้ใช้ 2026-10-14) -->
+            <div class="text-sm text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <template v-if="modal.data.account_id">{{ modal.data.account_name }}</template>
+              <template v-else>
+                <span v-if="modal.data.client_name">{{ modal.data.client_name }}</span>
+                <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">ยังไม่ผูกลูกค้า</span>
+              </template>
+              <span>· Sale: <span class="text-slate-700">{{ modal.data.sale_name }}</span></span>
+            </div>
+            <!-- คู่แข่งที่บันทึกไว้ / แพ้ให้ใคร / ใบเสนอราคาเก่าที่นำเข้า -->
+            <div v-if="modal.data.stage==='Lost' && modal.data.winner_name" class="text-sm text-rose-700 mt-1">
               แพ้ให้: <span class="font-semibold">{{ modal.data.winner_name }}</span><span v-if="modal.data.winning_price"> · {{ formatPrice(modal.data.winning_price) }}</span>
               <span v-if="spPriceGapText(modal.data.value, modal.data.winning_price)" class="text-xs"> ({{ spPriceGapText(modal.data.value, modal.data.winning_price) }})</span>
             </div>
-            <div v-if="spForm.id && spSavedCompetitors.length" class="text-sm text-slate-500 mt-1.5">
+            <div v-if="spSavedCompetitors.length" class="text-sm text-slate-500 mt-1">
               คู่แข่ง: <span class="font-semibold text-slate-700">{{ spSavedCompetitors.map(c => c.competitor_name).join(', ') }}</span>
             </div>
             <!-- เลขที่ใบเสนอราคา — แสดงเฉพาะงานที่นำเข้าจากใบเสนอราคาเก่า (แกะจากข้อความใน notes) -->
-            <div v-if="spHistoryQuotationId" class="text-sm text-slate-500 mt-1.5">
-              ใบเสนอราคา:
+            <div v-if="spHistoryQuotationId" class="text-sm text-slate-500 mt-1">
+              ใบเสนอราคาเดิม:
               <button type="button" @click="openSpQuotationDetail(spHistoryQuotationId)" :disabled="spQuotationLoading"
                 class="font-mono font-bold text-sm underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-sky-700 hover:text-sky-600 disabled:opacity-50">{{ spHistoryQuotationId }}</button>
             </div>
-          </div>
-          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+            <!-- กล่องตัวเลข: มูลค่า / โอกาสปิด / นัดติดตาม (ถึงวัน = ส้ม, เลยวัน = แดง) / ใบเสนอราคา (กดแล้วไปแท็บใบเสนอราคา) -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+              <div class="rounded-xl bg-slate-50 px-3 py-2"><div class="text-xs text-slate-500">มูลค่า</div><div class="font-bold text-emerald-700">{{ modal.data.value ? formatNumber(modal.data.value) : '-' }}</div></div>
+              <div class="rounded-xl bg-slate-50 px-3 py-2"><div class="text-xs text-slate-500">โอกาสปิด</div><div class="font-bold text-slate-800">{{ modal.data.win_probability != null ? Math.round(modal.data.win_probability * 100) + '%' : '-' }}</div></div>
+              <div class="rounded-xl px-3 py-2" :class="spHeadFollowup.cls">
+                <div class="text-xs opacity-80">นัดติดตาม</div>
+                <div class="font-bold">{{ spHeadFollowup.text }}</div>
+              </div>
+              <button type="button" @click="spFormTab = 'quote'" class="rounded-xl px-3 py-2 text-left border-0 cursor-pointer hover:brightness-95" :class="spQuoteSummary?.cls || 'bg-slate-50 text-slate-600'">
+                <div class="text-xs opacity-80">ใบเสนอราคา</div>
+                <div class="font-bold truncate">{{ spQuoteSummary?.short || '…' }}</div>
+              </button>
+            </div>
+          </template>
         </div>
+        <!-- แท็บ (เฉพาะดีลที่บันทึกแล้ว) — ใช้ v-show ค่าที่กำลังแก้ในฟอร์มไม่หายตอนสลับแท็บ / ปุ่มบันทึกด้านล่างบันทึกเฉพาะแท็บข้อมูลดีล -->
+        <app-record-tabs v-if="spForm.id" v-model="spFormTab"
+          :tabs="[{ key: 'deal', label: 'รายละเอียดดีล' }, { key: 'quote', label: 'ใบเสนอราคา', count: spQuoteSummary?.count }, { key: 'history', label: 'ประวัติ' }]"></app-record-tabs>
         <div class="flex-1 overflow-y-auto p-5">
+          <!-- ═══ แท็บ รายละเอียดดีล ═══ (ไม่ใช้ชื่อ "ข้อมูลดีล" เพราะซ้ำกับกล่อง ② — 2026-10-14) (ดีลใหม่แสดงส่วนนี้อย่างเดียว) -->
+          <div v-show="!spForm.id || spFormTab === 'deal'">
 
           <!-- ใบเสนอราคาเก่าที่นำเข้า ยังรอตรวจ (ยืนยันจากผู้ใช้ 2026-09-30) — ตรวจแล้ว = เลื่อนสถานะ / ลบ / กดยืนยันว่ายังเป็นใบเสนอราคา
                กดบันทึกฟอร์มเฉยๆ ไม่นับ เพื่อแยกดีลที่ยังเป็น PI จริง ออกจากดีลที่ยังไม่มีใครดู -->
@@ -674,6 +714,15 @@
               <h3 class="text-base font-bold text-slate-800">ลูกค้า</h3>
             </div>
             <div>
+              <!-- ดีลนำเข้าย้อนหลังที่ยังไม่ผูกลูกค้า (มีแค่ชื่อพิมพ์ไว้) — บอกให้ Sale ผูก + ปุ่มค้นหาชื่อเดิมให้ทันที (ยืนยันจากผู้ใช้ 2026-10-14) / ดีลใหม่บังคับเลือกลูกค้าอยู่แล้ว -->
+              <div v-if="spForm.id && !spForm.account_id && !modal.data?.account_id" class="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div class="flex-1 min-w-[220px]">
+                  <div class="text-sm font-bold text-amber-900">ยังไม่ผูกลูกค้าในระบบ</div>
+                  <div class="text-sm text-slate-600"><template v-if="modal.data?.client_name">ชื่อที่พิมพ์ไว้เดิม: <b class="text-slate-800">{{ modal.data.client_name }}</b> — </template>ค้นหาแล้วเลือกลูกค้า จากนั้นกดบันทึก</div>
+                </div>
+                <button v-if="modal.data?.client_name" type="button" @click="searchSpAccountByClientName"
+                  class="shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer">ค้นหาชื่อนี้</button>
+              </div>
               <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อลูกค้า / บริษัท <span v-if="!spForm.id" class="text-red-500">*</span></label>
 
               <!-- เลือกแล้ว (หรือจองชื่อ account ใหม่ไว้ ยังไม่สร้างจริงจนกว่าจะบันทึกดีลสำเร็จ): แสดงเป็น chip -->
@@ -688,8 +737,8 @@
                 ลูกค้ารายนี้มี <b>{{ spForm.account_owner_name }}</b> ดูแลอยู่ — สร้างดีลได้ แต่ควรแจ้งหรือคุยกันก่อน
               </p>
 
-              <!-- ยังไม่ได้เลือก: ช่องค้นหา -->
-              <div v-else class="relative">
+              <!-- ยังไม่ได้เลือก: ช่องค้นหา — ใช้ v-if ตรงๆ (เดิม v-else ไปผูกกับบรรทัดเตือน "Sale คนอื่นดูแล" ด้านบน ช่องค้นหาจึงขึ้นซ้อนใต้ลูกค้าที่เลือกแล้ว — แก้ 2026-10-14) -->
+              <div v-if="!spForm.account_id" class="relative">
                 <!-- คลิกช่อง (ยังไม่พิมพ์) = ขึ้นลูกค้าล่าสุด / พิมพ์ = ค้นหาแบบยืดหยุ่น (2026-09-29) -->
                 <input v-model="spAccountQuery" @input="searchSpAccounts" @focus="openSpAccountDropdown" @click="openSpAccountDropdown"
                   class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"
@@ -1063,9 +1112,18 @@
             <div v-else class="text-sm text-slate-500">เจ้าของงาน: <span class="font-semibold text-slate-700">{{ currentUser?.full_name }}</span></div>
           </section>
 
-          <!-- ประวัติ stage -->
-          <div v-if="spFormHistory.length" class="mb-2">
-            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pb-1 border-b border-slate-100">ประวัติ stage</div>
+          </div>
+
+          <!-- ═══ แท็บ ใบเสนอราคา ═══ ขอใบเสนอราคาจากดีลนี้ + รายการคำขอ (Quote Request — ยืนยันจากผู้ใช้ 2026-10-14) — ใบเสนอราคาเป็นข้อมูลลูกของดีล (Related List)
+               ใบเสนอราคางานโครงการต้องออกจากคำขอในดีลเท่านั้น — ส่งคำขอ/ยกเลิกแล้วโหลดการ์ดใหม่ (ป้าย "รอออกใบ") / mount ไว้ตลอด (v-show) ให้หัวสรุปได้ตัวเลขทันที -->
+          <div v-show="spForm.id && spFormTab === 'quote'">
+            <app-quote-requests v-if="spForm.id && spForm.project_code" :project-code="spForm.project_code"
+              @changed="loadSpKanban()" @summary="spQuoteSummary = $event"></app-quote-requests>
+          </div>
+
+          <!-- ═══ แท็บ ประวัติ ═══ -->
+          <div v-show="spForm.id && spFormTab === 'history'">
+            <div v-if="!spFormHistory.length" class="text-sm text-slate-400 py-6 text-center">ยังไม่มีประวัติ</div>
             <div v-for="h in spFormHistory" :key="h.id" class="flex gap-3 py-2 border-b border-slate-50">
               <div class="w-2 h-2 rounded-full bg-teal-400 shrink-0 mt-1.5"></div>
               <div class="flex-1">
@@ -1574,12 +1632,12 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=80"></script>
+<script src="shared/app.js?v=84"></script>
 <script>
 const { createApp } = Vue;
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppDuplicateAccounts },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppDuplicateAccounts, AppQuoteRequests, AppRecordTabs },
   data() {
     return {
       authReady: false,
@@ -1622,7 +1680,10 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       // เพราะ sp-form เป็นฟอร์มแก้ไขที่มีข้อมูลค้างอยู่ (title/notes ที่พิมพ์ไว้) ถ้าทับ modal เดิมจะเสียข้อมูลที่แก้ค้างไว้
       spQuotationModal: { show: false, data: null },
       spQuotationLoading: false,
+      spQuoteSummary: null,     // สรุปใบเสนอราคา (กล่องตัวเลข + จำนวนบนแท็บ) — มาจาก @summary ของ AppQuoteRequests (2026-10-14)
+      spFormTab: 'deal',         // แท็บในหน้าต่างดีล: deal / quote / history (2026-10-14)
       spOpenFilterDropdown: null, // null | 'source' | 'period' | 'sort' — controls header/toolbar custom dropdowns (ยืนยันจากผู้ใช้ 2026-09-21 ใช้หลักการเดียวกับ bid-pipeline.html)
+      spNoAccountFilter: false,   // ตัวกรอง "ยังไม่ผูกลูกค้า" (2026-10-14)
       spImportFilter: '',         // ตัวกรองข้อมูลย้อนหลัง: '' = ไม่กรอง / 'all' = นำเข้าทั้งหมด / 'pending' = ยังไม่ตรวจ (2026-10-01)
       spSearch: '', // ค้นหา client-side ทันที (ไม่ยิง API) — คนละส่วนกับ spFilter.client_q ที่อยู่ในตัวกรองเพิ่มเติม (server-side)
       spSortBy: 'close_asc', // เรียงลำดับข้อมูลทั้ง 3 มุมมอง (Kanban/การ์ด/ตาราง) ด้วยตัวแปรเดียวกัน
@@ -1632,11 +1693,27 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     };
   },
   computed: {
+    // กล่อง "นัดติดตาม" บนหัวหน้าต่างดีล — ใช้กติกาเดียวกับป้ายบนการ์ด (spFollowupStatus) อ่านจากค่าที่บันทึกไว้ (2026-10-14)
+    spHeadFollowup() {
+      const card = this.modal.data;
+      const status = card ? this.spFollowupStatus(card) : null;
+      if (status === 'overdue') {
+        const days = Math.round((new Date(this.spTodayStr() + 'T00:00:00') - new Date(card.next_followup_date + 'T00:00:00')) / 86400000);
+        return { text: 'เลย ' + days + ' วัน', cls: 'bg-red-50 text-red-700' };
+      }
+      if (status === 'today')    return { text: 'วันนี้', cls: 'bg-orange-50 text-orange-700' };
+      if (status === 'upcoming') return { text: this.shortDateThai(card.next_followup_date), cls: 'bg-slate-50 text-slate-700' };
+      return { text: '-', cls: 'bg-slate-50 text-slate-500' };
+    },
     // จำนวนดีลย้อนหลังที่ยังไม่ตรวจ (จากข้อมูลที่โหลดอยู่ — sale เห็นเฉพาะของตัวเอง)
     spImportPendingCount() {
       return Object.values(this.spKanban || {}).flat().filter(c => c && Number(c.import_pending) === 1).length;
     },
     // จำนวนดีลที่นำเข้าทั้งหมด ทุกสถานะ (ปุ่ม "ข้อมูลย้อนหลังทั้งหมด")
+    // ดีลขายตรงที่ยังไม่ผูกลูกค้าในระบบ (ไม่นับดีลคู่ของงานประมูล — ลูกค้าผูกที่ประกาศ)
+    spNoAccountCount() {
+      return Object.values(this.spKanban || {}).flat().filter(c => c && this.spIsNoAccount(c)).length;
+    },
     spImportAllCount() {
       return Object.values(this.spKanban || {}).flat().filter(c => c && Number(c.is_import) === 1).length;
     },
@@ -1854,6 +1931,9 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     spImportFilter() {
       if ($.fn.dataTable.isDataTable('#spTable')) $('#spTable').DataTable().draw();
     },
+    spNoAccountFilter() {
+      if ($.fn.dataTable.isDataTable('#spTable')) $('#spTable').DataTable().draw();
+    },
     // เรียงตาม — มุมมอง Kanban/การ์ด reactive อยู่แล้วผ่าน computed แต่ตาราง DataTables ต้องสั่ง order() เองเพราะไม่ reactive
     spSortBy() {
       if ($.fn.dataTable.isDataTable('#spTable')) $('#spTable').DataTable().order(this.spTableSortOrder).draw();
@@ -1946,7 +2026,9 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         return key === 'value_desc' ? vb - va : va - vb;
       });
     },
+    spIsNoAccount(card) { return !card.account_id && card.source_type !== 'ebidding'; },
     spMatchesSearch(card) {
+      if (this.spNoAccountFilter && !this.spIsNoAccount(card)) return false;
       if (this.spImportFilter === 'pending' && Number(card.import_pending) !== 1) return false;
       if (this.spImportFilter === 'all' && Number(card.is_import) !== 1) return false;
       const q = this.spSearch.trim().toLowerCase();
@@ -2367,14 +2449,20 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     // เปิดดีลจากลิงก์ ?code= (ปุ่มใน LINE / อีเมล / กระดิ่ง — 2026-10-10) — หาการ์ดจากรหัสงานในข้อมูลที่โหลดแล้ว
     // ไม่พบ (ดีลของคนอื่นที่ไม่มีสิทธิ์เห็น / ถูกลบ) → อยู่หน้ารายการตามปกติ + แจ้ง
     async openSpFormFromLink() {
+      const tab = takeLinkTab();   // ?tab=quote จากปุ่ม "เปิดดีลนี้" ในหน้าคำขอใบเสนอราคา → เปิดที่แท็บใบเสนอราคา (2026-10-14)
       const code = takeLinkCode();
       if (!code) return;
       const card = this.spTableData.find(c => c.project_code === code);
-      if (card) await this.openSpForm(card);
+      if (card) {
+        await this.openSpForm(card);
+        if (['deal', 'quote', 'history'].includes(tab)) this.spFormTab = tab;
+      }
       else await this.showAlert(`ไม่พบดีล ${code} หรือคุณไม่มีสิทธิ์ดูดีลนี้`, 'error');
     },
 
     async openSpForm(card) {
+      this.spFormTab = 'deal';
+      this.spQuoteSummary = null;
       this.spFormHistory = [];
       this.spSavedCompetitors = [];
       this.spContactRows = [];
@@ -2436,6 +2524,12 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spAccountDropdownOpen = true;
     },
 
+    // ปุ่ม "ค้นหาชื่อนี้" ของดีลนำเข้าที่ยังไม่ผูกลูกค้า — ใส่ชื่อที่พิมพ์ไว้เดิมในช่องค้นหาแล้วค้นแบบยืดหยุ่นทันที (2026-10-14)
+    searchSpAccountByClientName() {
+      this.spAccountCreating = false;
+      this.spAccountQuery = this.modal.data?.client_name || '';
+      this.searchSpAccounts();
+    },
     // ค้นหาหน่วยงาน/บริษัทแบบ debounce เล็กน้อย กันยิง API ถี่เกินไปทุกครั้งที่พิมพ์
     searchSpAccounts() {
       clearTimeout(this._spAccountTimer);

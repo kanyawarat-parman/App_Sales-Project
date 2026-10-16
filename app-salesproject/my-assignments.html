@@ -258,115 +258,164 @@
         </div>
       </div>
 
-      <!-- Detail Modal -->
+      <!-- Detail Modal — จัดหน้าแบบ Record Page เหมือนรายละเอียดงานประมูล (bid-pipeline.html — ยืนยันจากผู้ใช้ 2026-10-14):
+           หัวสรุปอยู่กับที่ + กล่องตัวเลข / แท็บ ภาพรวม / ใบเสนอราคา (ชนะ-ส่งมอบ) / ประกาศและเอกสาร / ประวัติ — แท็บใช้ v-show -->
       <div v-if="modal.type==='detail'" class="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between shrink-0">
-          <div>
-            <h3 class="font-bold text-lg">รายละเอียดงาน</h3>
-          </div>
-          <button class="text-white/80 hover:text-white bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="closeModal">×</button>
-        </div>
-        <div class="flex-1 overflow-y-auto p-6">
-          <div class="flex gap-2 flex-wrap mb-4">
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
-            <span class="text-sm" :class="slaClass(modal.data.sla_status)">
-              {{ modal.data.sla_status==='เกิน' ? '⚠ เกิน SLA' : modal.data.sla_status==='ใกล้ถึง' ? '⏰ ใกล้ถึง SLA' : 'SLA ปกติ' }}
-            </span>
-          </div>
-          <div class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ข้อมูลโครงการ</div>
-            <div v-if="modal.data.project_code" class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">รหัสงาน</span><span class="text-sm font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block">{{ modal.data.project_code }}</span></div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">เลขที่โครงการ</span><span class="text-sm text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ชื่อโครงการ</span><span class="text-sm text-slate-700 font-semibold">{{ modal.data.project_name }}</span></div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">หน่วยงาน</span><span class="text-sm text-slate-700">{{ modal.data.unit_name }}</span></div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-green-600">{{ formatPrice(modal.data.price_median) }}</span></div>
-            <div v-if="modal.data.url" class="flex gap-2 py-1.5 border-b border-slate-50">
-              <span class="text-sm text-slate-400 min-w-[120px] shrink-0">ลิงก์ประกาศ</span>
-              <a :href="modal.data.url" target="_blank" rel="noopener" class="text-blue-600 text-sm hover:underline">เปิดประกาศ ↗</a>
+        <!-- หัวสรุป -->
+        <div class="px-6 pt-4 pb-3 border-b border-slate-100 shrink-0">
+          <div class="flex items-start gap-2">
+            <div class="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
+              <span v-if="modal.data.project_code" class="text-xs font-mono font-bold text-purple-700 bg-purple-50 rounded-full px-2.5 py-1">{{ modal.data.project_code }}</span>
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" :class="statusBadge(modal.data.status)">{{ modal.data.status }}</span>
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
+              <span class="text-sm" :class="slaClass(modal.data.sla_status)">
+                {{ modal.data.sla_status==='เกิน' ? '⚠ เกิน SLA' : modal.data.sla_status==='ใกล้ถึง' ? '⏰ ใกล้ถึง SLA' : 'SLA ปกติ' }}
+              </span>
             </div>
+            <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+          </div>
+          <h3 class="font-bold text-lg text-slate-800 mt-2 leading-snug line-clamp-2">{{ modal.data.project_name }}</h3>
+          <div class="text-sm text-slate-500 mt-0.5">
+            <template v-if="modal.data.account_id"><span class="font-mono text-xs text-teal-700">{{ modal.data.account_code }}</span> {{ modal.data.account_name }}</template>
+            <template v-else>{{ modal.data.unit_name }}</template>
+          </div>
+          <!-- กล่องตัวเลขสำคัญ — งานชนะ/ส่งมอบ: คาดส่งมอบ + ใบเสนอราคา / งานอื่น: วันปิดรับ -->
+          <div class="grid gap-2 mt-3" :class="detailIsWon ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'">
+            <div class="rounded-xl bg-slate-50 px-3 py-2"><div class="text-xs text-slate-500">ราคาที่เสนอ</div><div class="font-bold text-emerald-700">{{ modal.data.bid_amount ? formatNumber(modal.data.bid_amount) : '-' }}</div></div>
+            <div class="rounded-xl bg-slate-50 px-3 py-2"><div class="text-xs text-slate-500">ราคากลาง</div><div class="font-bold text-slate-800">{{ modal.data.price_median ? formatNumber(modal.data.price_median) : '-' }}</div></div>
+            <div v-if="detailIsWon" class="rounded-xl px-3 py-2" :class="modal.data.status==='ส่งมอบแล้ว' || modal.data.expected_delivery_date ? 'bg-slate-50' : 'bg-amber-50'">
+              <div class="text-xs" :class="modal.data.status==='ส่งมอบแล้ว' || modal.data.expected_delivery_date ? 'text-slate-500' : 'text-amber-700'">{{ modal.data.status==='ส่งมอบแล้ว' ? 'ส่งมอบจริง' : 'คาดส่งมอบ' }}</div>
+              <div class="font-bold" :class="modal.data.status==='ส่งมอบแล้ว' || modal.data.expected_delivery_date ? 'text-slate-800' : 'text-amber-800'">{{ shortDateThai(modal.data.status==='ส่งมอบแล้ว' ? modal.data.delivered_date : modal.data.expected_delivery_date) || 'ยังไม่ระบุ' }}</div>
+            </div>
+            <div v-else class="rounded-xl bg-slate-50 px-3 py-2"><div class="text-xs text-slate-500">วันปิดรับ</div><div class="font-bold text-red-600">{{ shortDateThai(modal.data.close_date) || '-' }}</div></div>
+            <button v-if="detailIsWon" type="button" @click="detailTab = 'quote'" class="rounded-xl px-3 py-2 text-left border-0 cursor-pointer hover:brightness-95" :class="quoteSummary?.cls || 'bg-slate-50 text-slate-600'">
+              <div class="text-xs opacity-80">ใบเสนอราคา</div>
+              <div class="font-bold truncate">{{ quoteSummary?.short || '…' }}</div>
+            </button>
+          </div>
+        </div>
+        <!-- แท็บแบบแฟ้มเอกสาร (AppRecordTabs ใน shared/app.js — ผู้ใช้เลือก 2026-10-14) -->
+        <app-record-tabs v-model="detailTab" :tabs="detailTabs.map(t => ({ ...t, count: t.key === 'quote' ? quoteSummary?.count : 0 }))"></app-record-tabs>
+        <div class="flex-1 overflow-y-auto p-6">
+
+          <!-- ═══ แท็บ ภาพรวม ═══ -->
+          <div v-show="detailTab==='overview'">
+            <section class="mb-3 rounded-xl border border-slate-200 p-4">
+              <h4 class="text-sm font-bold text-slate-700 mb-1">ลูกค้า</h4>
+              <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">หน่วยงานในประกาศ</span><span class="text-sm text-slate-700">{{ modal.data.unit_name }}</span></div>
+              <div class="flex gap-2 py-1.5"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ลูกค้าในระบบ</span>
+                <span v-if="modal.data.account_id" class="text-sm text-slate-700"><span class="font-mono text-xs text-teal-700 bg-teal-50 rounded px-1.5 py-0.5">{{ modal.data.account_code }}</span> {{ modal.data.account_name }}</span>
+                <span v-else class="text-sm font-semibold text-amber-700">ยังไม่ผูกลูกค้า</span>
+              </div>
+            </section>
+            <section v-if="detailIsWon" class="mb-3 rounded-xl border border-slate-200 p-4">
+              <h4 class="text-sm font-bold text-slate-700 mb-1">การส่งมอบ</h4>
+              <div class="flex gap-2 py-1.5" :class="modal.data.status==='ส่งมอบแล้ว' ? 'border-b border-slate-50' : ''"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">คาดว่าจะส่งมอบ</span><span class="text-sm" :class="modal.data.expected_delivery_date ? 'text-slate-700 font-semibold' : 'text-amber-700'">{{ modal.data.expected_delivery_date ? formatDateThai(modal.data.expected_delivery_date) : 'ยังไม่ระบุ' }}</span></div>
+              <div v-if="modal.data.status==='ส่งมอบแล้ว'" class="flex gap-2 py-1.5"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ส่งมอบจริง</span><span class="text-sm" :class="modal.data.delivered_date ? 'text-slate-700 font-semibold' : 'text-amber-700'">{{ modal.data.delivered_date ? formatDateThai(modal.data.delivered_date) : 'ยังไม่ระบุ' }}</span></div>
+            </section>
+            <section class="rounded-xl border border-slate-200 p-4">
+              <h4 class="text-sm font-bold text-slate-700 mb-1">การมอบหมาย</h4>
+              <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">มอบหมายโดย</span><span class="text-sm text-slate-700">{{ modal.data.secretary_name }}</span></div>
+              <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันที่มอบหมาย</span><span class="text-sm text-slate-700">{{ formatDateTimeThai(modal.data.assigned_at) }}</span></div>
+              <div class="flex gap-2 py-1.5"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">SLA Deadline</span><span class="text-sm" :class="modal.data.sla_status!=='ปกติ'?'font-bold text-red-600':'text-slate-700'">{{ formatDateTimeThai(modal.data.sla_deadline) }}</span></div>
+              <div v-if="modal.data.secretary_notes" class="mt-2">
+                <div class="text-xs text-slate-500 mb-1">หมายเหตุจากธุรการ</div>
+                <div class="text-sm p-3 rounded-lg bg-blue-50 text-blue-800">{{ modal.data.secretary_notes }}</div>
+              </div>
+              <div v-if="modal.data.sale_notes" class="mt-2">
+                <div class="text-xs text-slate-500 mb-1">บันทึก Sales</div>
+                <div class="text-sm p-3 rounded-lg bg-green-50 text-green-800">{{ modal.data.sale_notes }}</div>
+              </div>
+            </section>
           </div>
 
-          <div v-if="modal.data.items" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายการสินค้าและจำนวน</div>
-            <div class="rounded-lg bg-slate-50 p-3">
-              <div v-if="parsedItems.summary" class="text-xs font-semibold text-slate-500 mb-2">{{ parsedItems.summary }}</div>
-              <div v-for="(row, i) in parsedItems.rows" :key="i" class="py-2" :class="i>0 ? 'border-t border-slate-200' : ''">
-                <template v-if="row.parsed">
-                  <div class="text-sm font-semibold text-slate-800 mb-1">{{ row.no }}. {{ row.name }}</div>
-                  <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
-                    <span>จำนวน: <strong class="text-teal-700">{{ row.qty }}{{ row.unit ? ' ' + row.unit : '' }}</strong></span>
-                    <span>ราคา/หน่วย: <strong>{{ formatNum(row.unitPrice) }}</strong> บาท</span>
-                    <span>รวม: <strong class="text-green-700">{{ formatNum(row.total) }}</strong> บาท</span>
-                  </div>
-                </template>
-                <template v-else>
-                  <div class="text-sm text-slate-700 flex gap-2 leading-relaxed"><span class="text-teal-600 shrink-0">•</span><span>{{ row.text }}</span></div>
-                </template>
+          <!-- ═══ แท็บ ใบเสนอราคา ═══ ใบเสนอราคาของบริษัท — ขอได้เมื่อชนะการประมูลแล้วเท่านั้น (2026-10-14) / mount ไว้ตลอด (v-show) ให้หัวสรุปได้ตัวเลขทันที -->
+          <div v-show="detailTab==='quote'">
+            <app-quote-requests v-if="detailIsWon && modal.data.project_code" :project-code="modal.data.project_code" @summary="quoteSummary = $event"></app-quote-requests>
+          </div>
+
+          <!-- ═══ แท็บ ประกาศและเอกสาร ═══ -->
+          <div v-show="detailTab==='announcement'">
+            <section class="mb-4 rounded-xl border border-slate-200 p-4">
+              <h4 class="text-sm font-bold text-slate-700 mb-1">ข้อมูลประกาศ</h4>
+              <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">เลขที่โครงการ</span><span class="text-sm text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
+              <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ชื่อโครงการ</span><span class="text-sm text-slate-700 font-semibold">{{ modal.data.project_name }}</span></div>
+              <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันปิดรับ</span><span class="text-sm font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
+              <div class="flex gap-2 py-1.5" :class="modal.data.url ? 'border-b border-slate-50' : ''"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">ราคากลาง</span><span class="text-sm font-semibold text-green-600">{{ formatPrice(modal.data.price_median) }}</span></div>
+              <div v-if="modal.data.url" class="flex gap-2 py-1.5">
+                <span class="text-sm text-slate-400 min-w-[120px] shrink-0">ลิงก์ประกาศ</span>
+                <a :href="modal.data.url" target="_blank" rel="noopener" class="text-blue-600 text-sm hover:underline">เปิดประกาศ ↗</a>
+              </div>
+            </section>
+
+            <div v-if="modal.data.items" class="mb-4">
+              <div class="text-sm font-bold text-slate-700 mb-2">รายการสินค้าและจำนวน</div>
+              <div class="rounded-lg bg-slate-50 p-3">
+                <div v-if="parsedItems.summary" class="text-xs font-semibold text-slate-500 mb-2">{{ parsedItems.summary }}</div>
+                <div v-for="(row, i) in parsedItems.rows" :key="i" class="py-2" :class="i>0 ? 'border-t border-slate-200' : ''">
+                  <template v-if="row.parsed">
+                    <div class="text-sm font-semibold text-slate-800 mb-1">{{ row.no }}. {{ row.name }}</div>
+                    <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
+                      <span>จำนวน: <strong class="text-teal-700">{{ row.qty }}{{ row.unit ? ' ' + row.unit : '' }}</strong></span>
+                      <span>ราคา/หน่วย: <strong>{{ formatNum(row.unitPrice) }}</strong> บาท</span>
+                      <span>รวม: <strong class="text-green-700">{{ formatNum(row.total) }}</strong> บาท</span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="text-sm text-slate-700 flex gap-2 leading-relaxed"><span class="text-teal-600 shrink-0">•</span><span>{{ row.text }}</span></div>
+                  </template>
+                </div>
+              </div>
+            </div>
+            <div v-if="modal.data.spec" class="mb-4">
+              <div class="text-sm font-bold text-slate-700 mb-2">คุณลักษณะ (Spec)</div>
+              <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.spec }}</div>
+            </div>
+            <div v-if="modal.data.docs_required" class="mb-4">
+              <div class="text-sm font-bold text-slate-700 mb-2">เอกสารที่ต้องเตรียม</div>
+              <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.docs_required }}</div>
+            </div>
+            <div v-if="modal.data.need_sample || modal.data.sample_detail" class="mb-4">
+              <div class="text-sm font-bold text-slate-700 mb-2">รายละเอียดตัวอย่าง</div>
+              <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700">
+                <div v-if="modal.data.need_sample" class="font-semibold mb-1.5">ต้องส่งตัวอย่าง: {{ modal.data.need_sample }}</div>
+                <div v-if="modal.data.sample_detail" class="whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.sample_detail }}</div>
+              </div>
+            </div>
+            <div v-if="modal.data.conditions" class="mb-4">
+              <div class="text-sm font-bold text-slate-700 mb-2">เงื่อนไขพิเศษ</div>
+              <div class="text-sm p-3 rounded-lg bg-amber-50 text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.conditions }}</div>
+            </div>
+
+            <div>
+              <div class="text-sm font-bold text-slate-700 mb-2">ไฟล์เอกสารโครงการ</div>
+              <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
+              <template v-else-if="docs?.available && docs.files.length">
+                <a v-for="f in docs.files" :key="f.name"
+                   :href="`api/documents.php?action=download&project_no=${encodeURIComponent(modal.data.project_no)}&file=${encodeURIComponent(f.name)}`"
+                   target="_blank" rel="noopener"
+                   class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
+                  <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
+                  <span class="flex-1 min-w-0">
+                    <span class="block truncate font-medium">{{ docLabel(f.name) || f.name }}</span>
+                    <span v-if="docLabel(f.name)" class="block truncate text-[11px] text-slate-400">{{ f.name }}</span>
+                  </span>
+                  <span class="text-xs text-slate-400 shrink-0">{{ formatFileSize(f.size) }}</span>
+                </a>
+              </template>
+              <div v-else class="text-sm text-slate-400 py-1">
+                {{ docs?.available===false ? 'ยังไม่พบโฟลเดอร์เอกสารสำหรับโครงการนี้' : 'ไม่สามารถโหลดรายการเอกสารได้' }}
+                <button v-if="modal.data.announce_date" type="button" @click="openFolder(modal.data.announce_date)"
+                  class="block mt-1 text-blue-600 text-xs hover:underline bg-transparent border-0 p-0 cursor-pointer text-left">
+                  📋 คัดลอก path โฟลเดอร์แทน
+                </button>
               </div>
             </div>
           </div>
-          <div v-if="modal.data.spec" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">คุณลักษณะ (Spec)</div>
-            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.spec }}</div>
-          </div>
-          <div v-if="modal.data.docs_required" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารที่ต้องเตรียม</div>
-            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.docs_required }}</div>
-          </div>
-          <div v-if="modal.data.need_sample || modal.data.sample_detail" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">รายละเอียดตัวอย่าง</div>
-            <div class="text-sm p-3 rounded-lg bg-slate-50 text-slate-700">
-              <div v-if="modal.data.need_sample" class="font-semibold mb-1.5">ต้องส่งตัวอย่าง: {{ modal.data.need_sample }}</div>
-              <div v-if="modal.data.sample_detail" class="whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.sample_detail }}</div>
-            </div>
-          </div>
-          <div v-if="modal.data.conditions" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เงื่อนไขพิเศษ</div>
-            <div class="text-sm p-3 rounded-lg bg-amber-50 text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{ modal.data.conditions }}</div>
-          </div>
 
-          <div class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">เอกสารโครงการ</div>
-            <div v-if="docsLoading" class="text-sm text-slate-400 py-2">กำลังโหลดรายการเอกสาร...</div>
-            <template v-else-if="docs?.available && docs.files.length">
-              <a v-for="f in docs.files" :key="f.name"
-                 :href="`api/documents.php?action=download&project_no=${encodeURIComponent(modal.data.project_no)}&file=${encodeURIComponent(f.name)}`"
-                 target="_blank" rel="noopener"
-                 class="flex items-center gap-2 py-2 px-2.5 -mx-2.5 rounded-lg hover:bg-slate-50 text-sm text-slate-700 no-underline transition-colors">
-                <span class="shrink-0 w-9 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white leading-none" :class="docBadgeCls(f.name)">{{ docExt(f.name) }}</span>
-                <span class="flex-1 min-w-0">
-                  <span class="block truncate font-medium">{{ docLabel(f.name) || f.name }}</span>
-                  <span v-if="docLabel(f.name)" class="block truncate text-[11px] text-slate-400">{{ f.name }}</span>
-                </span>
-                <span class="text-xs text-slate-400 shrink-0">{{ formatFileSize(f.size) }}</span>
-              </a>
-            </template>
-            <div v-else class="text-sm text-slate-400 py-1">
-              {{ docs?.available===false ? 'ยังไม่พบโฟลเดอร์เอกสารสำหรับโครงการนี้' : 'ไม่สามารถโหลดรายการเอกสารได้' }}
-              <button v-if="modal.data.announce_date" type="button" @click="openFolder(modal.data.announce_date)"
-                class="block mt-1 text-blue-600 text-xs hover:underline bg-transparent border-0 p-0 cursor-pointer text-left">
-                📋 คัดลอก path โฟลเดอร์แทน
-              </button>
-            </div>
-          </div>
-          <div class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">การมอบหมาย</div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">มอบหมายโดย</span><span class="text-sm text-slate-700">{{ modal.data.secretary_name }}</span></div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">วันที่มอบหมาย</span><span class="text-sm text-slate-700">{{ formatDateTimeThai(modal.data.assigned_at) }}</span></div>
-            <div class="flex gap-2 py-1.5 border-b border-slate-50"><span class="text-sm text-slate-400 min-w-[120px] shrink-0">SLA Deadline</span><span class="text-sm" :class="modal.data.sla_status!=='ปกติ'?'font-bold text-red-600':'text-slate-700'">{{ formatDateTimeThai(modal.data.sla_deadline) }}</span></div>
-          </div>
-          <div v-if="modal.data.secretary_notes" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">หมายเหตุจากธุรการ</div>
-            <div class="text-sm p-3 rounded-lg bg-blue-50 text-blue-800">{{ modal.data.secretary_notes }}</div>
-          </div>
-          <div v-if="modal.data.sale_notes" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">บันทึก Sales</div>
-            <div class="text-sm p-3 rounded-lg bg-green-50 text-green-800">{{ modal.data.sale_notes }}</div>
-          </div>
-          <div v-if="modal.data.history?.length" class="mb-4">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติสถานะ</div>
+          <!-- ═══ แท็บ ประวัติ ═══ -->
+          <div v-show="detailTab==='history'">
+            <div v-if="!modal.data.history?.length" class="text-sm text-slate-400 py-6 text-center">ยังไม่มีประวัติ</div>
             <div v-for="h in modal.data.history" :key="h.id" class="flex gap-3 py-2">
               <div class="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0 mt-1"></div>
               <div class="flex-1">
@@ -394,16 +443,18 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=80"></script>
+<script src="shared/app.js?v=84"></script>
 <script>
 const { createApp } = Vue;
 createApp({
-  components: { AppNav, AppTabBar, AppModal, AppNoBidReasons },
+  components: { AppNav, AppTabBar, AppModal, AppNoBidReasons, AppQuoteRequests, AppRecordTabs },
   data() {
     return {
       authReady: false,
       currentUser: null,
       modal: { type: null, data: null },
+      quoteSummary: null,      // สรุปใบเสนอราคา (กล่องตัวเลข + จำนวนบนแท็บ) — มาจาก @summary ของ AppQuoteRequests (2026-10-14)
+      detailTab: 'overview',   // แท็บในหน้าต่างรายละเอียด: overview / quote / announcement / history (2026-10-14)
       docs: null,
       docsLoading: false,
       showStatusLegend: false,
@@ -446,6 +497,14 @@ createApp({
       if (this.activeTab === 'done')    return sorted.filter(a => ['ชนะการประมูล','แพ้การประมูล','ส่งมอบแล้ว','ยกเลิก'].includes(a.status));
       return sorted;
     },
+    // งานชนะ/ส่งมอบแล้ว — มีกล่องคาดส่งมอบ + ใบเสนอราคา และแท็บใบเสนอราคา (แบบเดียวกับ bid-pipeline.html — 2026-10-14)
+    detailIsWon() { return ['ชนะการประมูล', 'ส่งมอบแล้ว'].includes(this.modal.data?.status); },
+    detailTabs() {
+      const t = [{ key: 'overview', label: 'ภาพรวม' }];
+      if (this.detailIsWon) t.push({ key: 'quote', label: 'ใบเสนอราคา' });
+      t.push({ key: 'announcement', label: 'ประกาศและเอกสาร' }, { key: 'history', label: 'ประวัติ' });
+      return t;
+    },
     parsedItems() {
       const raw = this.modal?.data?.items;
       if (!raw) return { summary: '', rows: [] };
@@ -457,8 +516,9 @@ createApp({
       const rows = lines.map(line => {
         const m = line.match(/^\(?(\d+)\)?\s*(.+?)\s+(\d+(?:\.\d+)?)\s*(ชุด|ตัว|ชิ้น|อัน|เครื่อง|หน่วย|ห้อง|คัน|โต๊ะ|เตียง|ตู้|เก้าอี้)?\s*@\s*([\d,]+(?:\.\d+)?)\s*=\s*([\d,]+(?:\.\d+)?)\s*$/);
         if (m) return { parsed: true, no: m[1], name: m[2].trim(), qty: m[3], unit: m[4] || '', unitPrice: m[5], total: m[6] };
-        return { parsed: false, text: line };
-      });
+        // ตัดสัญลักษณ์หัวข้อที่ติดมากับข้อความประกาศ (•, -, *) — หน้าจอใส่จุดสีเขียวให้อยู่แล้ว เดิมขึ้นซ้อน "• •" (2026-10-14)
+        return { parsed: false, text: line.replace(/^[\s•●▪·\-–*]+/, '') };
+      }).filter(r => r.parsed || r.text);   // บรรทัดที่มีแต่สัญลักษณ์ ไม่ต้องแสดง
       return { summary, rows };
     },
   },
@@ -475,8 +535,17 @@ createApp({
     await this.loadAssignments();
     await this.openDetailFromLink();   // ลิงก์ ?code= จาก LINE / อีเมล → เปิดรายละเอียดงานนั้น (2026-10-10)
   },
+  watch: {
+    // เปิดรายละเอียดงานอื่น / ปิดหน้าต่าง → กลับไปแท็บภาพรวม + ล้างสรุปใบเสนอราคาของงานเดิม (2026-10-14)
+    'modal.data.project_code'() { this.detailTab = 'overview'; this.quoteSummary = null; },
+  },
   methods: {
     ...SharedMethods,
+
+    // ลิงก์ ?code=…&tab=quote (2026-10-14) → เปิดแท็บนั้น ถ้างานนี้มีแท็บนั้น
+    openLinkTab(tab) {
+      if (this.detailTabs.some(t => t.key === tab)) this.detailTab = tab;
+    },
 
     urgentClose(closeDate) {
       if (!closeDate) return false;

@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/usage_helper.php';
 require_once __DIR__ . '/../includes/mail_helper.php';
 require_once __DIR__ . '/../includes/delivery_helper.php';
 require_once __DIR__ . '/../includes/notify_helper.php';   // ศูนย์กลางแจ้งเตือน (โอนดีล — 2026-10-08)
+require_once __DIR__ . '/../includes/quote_request_helper.php';   // คำขอใบเสนอราคา (2026-10-14)
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -115,7 +116,11 @@ function fetchPipelineRows(PDO $db, string $where, array $params): array {
                -- ข้อมูลย้อนหลังที่ยังไม่ตรวจ: 1 = นำเข้าแล้วยังไม่มีคนบันทึก/ย้ายสถานะ (ป้ายรอตรวจ — 2026-09-30)
                IF(EXISTS(SELECT 1 FROM quotation_import_log q WHERE q.pipeline_item_id = pi.id AND q.reviewed_at IS NULL AND pi.stage = 'Send PI'), 1, 0) AS import_pending,
                -- ดีลที่นำเข้าจากใบเสนอราคา ทุกสถานะ (ตัวกรอง ข้อมูลย้อนหลังทั้งหมด — 2026-10-01)
-               IF(EXISTS(SELECT 1 FROM quotation_import_log q WHERE q.pipeline_item_id = pi.id), 1, 0) AS is_import
+               IF(EXISTS(SELECT 1 FROM quotation_import_log q WHERE q.pipeline_item_id = pi.id), 1, 0) AS is_import,
+               -- คำขอใบเสนอราคาที่ยังไม่ออกใบ (pending = รอออกใบ / accepted = ธุรการรับเรื่องแล้ว) — ป้ายบนการ์ด (2026-10-14)
+               (SELECT qr.status FROM quote_requests qr WHERE qr.pipeline_item_id = pi.id AND qr.status IN ('pending','accepted') LIMIT 1) AS quote_request_status,
+               -- ลูกค้ายืนยันสั่งซื้อตามใบเสนอราคาแล้ว (ระยะ 3) — ป้าย ลูกค้ายืนยันใบแล้ว กดปิดดีล (ไม่ปิดดีลเอง)
+               (SELECT qr.quotation_id FROM quote_requests qr WHERE qr.pipeline_item_id = pi.id AND qr.confirmed_at IS NOT NULL ORDER BY qr.confirmed_at DESC LIMIT 1) AS quote_confirmed_id
         FROM pipeline_items pi
         JOIN users u ON u.id = pi.assigned_to
         LEFT JOIN accounts a ON a.id = pi.account_id
@@ -859,6 +864,9 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
         }
         // ดีลไม่สำเร็จ (Lost) → แจ้งหัวหน้า — ดีลคู่ของงานประมูล/ดีลย้อนหลังข้ามในฟังก์ชัน (ยืนยันจากผู้ใช้ 2026-10-08)
         if ($body['stage'] === 'Lost') notifyDealLost($db, 'direct', $id, $user);
+
+        // ดีลออกจากสถานะที่ขอใบเสนอราคาได้ (ปิดดีล / ส่งสินค้า / ไม่สำเร็จ) → คำขอที่ค้างยกเลิกเอง (2026-10-14)
+        cancelStaleQuoteRequests($db, (int)$user['id']);
     }
 
     // ข้อมูลย้อนหลัง "ตรวจแล้ว" (รายงานการใช้งาน — ยืนยันจากผู้ใช้ 2026-09-30)
@@ -898,6 +906,10 @@ function deleteItem(PDO $db, array $user, int $id): void {
         $row = $check->fetch();
         if (!$row || $row['assigned_to'] != $user['id']) jsonError(403, 'ไม่มีสิทธิ์');
     }
+    // ดีลที่มีคำขอใบเสนอราคาแล้วเป็นงานจริง ลบไม่ได้ (เก็บ log คำขอ — 2026-10-14) ให้เปลี่ยนเป็นไม่สำเร็จแทน
+    $qr = $db->prepare('SELECT quote_request_code FROM quote_requests WHERE pipeline_item_id = ? LIMIT 1');
+    $qr->execute([$id]);
+    if ($qrCode = $qr->fetchColumn()) jsonError(400, "ดีลนี้มีคำขอใบเสนอราคา ({$qrCode}) แล้ว ลบไม่ได้ — ถ้าไม่ได้งาน ให้เปลี่ยนเป็น \"ไม่สำเร็จ\" แทน");
     // ลบดีลนำเข้าย้อนหลัง = ตรวจแล้ว (sale ดูแล้วตัดสินว่าไม่ใช่งานจริง — ยืนยันจากผู้ใช้ 2026-09-30) บันทึกผู้ลบ/เวลาก่อนลบ
     markImportReviewed($db, $user, $id);
     $db->prepare("DELETE FROM pipeline_items WHERE id = ?")->execute([$id]);

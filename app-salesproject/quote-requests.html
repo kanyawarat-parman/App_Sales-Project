@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คำขอใบเสนอราคา</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="quote-requests" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h7"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="13" y2="13"/><polyline points="17 15 21 18 17 21"/><line x1="21" y1="18" x2="14" y2="18"/></svg>
+          คำขอใบเสนอราคา
+        </h1>
+        <button type="button" @click="helpOpen = true" class="ml-auto bg-transparent border-0 cursor-pointer text-sm text-slate-500 hover:text-teal-700 whitespace-nowrap">ⓘ หน้านี้ใช้ทำอะไร?</button>
+      </header>
+
+      <!-- คำขอใบเสนอราคา (Quote Request แบบ Sales Ops / Deal Desk — ยืนยันจากผู้ใช้ 2026-10-14)
+           Sale ขอจากดีล → ธุรการขายออกใบในระบบใบเสนอราคา (ระยะ 2) → ออกใบแล้วดีลเลื่อนเป็นส่ง PI (ระยะ 3)
+           Sale เห็นเฉพาะคำขอของดีลตัวเอง / ธุรการ, admin, manager เห็นทั้งหมด (API บังคับ) -->
+      <main class="flex-1 w-full max-w-[1100px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <!-- แท็บสถานะ + ตัวเลข -->
+        <div class="flex items-center gap-2 flex-wrap mb-3">
+          <button v-for="t in tabs" :key="t.key" type="button" @click="tab = t.key"
+            class="px-4 py-2 rounded-full text-sm font-semibold border-0 cursor-pointer"
+            :class="tab === t.key ? 'bg-teal-700 text-white' : 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50'">
+            {{ t.label }} <span class="ml-1 opacity-80">{{ countOf(t.key) }}</span>
+          </button>
+        </div>
+        <!-- ค้นหา + Sale (ลำดับตัวกรองมาตรฐาน: ขอบเขต → Sale) -->
+        <div class="flex items-center gap-2 flex-wrap mb-4">
+          <div class="relative flex-1 min-w-[240px] max-w-md">
+            <input v-model="search" placeholder="ค้นหา เลขคำขอ / PJ / ชื่องาน / ลูกค้า / เลขที่ใบ"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+            <button v-if="search" type="button" @click="search = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-lg">✕</button>
+          </div>
+          <select v-if="!isSale && saleOptions.length > 1" v-model="saleFilter" class="border border-slate-300 rounded-xl px-3.5 py-2.5 text-base bg-white">
+            <option value="">Sale ทุกคน</option>
+            <option v-for="s in saleOptions" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+
+        <div v-if="loading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+        <template v-else>
+          <div v-if="!filtered.length" class="bg-white rounded-2xl ring-1 ring-slate-100 py-14 text-center text-slate-400">
+            <svg class="w-10 h-10 mx-auto mb-2 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            {{ search || saleFilter ? 'ไม่พบคำขอที่ค้นหา' : 'ไม่มีคำขอในสถานะนี้' }}
+          </div>
+          <div class="flex flex-col gap-3">
+            <div v-for="r in filtered" :key="r.quote_request_code" @click="openDetail(r)"
+              class="bg-white rounded-2xl ring-1 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
+              :class="r.quote_request_code === highlightCode ? 'ring-2 ring-teal-500' : 'ring-slate-100'">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-sm font-bold text-slate-700">{{ r.quote_request_code }}</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold" :class="statusOf(r.status).cls">{{ statusOf(r.status).label }}</span>
+                <span class="text-xs font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ r.project_code }}</span>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded" :class="r.source_type === 'ebidding' ? 'bg-indigo-50 text-indigo-700' : 'bg-teal-50 text-teal-700'">{{ r.source_type === 'ebidding' ? 'งานประมูล' : 'ขายตรง' }}</span>
+                <span v-if="r.request_type === 'revision'" class="text-xs font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800">แก้ไขใบ {{ r.ref_quotation_id }}</span>
+                <span v-if="r.issue_by === 'sale'" class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">Sale ออกเอง</span>
+                <span class="ml-auto text-sm font-semibold" :class="waitClass(r)">{{ waitText(r) }}</span>
+              </div>
+              <div class="font-bold text-[1rem] text-slate-800 mt-2 leading-snug">{{ r.title }}</div>
+              <div class="text-sm text-slate-500">{{ r.customer_name || '-' }} · Sale: {{ r.sale_name }}</div>
+              <div v-if="r.request_note" class="text-sm text-slate-700 mt-1.5 line-clamp-2 whitespace-pre-line">{{ r.request_note }}</div>
+              <!-- เลข QT ฉบับล่าสุด = ลิงก์หน้าพิมพ์ระบบใบเสนอราคา (2026-10-14) — @click.stop ไม่ให้เปิดหน้ารายละเอียดของการ์ดซ้อน -->
+              <div v-if="r.quotation_id" class="text-sm text-emerald-700 font-semibold mt-1.5">ใบเสนอราคา
+                <a v-if="r.quote_view_url" :href="r.quote_view_url" target="_blank" rel="noopener" @click.stop title="เปิดดูใบเสนอราคา (ต้อง login ระบบใบเสนอราคา)"
+                  class="text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900">{{ r.quotation_id }}<span v-if="r.quotation_revision !== null"> Rev {{ r.quotation_revision }}</span> ↗</a>
+                <template v-else>{{ r.quotation_id }}<span v-if="r.quotation_revision !== null"> Rev {{ r.quotation_revision }}</span></template><span v-if="r.quote_amount !== null"> · ยอดใบ {{ formatPrice(r.quote_amount) }} (ก่อน VAT)</span><span v-if="r.confirmed_at"> · ลูกค้ายืนยันสั่งซื้อแล้ว</span></div>
+            </div>
+          </div>
+        </template>
+      </main>
+    </div>
+
+    <!-- รายละเอียดคำขอ -->
+    <div v-if="modal.type === 'detail'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">คำขอ {{ modal.data.quote_request_code }}</h3>
+            <div class="flex flex-wrap items-center gap-1.5 mt-2">
+              <span class="px-2.5 py-1 rounded-full text-xs font-bold" :class="statusOf(modal.data.status).cls">{{ statusOf(modal.data.status).label }}</span>
+              <span class="text-xs font-mono font-bold text-purple-700 bg-purple-50 rounded-full px-2.5 py-1">{{ modal.data.project_code }}</span>
+            </div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4 space-y-3">
+          <div>
+            <div class="font-bold text-slate-800">{{ modal.data.title }}</div>
+            <div class="text-sm text-slate-500">{{ modal.data.customer_name || '-' }}<span v-if="modal.data.account_code"> ({{ modal.data.account_code }})</span></div>
+          </div>
+          <div class="grid grid-cols-[130px_1fr] gap-x-3 gap-y-1.5 text-sm">
+            <div class="text-slate-500">ประเภทงาน</div><div class="text-slate-800">{{ modal.data.source_type === 'ebidding' ? 'งานประมูล (ชนะแล้ว)' : 'ขายตรง' }} · สถานะดีล {{ modal.data.stage }}</div>
+            <div class="text-slate-500">ขอใบแบบ</div><div class="text-slate-800">{{ modal.data.request_type === 'revision' ? 'แก้ไขใบ ' + modal.data.ref_quotation_id : 'ใบใหม่' }} · {{ modal.data.issue_by === 'sale' ? 'Sale ออกเอง' : 'ให้ธุรการออก' }}</div>
+            <div class="text-slate-500">Sale เจ้าของงาน</div><div class="text-slate-800">{{ modal.data.sale_name }} <span v-if="modal.data.sale_id" class="text-slate-400">(รหัส {{ modal.data.sale_id }})</span></div>
+            <div class="text-slate-500">มูลค่าดีล</div><div class="text-slate-800">{{ modal.data.value ? formatPrice(modal.data.value) : '-' }}</div>
+            <!-- ยอดของใบที่ออก (2026-10-14) — งานประมูลมูลค่าดีลไม่เปลี่ยนตามใบ แสดงแยกให้เทียบได้ -->
+            <template v-if="modal.data.quote_amount !== null">
+              <div class="text-slate-500">ยอดใบเสนอราคา</div>
+              <div class="text-emerald-800 font-semibold">{{ formatPrice(modal.data.quote_amount) }} <span class="font-normal text-slate-500">(ก่อน VAT)<span v-if="modal.data.quote_net_amount !== null"> · รวม VAT {{ formatPrice(modal.data.quote_net_amount) }}</span></span></div>
+            </template>
+          </div>
+          <div v-if="modal.data.request_note">
+            <div class="text-sm font-semibold text-slate-700 mb-1">รายละเอียดที่ขอ</div>
+            <div class="text-sm text-slate-800 whitespace-pre-line bg-slate-50 rounded-xl px-3.5 py-2.5">{{ modal.data.request_note }}</div>
+          </div>
+          <!-- log: ขอ → รับเรื่อง → ออกใบ / ยกเลิก -->
+          <div>
+            <div class="text-sm font-semibold text-slate-700 mb-1">ลำดับเหตุการณ์</div>
+            <div class="space-y-1.5 text-sm">
+              <div class="flex gap-2"><span class="w-2 h-2 rounded-full bg-amber-400 mt-1.5 shrink-0"></span><div>ขอโดย {{ modal.data.requested_by_name }} · {{ formatDateTimeThai(modal.data.requested_at) }}</div></div>
+              <div v-if="modal.data.accepted_at" class="flex gap-2"><span class="w-2 h-2 rounded-full bg-sky-400 mt-1.5 shrink-0"></span><div>รับเรื่องโดย {{ modal.data.accepted_by_name || '-' }} · {{ formatDateTimeThai(modal.data.accepted_at) }}</div></div>
+              <div v-if="modal.data.issued_at" class="flex gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div>ออกใบ <a v-if="modal.data.quote_view_url" :href="modal.data.quote_view_url" target="_blank" rel="noopener" title="เปิดดูใบเสนอราคา (ต้อง login ระบบใบเสนอราคา)" class="font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900">{{ modal.data.quotation_id }} ↗</a><template v-else>{{ modal.data.quotation_id }}</template> โดย {{ modal.data.issued_by_name || '-' }} · {{ formatDateTimeThai(modal.data.issued_at) }}</div></div>
+              <div v-if="modal.data.confirmed_at" class="flex gap-2"><span class="w-2 h-2 rounded-full bg-emerald-700 mt-1.5 shrink-0"></span><div>ลูกค้ายืนยันสั่งซื้อ · {{ formatDateTimeThai(modal.data.confirmed_at) }}<span v-if="modal.data.confirmed_so_code"> · SO {{ modal.data.confirmed_so_code }}</span></div></div>
+              <div v-if="modal.data.cancelled_at" class="flex gap-2"><span class="w-2 h-2 rounded-full bg-slate-400 mt-1.5 shrink-0"></span><div>ยกเลิก{{ modal.data.cancelled_by_name ? 'โดย ' + modal.data.cancelled_by_name : '' }} · {{ formatDateTimeThai(modal.data.cancelled_at) }} — {{ modal.data.cancel_reason }}</div></div>
+            </div>
+          </div>
+          <div v-if="isOpen(modal.data)" class="text-sm text-slate-500">ธุรการออกใบในระบบใบเสนอราคา โดยเลือกคำขอนี้ (เชื่อมระบบใบเสนอราคาในขั้นถัดไป)</div>
+          <!-- ยกเลิกคำขอ (ธุรการ / admin / ผู้ขอ / Sale เจ้าของดีล — API ตรวจสิทธิ์) -->
+          <div v-if="isOpen(modal.data)" class="pt-2 border-t border-slate-100">
+            <button v-if="!cancelOpen" type="button" @click="cancelOpen = true" class="text-sm font-semibold text-red-600 underline bg-transparent border-0 p-0 cursor-pointer">ยกเลิกคำขอนี้</button>
+            <div v-else class="flex flex-wrap gap-2 items-center">
+              <input v-model="cancelReason" placeholder="เหตุผลที่ยกเลิก เช่น ขอซ้ำ / ลูกค้ายกเลิก" class="flex-1 min-w-[200px] border border-slate-300 rounded-xl px-3 py-2 text-base bg-white">
+              <button type="button" @click="cancelOpen = false" class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ไม่ยกเลิก</button>
+              <button type="button" @click="cancelRequest" class="px-3 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 border-0 cursor-pointer">ยืนยันยกเลิก</button>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+          <a v-if="dealLink(modal.data)" :href="dealLink(modal.data)" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-teal-300 text-teal-700 hover:bg-teal-50 no-underline">เปิดดีลนี้</a>
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="closeModal">ปิด</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- คำอธิบายหน้า (ลิงก์ ⓘ) -->
+    <div v-if="helpOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="helpOpen = false">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">คำขอใบเสนอราคา ใช้ทำอะไร</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="helpOpen = false">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4">
+          <div v-for="h in helpRows" :key="h[0]" class="grid grid-cols-[130px_1fr] gap-3 py-2 border-b border-slate-100 last:border-0">
+            <div class="text-sm font-semibold text-slate-800">{{ h[0] }}</div>
+            <div class="text-sm text-slate-600 leading-relaxed">{{ h[1] }}</div>
+          </div>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="helpOpen = false">ปิด</button>
+        </div>
+      </div>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=84"></script>
+<script>
+const { createApp } = Vue;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      requests: [],
+      tab: 'open',
+      search: '',
+      saleFilter: '',
+      highlightCode: '',
+      modal: { type: null, data: null },
+      cancelOpen: false,
+      cancelReason: '',
+      helpOpen: false,
+      now: Date.now(),
+      tabs: [
+        { key: 'open', label: 'ยังไม่ออกใบ' },
+        { key: 'issued', label: 'ออกใบแล้ว' },
+        { key: 'cancelled', label: 'ยกเลิก' },
+        { key: 'all', label: 'ทั้งหมด' },
+      ],
+      helpRows: [
+        ['ขั้นตอน', 'Sale สร้างดีล → กด "ขอใบเสนอราคา" ในดีล → ระบบแจ้งธุรการขาย → ธุรการออกใบในระบบใบเสนอราคาโดยเลือกคำขอ → ออกใบแล้วดีลขายตรงเลื่อนเป็นส่ง PI เอง'],
+        ['ทำไมต้องขอ', 'ใบเสนอราคางานโครงการต้องออกจากคำขอในดีลเท่านั้น เพื่อให้ทุกงานอยู่ใน Pipeline และรู้ว่าขอเมื่อไร ออกใบเมื่อไร'],
+        ['ขอได้เมื่อไร', 'ขายตรง: สถานะสนใจ / ส่ง PI / ต่อรอง — งานประมูล: เมื่อชนะการประมูลแล้วเท่านั้น (ใบยื่นซองทำในระบบ e-GP)'],
+        ['ยังไม่ออกใบ', 'รอออกใบ = ธุรการยังไม่รับเรื่อง / รับเรื่องแล้ว = ธุรการเปิดฟอร์มออกใบแล้ว — ตัวเลขด้านขวาคือรอมานานเท่าไร'],
+        ['ยกเลิก', 'ผู้ขอ / Sale เจ้าของดีล / ธุรการ ยกเลิกได้ก่อนออกใบ (ต้องใส่เหตุผล) — ดีลปิดแล้ว (ได้งาน / ไม่สำเร็จ / ส่งมอบ) ระบบยกเลิกคำขอที่ค้างให้เอง'],
+        ['ใครเห็นอะไร', 'Sale เห็นคำขอของดีลตัวเอง / ธุรการขาย หัวหน้า admin เห็นทั้งหมด'],
+      ],
+    };
+  },
+  computed: {
+    isSale() { return this.currentUser?.role === 'sale'; },
+    saleOptions() { return [...new Set(this.requests.map(r => r.sale_name))].sort(); },
+    // กรองตามค้นหา + Sale ก่อน แล้วค่อยแยกแท็บ (ตัวเลขบนแท็บนับจากชุดนี้)
+    searched() {
+      const q = this.search.trim().toLowerCase();
+      return this.requests.filter(r => {
+        if (this.saleFilter && r.sale_name !== this.saleFilter) return false;
+        if (!q) return true;
+        return [r.quote_request_code, r.project_code, r.title, r.customer_name, r.quotation_id, r.request_note]
+          .some(v => String(v || '').toLowerCase().includes(q));
+      });
+    },
+    filtered() { return this.searched.filter(r => this.inTab(r, this.tab)); },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.load();
+    setInterval(() => { this.now = Date.now(); }, 60000);
+    this.openFromLink();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async load() {
+      this.loading = true;
+      const res = await apiCall('GET', 'api/quote_requests.php?action=list');
+      if (res.success) this.requests = res.data;
+      else await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+      this.loading = false;
+    },
+
+    // ลิงก์จาก LINE (?code=QR-…) / กระดิ่ง (?request_id=…) → เปิดคำขอนั้นทันที
+    openFromLink() {
+      const params = new URLSearchParams(window.location.search);
+      const code = takeLinkCode();
+      const id = params.get('request_id');
+      const r = this.requests.find(x => (code && x.quote_request_code === code) || (id && String(x.quote_request_id) === id));
+      if (id) window.history.replaceState(null, '', window.location.pathname);
+      if (!r && (code || id)) { this.showAlert('ไม่พบคำขอนี้ หรือคุณไม่มีสิทธิ์ดู', 'error'); return; }
+      if (r) {
+        this.highlightCode = r.quote_request_code;
+        this.tab = this.isOpen(r) ? 'open' : r.status;
+        this.openDetail(r);
+      }
+    },
+
+    isOpen(r) { return r.status === 'pending' || r.status === 'accepted'; },
+    inTab(r, tab) {
+      if (tab === 'all') return true;
+      if (tab === 'open') return this.isOpen(r);
+      return r.status === tab;
+    },
+    countOf(tab) { return this.searched.filter(r => this.inTab(r, tab)).length; },
+    statusOf(s) { return QUOTE_REQUEST_STATUS[s] || { label: s, cls: 'bg-slate-100 text-slate-500' }; },
+
+    // ระยะเวลา: ยังไม่ออกใบ = รอมาแล้วนานเท่าไร / ออกใบแล้ว = ใช้เวลาออกใบเท่าไร
+    hoursBetween(from, to) {
+      return (to - new Date(String(from).replace(' ', 'T')).getTime()) / 3600000;
+    },
+    durationText(h) {
+      if (h < 1) return Math.max(1, Math.round(h * 60)) + ' นาที';
+      if (h < 24) return Math.floor(h) + ' ชม.';
+      return Math.floor(h / 24) + ' วัน ' + Math.floor(h % 24) + ' ชม.';
+    },
+    waitText(r) {
+      if (this.isOpen(r)) return 'รอมาแล้ว ' + this.durationText(this.hoursBetween(r.requested_at, this.now));
+      if (r.status === 'issued' && r.issued_at) return 'ใช้เวลา ' + this.durationText(this.hoursBetween(r.requested_at, new Date(String(r.issued_at).replace(' ', 'T')).getTime()));
+      return '';
+    },
+    // รอเกิน 1 วันขึ้นสีส้ม เกิน 2 วันขึ้นสีแดง
+    waitClass(r) {
+      if (!this.isOpen(r)) return 'text-slate-400';
+      const h = this.hoursBetween(r.requested_at, this.now);
+      return h >= 48 ? 'text-red-600' : h >= 24 ? 'text-amber-600' : 'text-slate-500';
+    },
+
+    // ธุรการไม่มีเมนูงานขายตรง (เห็นแค่รายการคำขอ — ยืนยันจากผู้ใช้ 2026-10-14) จึงไม่แสดงปุ่มเปิดดีลขายตรง
+    dealLink(r) {
+      const role = this.currentUser?.role;
+      // &tab=quote — เปิดดีลที่แท็บใบเสนอราคาเลย ไม่ต้องกดแท็บอีกครั้ง (ผู้ใช้ยืนยัน 2026-10-14)
+      if (r.source_type === 'ebidding') return ['sale', 'manager', 'admin'].includes(role) ? 'bid-pipeline.html?code=' + encodeURIComponent(r.project_code) + '&tab=quote' : '';
+      return ['sale', 'manager', 'admin'].includes(role) ? 'sales-pipeline.html?code=' + encodeURIComponent(r.project_code) + '&tab=quote' : '';
+    },
+
+    openDetail(r) {
+      this.cancelOpen = false;
+      this.cancelReason = '';
+      this.modal = { type: 'detail', data: r };
+    },
+
+    async cancelRequest() {
+      if (!this.cancelReason.trim()) return this.showAlert('กรุณาระบุเหตุผลที่ยกเลิก', 'error');
+      const res = await apiCall('POST', 'api/quote_requests.php?action=cancel', { quote_request_code: this.modal.data.quote_request_code, cancel_reason: this.cancelReason });
+      if (!res.success) return this.showAlert(res.message || 'ยกเลิกไม่สำเร็จ', 'error');
+      this.closeModal();
+      await this.load();
+      this.showAlert(res.message);
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

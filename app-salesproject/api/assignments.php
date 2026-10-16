@@ -13,6 +13,7 @@ require_once __DIR__ . '/../includes/erp_pending_helper.php';
 require_once __DIR__ . '/../includes/usage_helper.php';
 require_once __DIR__ . '/../includes/delivery_helper.php';
 require_once __DIR__ . '/../includes/notify_helper.php';   // ศูนย์กลางแจ้งเตือน (โหลด api/line.php ให้ด้วย — 2026-10-08)
+require_once __DIR__ . '/../includes/quote_request_helper.php';   // คำขอใบเสนอราคา (2026-10-14)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -796,6 +797,8 @@ function updateAssignment(PDO $db, array $user): void {
         $db->prepare("UPDATE pipeline_items SET " . implode(', ', $piFields) . " WHERE announcement_id = ? AND assigned_to = ? AND source_type = 'ebidding'")
            ->execute($piParams);
     }
+    // งานออกจาก "ชนะการประมูล" (ส่งมอบ / แพ้ / ยกเลิก) → คำขอใบเสนอราคาที่ค้างยกเลิกเอง (2026-10-14)
+    if (isset($body['status'])) cancelStaleQuoteRequests($db, (int)$user['id']);
     if ($mirrorRow && array_key_exists('expected_delivery_date', $body)) {   // เลื่อนวันคาดส่งมอบ → ประวัติดีล (2026-10-07)
         logExpectedDeliveryChange($db, (int)$mirrorRow['id'], $current['project_code'], (int)$user['id'], $mirrorRow['expected_delivery_date'], $expectedDelivery, $body['status'] ?? $current['status']);
     }

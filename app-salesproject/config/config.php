@@ -7,12 +7,10 @@ function envOr(string $key, string $default): string {
 }
 
 
-// LINE Messaging API
+//-----------------LINE Messaging API-------------------------
 
 // define('LINE_CHANNEL_ACCESS_TOKEN', envOr('LINE_TOKEN', 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'));
 // define('LINE_API_PUSH', 'https://api.line.me/v2/bot/message/push');
-
-
 
 
 //LINE Messaging API- Host 
@@ -21,9 +19,15 @@ define('LINE_CHANNEL_ACCESS_TOKEN', envOr('LINE_TOKEN', '5ZBuPNEQYSuhKOfRsIHJZ7f
 define('LINE_API_PUSH', 'https://api.line.me/v2/bot/message/push');
 
 
+//------------------------------------------------------------------
 
 
-// SMTP Email localhost
+
+
+
+//--STMP Email-- /
+
+//  localhost
 define('SMTP_HOST',      envOr('SMTP_HOST', '200.200.200.4'));
 define('SMTP_PORT',      (int)envOr('SMTP_PORT', '25'));
 define('SMTP_USER',      envOr('SMTP_USER', 'it@thaitaiyo.co.th'));
@@ -31,11 +35,11 @@ define('SMTP_PASS',      envOr('SMTP_PASS', '703710it'));
 define('SMTP_SECURE',    envOr('SMTP_SECURE', 'false'));   // tls | ssl | false
 define('MAIL_FROM',      envOr('MAIL_FROM', SMTP_USER));
 define('MAIL_FROM_NAME', envOr('MAIL_FROM_NAME', 'Taiyo Sales Project'));
-define('APP_URL',        envOr('APP_URL', 'http://localhost:8081'));
+define('APP_URL',        envOr('APP_URL', 'http://localhost:8060'));
 
 
 
-// SMTP Email host
+//  Host
 // define('SMTP_HOST',      envOr('SMTP_HOST', 'mail.thaitaiyo.co.th'));
 // define('SMTP_PORT',      (int)envOr('SMTP_PORT', '25'));
 // define('SMTP_USER',      envOr('SMTP_USER', 'it@thaitaiyo.co.th'));
@@ -48,11 +52,40 @@ define('APP_URL',        envOr('APP_URL', 'http://localhost:8081'));
 
 
 
+
+
 // App settings
 define('APP_NAME', envOr('APP_NAME', 'Taiyo Sales Project'));
 define('APP_VERSION', '1.0.0');
 define('SESSION_NAME', 'ebidding_sess');
 define('SESSION_TIMEOUT', 8 * 3600); // 8 ชั่วโมง
+
+
+
+
+
+// เชื่อมระบบใบเสนอราคา (2026-10-14) — ตอนขึ้น host: ใส่ // หน้าชุด localhost แล้วเอา // ออกจากชุด Host (แบบเดียวกับ LINE / SMTP)
+// QUOTE_API_TOKEN = รหัสเชื่อมต่อให้ระบบใบเสนอราคาเรียก api/quote_requests_ext.php — ค่าเดียวกับ SalesProjectApiToken ในระบบใบเสนอราคา (ว่าง = ปิด API)
+// QUOTATION_WEB_URL = ที่อยู่เว็บระบบใบเสนอราคา (ลงท้ายด้วย /) — คลิกเลข QT ในดีลเปิด {URL}print.html?quotationid=QT… (ว่าง = ไม่ทำลิงก์)
+
+
+
+
+//----เชื่อมระบบใบเสนอราคา (2026-10-14)------
+
+// ใบเสนอราคา - localhost (token มาจาก env ของ dev server ebidding-qt)
+define('QUOTE_API_TOKEN', envOr('QUOTE_API_TOKEN', ''));
+define('QUOTATION_WEB_URL', envOr('QUOTATION_WEB_URL', 'http://localhost:57930/'));
+
+
+
+// ใบเสนอราคา - Host
+// define('QUOTE_API_TOKEN', 'kvzahm8p2nb473gu5cej6i0r9lo1sxqywftd');
+// define('QUOTATION_WEB_URL', 'http://taiyo.dyndns.info:7789/webquotation/');
+
+
+//------------------------------------------------------------------------------------
+
 
 
 // ชื่อแบรนด์ที่แสดงบน sidebar (2 บรรทัด) — รูปแบบ "{ชื่อบริษัท} Sales Project"

@@ -28,6 +28,17 @@ function takeLinkCode() {
   return code;
 }
 
+// แท็บที่ลิงก์ขอให้เปิด ?tab= (เช่น tab=quote จากปุ่ม "เปิดดีลนี้" ในหน้าคำขอใบเสนอราคา — 2026-10-14) — อ่านแล้วลบออกจาก URL เหมือน ?code=
+function takeLinkTab() {
+  const params = new URLSearchParams(window.location.search);
+  const tab = (params.get('tab') || '').trim();
+  if (!tab) return '';
+  params.delete('tab');
+  const qs = params.toString();
+  window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+  return tab;
+}
+
 /* ── ชื่อเมนูภาษาไทยของแต่ละไฟล์หน้าเว็บ (ต้องตรงกับ label ที่ใช้จริงใน navGroups() ของ AppNav ด้านล่าง — ถ้าแก้ label ใน
    navGroups() ต้องแก้ตรงนี้ด้วย) ใช้แปลงชื่อไฟล์ดิบ (เช่น current_page จาก DB) ให้เป็นชื่อเมนูที่ผู้ใช้อ่านเข้าใจ เช่นในหน้า
    users.html คอลัมน์ "ใช้งานล่าสุด" (ยืนยันจากผู้ใช้ 2026-09-22) */
@@ -36,6 +47,7 @@ const PAGE_LABELS = {
   'bid-pipeline.html': 'งานประมูล (e-Bidding)',
   'my-assignments.html': 'งานที่ได้รับ',
   'sales-pipeline.html': 'งานขายตรง (Sales Hunt)',
+  'quote-requests.html': 'คำขอใบเสนอราคา',
   'company-calendar.html': 'ปฏิทินคัดกรองประกาศ',
   'bid_decision.html': 'ประกาศวันนี้',
   'assignments.html': 'จัดการงานประมูล',
@@ -121,6 +133,15 @@ const SharedMethods = {
       คืน Promise<boolean> — true ถ้ากด "ยืนยัน", false ถ้ากด "ยกเลิก" */
   showConfirm(title, message, confirmText = 'ยืนยัน') {
     return this.$refs.appModal.confirm(title, message, confirmText);
+  },
+
+  /** วันที่แบบย่อ "15 ธ.ค. 69" — ใช้ในที่แคบ เช่น กล่องตัวเลขบนหัวหน้าต่างรายละเอียด (ว่าง = '') */
+  shortDateThai(dateStr) {
+    if (!dateStr) return '';
+    const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    const d = new Date(String(dateStr).substring(0, 10) + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    return `${d.getDate()} ${months[d.getMonth()]} ${String(d.getFullYear() + 543).slice(-2)}`;
   },
 
   /* ── Avatar / ผู้ใช้ ── */
@@ -438,11 +459,15 @@ const SharedMethods = {
   // โฟลเดอร์บน network share อยู่แล้ว (ยืนยันจากผู้ใช้ 2026-09-22) ได้ค่านี้จาก response ของ action=detail เอง
   // เปิดรายละเอียดงานประมูลจากลิงก์ ?code= (2026-10-10) — ใช้ใน: bid-pipeline.html, my-assignments.html, assignments.html ('assign-detail')
   // เปิดไม่ได้ (ไม่พบ / ไม่มีสิทธิ์ดู) → อยู่หน้ารายการตามปกติ + แจ้ง
+  // ?tab= (2026-10-14): เปิดแล้วไปแท็บนั้นเลย — หน้าที่รองรับประกาศ openLinkTab(tab) เอง (bid-pipeline / my-assignments)
+  //   รอ $nextTick ก่อน เพราะ watcher ของหน้าจะรีเซ็ตแท็บกลับเป็น "ภาพรวม" ตอนเปิดงานใหม่
   async openDetailFromLink(modalType = 'detail') {
+    const tab = takeLinkTab();
     const code = takeLinkCode();
     if (!code) return;
     await this.openDetail(code, modalType);
-    if (this.modal?.data?.project_code !== code) await this.showAlert(`ไม่พบงาน ${code} หรือคุณไม่มีสิทธิ์ดูงานนี้`, 'error');
+    if (this.modal?.data?.project_code !== code) { await this.showAlert(`ไม่พบงาน ${code} หรือคุณไม่มีสิทธิ์ดูงานนี้`, 'error'); return; }
+    if (tab && typeof this.openLinkTab === 'function') { await this.$nextTick(); this.openLinkTab(tab); }
   },
 
   async openDetail(projectCode, modalType = 'detail') {
@@ -523,6 +548,8 @@ const AppNav = {
       if (this.isAdmin || this.isManager || this.isSale) {
         g.push({ href:'sales-pipeline.html', page:'sales-pipeline', label:'งานขายตรง (Sales Hunt)', icon:'sales_pipeline' });
       }
+      // คำขอใบเสนอราคา (Quote Request — 2026-10-14) — ทุก role: Sale เห็นของตัวเอง / ธุรการขายใช้ติดตามงานที่ต้องออกใบ (เห็นแค่รายการคำขอ ไม่เห็นหน้างานขายตรงทั้งหน้า)
+      g.push({ href:'quote-requests.html', page:'quote-requests', label:'คำขอใบเสนอราคา', icon:'quote_request' });
       // ทะเบียนหน่วยงาน/บริษัทลูกค้า (CRM account) — ทุก role เข้าดู/แก้ไขได้เหมือนกัน เป็นข้อมูลอ้างอิงกลาง ไม่ใช่ข้อมูลอ่อนไหว (ยืนยันจากผู้ใช้ 2026-09-22)
       g.push({ href:'accounts.html', page:'accounts', label:'หน่วยงาน/ลูกค้า', icon:'accounts' });
       // นำเข้าใบเสนอราคาเก่า (import-quotations.html) — ยังไม่เปิดใช้งานจริง (ยืนยันจากผู้ใช้ 2026-09-09) ตั้งใจไม่ใส่เมนู
@@ -633,6 +660,8 @@ const AppNav = {
       if (n.ref_type === 'account' && n.ref_id) window.location.href = 'accounts.html?account_id=' + n.ref_id;
       // นำเข้าประกาศ e-GP ใหม่ → หน้า "ประกาศวันนี้" ให้ธุรการคัดกรอง (2026-10-09)
       if (n.ref_type === 'announcements_imported') window.location.href = 'bid_decision.html';
+      // Sale ขอใบเสนอราคา → ธุรการเปิดคำขอนั้นในหน้าคำขอใบเสนอราคา (2026-10-14)
+      if (n.ref_type === 'quote_request' && n.ref_id) window.location.href = 'quote-requests.html?request_id=' + n.ref_id;
     },
     async markAllRead() {
       await apiCall('POST', 'api/notifications.php?action=read_all');
@@ -686,6 +715,8 @@ const AppNav = {
         users:          '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
         settings:       '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>',
         bell:           '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>',
+        // คำขอใบเสนอราคา — เอกสาร + ลูกศรส่ง (2026-10-14)
+        quote_request:  '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h7"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="13" y2="13"/><polyline points="17 15 21 18 17 21"/><line x1="21" y1="18" x2="14" y2="18"/>',
         master_data:    '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
       };
       return icons[name] || '';
@@ -1322,6 +1353,203 @@ const AppBidAccountPicker = {
         class="mt-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">✓ ใช้ตัวเลือกนี้</button>
     </template>
   </template>
+</div>
+  `,
+};
+
+/* ── AppQuoteRequests: กล่อง "ใบเสนอราคา" ในดีล — ขอใบเสนอราคา + รายการคำขอของดีลนี้ (Quote Request — ยืนยันจากผู้ใช้ 2026-10-14) ──
+   กฎธุรกิจ Taiyo: ใบเสนอราคางานโครงการออกได้เฉพาะจากคำขอในดีล (ระบบใบเสนอราคาล็อกตาม Salemanid)
+   - ขายตรง: ขอได้ตอน สนใจ / ส่ง PI / ต่อรอง — งานประมูล: ขอได้เฉพาะ "ชนะการประมูล" (API ตัดสิน ส่ง block_reason มา)
+   - Sale เลือก "ให้ธุรการออก" (แจ้งธุรการ + ต้องมีรายละเอียด) หรือ "ออกเอง" / ใบใหม่ หรือ แก้ไขใบเดิม (Revision)
+   - ค้างได้ทีละ 1 คำขอต่อดีล / ยกเลิกได้ก่อนออกใบ (ต้องมีเหตุผล)
+   ใช้: <app-quote-requests :project-code="..." @changed="..." @summary="..."></app-quote-requests> — โหลดเองจาก api/quote_requests.php?action=by_deal
+   วางในแท็บ "ใบเสนอราคา" ของหน้าต่างรายละเอียด (Record Page: หัวสรุป + แท็บ — ยืนยันจากผู้ใช้ 2026-10-14) ปุ่มขอใบอยู่มุมขวาบนของกล่อง
+   @summary ส่งสรุป {short, sub, cls, count} (หรือ null) ให้หน้าที่ใช้แสดงกล่อง "ใบเสนอราคา" บนหัวสรุป + ตัวเลขบนแท็บ
+   ใช้ใน sales-pipeline.html, bid-pipeline.html, my-assignments.html / ข้อความแจ้งผลใช้ showAlert ของหน้าหลัก ($root) */
+const QUOTE_REQUEST_STATUS = {
+  pending:   { label: 'รอออกใบ',       cls: 'bg-amber-100 text-amber-800' },
+  accepted:  { label: 'ธุรการรับเรื่องแล้ว', cls: 'bg-sky-100 text-sky-800' },
+  issued:    { label: 'ออกใบแล้ว',     cls: 'bg-emerald-100 text-emerald-800' },
+  cancelled: { label: 'ยกเลิก',        cls: 'bg-slate-100 text-slate-500' },
+};
+const AppQuoteRequests = {
+  props: ['projectCode'],
+  emits: ['changed', 'summary'],
+  data() {
+    return {
+      loading: false, info: null, showForm: false, saving: false,
+      form: { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: '', request_note: '' },
+      cancelCode: '', cancelReason: '',
+    };
+  },
+  watch: {
+    projectCode: { immediate: true, handler() { this.showForm = false; this.load(); } },
+  },
+  methods: {
+    formatDateTimeThai,
+    formatPrice: SharedMethods.formatPrice,
+    statusOf(s) { return QUOTE_REQUEST_STATUS[s] || { label: s, cls: 'bg-slate-100 text-slate-500' }; },
+    async load() {
+      this.info = null;
+      this.$emit('summary', null);
+      if (!this.projectCode) return;
+      this.loading = true;
+      const res = await apiCall('GET', 'api/quote_requests.php?action=by_deal&project_code=' + encodeURIComponent(this.projectCode));
+      if (res.success) this.info = res.data;
+      this.loading = false;
+      this.$emit('summary', this.summary());
+    },
+    // สรุปสำหรับหัวหน้าต่าง (กล่องตัวเลข "ใบเสนอราคา" + จำนวนบนแท็บ — 2026-10-14)
+    // short = ค่าที่แสดงในกล่อง: คำขอที่ค้าง (สถานะ) → ใบล่าสุดที่ออกแล้ว (เลขที่ใบ) → ยังไม่ได้ขอ / count = จำนวนคำขอทั้งหมด (แสดงบนแท็บ)
+    summary() {
+      if (!this.info) return null;
+      const count = this.info.requests.length;
+      const open = this.info.requests.find(r => r.status === 'pending' || r.status === 'accepted');
+      if (open) return { short: this.statusOf(open.status).label, sub: open.quote_request_code, cls: this.statusOf(open.status).cls, count };
+      const confirmed = this.info.requests.find(r => r.confirmed_at);
+      if (confirmed) return { short: 'ลูกค้ายืนยันแล้ว', sub: confirmed.quotation_id, cls: 'bg-emerald-100 text-emerald-800', count };
+      const issued = this.info.requests.find(r => r.status === 'issued');
+      if (issued) return { short: issued.quotation_id, sub: 'ออกใบแล้ว', cls: this.statusOf('issued').cls, count };
+      return { short: count ? 'ยังไม่มีใบ' : 'ยังไม่ได้ขอ', sub: '', cls: 'bg-slate-50 text-slate-600', count };
+    },
+    openForm() {
+      this.form = { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: this.info?.quotations?.[0] || '', request_note: '' };
+      this.showForm = true;
+    },
+    async submit() {
+      if (this.form.request_type === 'revision' && !this.form.ref_quotation_id) return this.$root.showAlert('กรุณาเลือกใบเสนอราคาเดิมที่ต้องการแก้ไข', 'error');
+      if (this.form.issue_by === 'salesadmin' && !this.form.request_note.trim()) return this.$root.showAlert('กรุณาระบุรายละเอียดให้ธุรการ เช่น รุ่นสินค้า จำนวน เงื่อนไข', 'error');
+      this.saving = true;
+      const res = await apiCall('POST', 'api/quote_requests.php?action=create', { project_code: this.projectCode, ...this.form });
+      this.saving = false;
+      if (!res.success) return this.$root.showAlert(res.message || 'ส่งคำขอไม่สำเร็จ', 'error');
+      this.showForm = false;
+      await this.load();
+      this.$emit('changed');
+      this.$root.showAlert(res.message);
+    },
+    startCancel(r) { this.cancelCode = r.quote_request_code; this.cancelReason = ''; },
+    async confirmCancel() {
+      if (!this.cancelReason.trim()) return this.$root.showAlert('กรุณาระบุเหตุผลที่ยกเลิก', 'error');
+      const res = await apiCall('POST', 'api/quote_requests.php?action=cancel', { quote_request_code: this.cancelCode, cancel_reason: this.cancelReason });
+      if (!res.success) return this.$root.showAlert(res.message || 'ยกเลิกไม่สำเร็จ', 'error');
+      this.cancelCode = '';
+      await this.load();
+      this.$emit('changed');
+      this.$root.showAlert(res.message);
+    },
+  },
+  template: `
+<section v-if="projectCode" class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+  <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
+    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+      <svg class="w-5 h-5 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+      ใบเสนอราคา
+    </h3>
+    <button v-if="info?.can_request && !info.block_reason && !showForm" type="button" @click="openForm"
+      class="px-4 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer min-h-[40px]">+ ขอใบเสนอราคา</button>
+  </div>
+  <div v-if="loading" class="text-sm text-slate-400">กำลังโหลด…</div>
+  <template v-else-if="info">
+    <div v-if="info.can_request && info.block_reason && !showForm" class="text-sm text-slate-500">{{ info.block_reason }}</div>
+
+    <!-- ฟอร์มขอใบเสนอราคา (เปิดในกล่องเดียวกัน ไม่ซ้อนหน้าต่าง) -->
+    <div v-if="showForm" class="rounded-xl border-2 border-teal-200 bg-teal-50/40 p-4 space-y-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-700 mb-1.5">ใครเป็นคนออกใบ</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button type="button" @click="form.issue_by='salesadmin'" class="text-left px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
+            :class="form.issue_by==='salesadmin' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">ให้ธุรการขายออกใบ<div class="text-xs font-normal text-slate-500">ระบบแจ้งธุรการให้ทันที</div></button>
+          <button type="button" @click="form.issue_by='sale'" class="text-left px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
+            :class="form.issue_by==='sale' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">ฉันออกใบเอง<div class="text-xs font-normal text-slate-500">ไม่แจ้งธุรการ</div></button>
+        </div>
+      </div>
+      <div v-if="info.quotations.length">
+        <div class="text-sm font-semibold text-slate-700 mb-1.5">ขอใบแบบไหน</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button type="button" @click="form.request_type='new'" class="px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
+            :class="form.request_type==='new' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">ใบใหม่</button>
+          <button type="button" @click="form.request_type='revision'" class="px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
+            :class="form.request_type==='revision' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">แก้ไขใบเดิม (Revision)</button>
+        </div>
+        <select v-if="form.request_type==='revision'" v-model="form.ref_quotation_id" class="mt-2 w-full sm:max-w-xs border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm bg-white">
+          <option v-for="q in info.quotations" :key="q" :value="q">{{ q }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">รายละเอียด <span v-if="form.issue_by==='salesadmin'" class="text-red-500">*</span><span v-else class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+        <textarea v-model="form.request_note" rows="3" placeholder="เช่น เก้าอี้รุ่น … 50 ตัว, ส่วนลด, เงื่อนไขการชำระเงิน, วันที่ลูกค้าต้องการใบ"
+          class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button type="button" @click="showForm=false" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer min-h-[40px]">ยกเลิก</button>
+        <button type="button" @click="submit" :disabled="saving" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer min-h-[40px] disabled:opacity-50">{{ saving ? 'กำลังส่ง…' : 'ส่งคำขอ' }}</button>
+      </div>
+    </div>
+
+    <div v-if="!info.requests.length && !showForm" class="text-sm text-slate-400">ยังไม่มีคำขอใบเสนอราคา</div>
+    <div v-for="r in info.requests" :key="r.quote_request_code" class="rounded-xl ring-1 ring-slate-200 p-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="font-mono text-sm font-bold text-slate-700">{{ r.quote_request_code }}</span>
+        <span class="px-2 py-0.5 rounded-full text-xs font-bold" :class="statusOf(r.status).cls">{{ statusOf(r.status).label }}</span>
+        <span class="text-xs text-slate-500">{{ r.request_type==='revision' ? 'แก้ไขใบ ' + r.ref_quotation_id : 'ใบใหม่' }} · {{ r.issue_by==='sale' ? 'Sale ออกเอง' : 'ให้ธุรการออก' }}</span>
+        <!-- เลข QT ฉบับล่าสุด = ลิงก์เปิดหน้าพิมพ์ระบบใบเสนอราคา (quote_view_url — 2026-10-14) / Rev เก่าเป็นตัวหนังสือ (หน้าพิมพ์แสดงได้แค่ฉบับปัจจุบัน) -->
+        <a v-if="r.quotation_id && r.quote_view_url" :href="r.quote_view_url" target="_blank" rel="noopener" title="เปิดดูใบเสนอราคา (ต้อง login ระบบใบเสนอราคา)"
+          class="ml-auto font-mono text-sm font-bold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900">{{ r.quotation_id }}<span v-if="r.quotation_revision !== null"> Rev {{ r.quotation_revision }}</span> ↗</a>
+        <span v-else-if="r.quotation_id" class="ml-auto font-mono text-sm font-bold text-emerald-700">{{ r.quotation_id }}<span v-if="r.quotation_revision !== null"> Rev {{ r.quotation_revision }}</span></span>
+      </div>
+      <!-- ยอดของใบที่ออก (2026-10-14) — งานประมูลมูลค่าดีลไม่เปลี่ยนตามใบ ให้เทียบเองได้ -->
+      <div v-if="r.quote_amount !== null && r.quote_amount !== undefined" class="text-sm text-emerald-800 mt-1 font-semibold">
+        ยอดใบ {{ formatPrice(r.quote_amount) }} <span class="font-normal text-slate-500">(ก่อน VAT)</span>
+        <span v-if="r.quote_net_amount !== null" class="font-normal text-slate-500"> · รวม VAT {{ formatPrice(r.quote_net_amount) }}</span>
+      </div>
+      <div v-if="r.request_note" class="text-sm text-slate-700 mt-1.5 whitespace-pre-line">{{ r.request_note }}</div>
+      <div class="text-xs text-slate-500 mt-1.5 space-y-0.5">
+        <div>ขอโดย {{ r.requested_by_name }} · {{ formatDateTimeThai(r.requested_at) }}</div>
+        <div v-if="r.accepted_at">รับเรื่องโดย {{ r.accepted_by_name || '-' }} · {{ formatDateTimeThai(r.accepted_at) }}</div>
+        <div v-if="r.issued_at">ออกใบโดย {{ r.issued_by_name || '-' }} · {{ formatDateTimeThai(r.issued_at) }}</div>
+        <div v-if="r.confirmed_at" class="text-emerald-700 font-semibold">ลูกค้ายืนยันสั่งซื้อ · {{ formatDateTimeThai(r.confirmed_at) }}<span v-if="r.confirmed_so_code"> · SO {{ r.confirmed_so_code }}</span></div>
+        <div v-if="r.cancelled_at" class="text-slate-500">ยกเลิก{{ r.cancelled_by_name ? 'โดย ' + r.cancelled_by_name : '' }} · {{ formatDateTimeThai(r.cancelled_at) }} — {{ r.cancel_reason }}</div>
+      </div>
+      <template v-if="r.can_cancel">
+        <button v-if="cancelCode !== r.quote_request_code" type="button" @click="startCancel(r)"
+          class="mt-2 text-sm font-semibold text-red-600 underline bg-transparent border-0 p-0 cursor-pointer">ยกเลิกคำขอนี้</button>
+        <div v-else class="mt-2 flex flex-wrap gap-2 items-center">
+          <input v-model="cancelReason" placeholder="เหตุผลที่ยกเลิก" class="flex-1 min-w-[200px] border border-slate-300 rounded-xl px-3 py-2 text-base sm:text-sm bg-white">
+          <button type="button" @click="cancelCode=''" class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ไม่ยกเลิก</button>
+          <button type="button" @click="confirmCancel" class="px-3 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 border-0 cursor-pointer">ยืนยันยกเลิก</button>
+        </div>
+      </template>
+    </div>
+  </template>
+</section>
+  `,
+};
+
+/* ── AppRecordTabs: แถบแท็บแบบแฟ้มเอกสาร (Folder tabs) ในหน้าต่างรายละเอียดงาน (Record Page — ยืนยันจากผู้ใช้ 2026-10-14) ──
+   เดิมเป็นตัวหนังสือขีดเส้นใต้ ผู้ใช้ไม่รู้ว่าเป็นแท็บ → หูแฟ้มมีกรอบ + ไอคอน แท็บที่เลือกพื้นขาวต่อกับเนื้อหา + เส้นเขียวด้านบน
+   ใช้: <app-record-tabs v-model="tab" :tabs="[{ key, label, count }]"></app-record-tabs> — count > 0 แสดงตัวเลขสีส้ม
+   ไอคอนตาม key: overview / deal / quote / announcement / history — ใช้ใน bid-pipeline.html, my-assignments.html, sales-pipeline.html */
+const RECORD_TAB_ICONS = {
+  overview:     '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  deal:         '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  quote:        '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
+  announcement: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/>',
+  history:      '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
+};
+const AppRecordTabs = {
+  props: { modelValue: { type: String, default: '' }, tabs: { type: Array, default: () => [] } },
+  emits: ['update:modelValue'],
+  methods: { iconOf(key) { return RECORD_TAB_ICONS[key] || ''; } },
+  template: `
+<div class="flex gap-1 px-4 pt-3 bg-slate-100 border-b border-slate-300 overflow-x-auto shrink-0" role="tablist">
+  <button v-for="t in tabs" :key="t.key" type="button" role="tab" :aria-selected="modelValue === t.key" @click="$emit('update:modelValue', t.key)"
+    class="inline-flex items-center gap-1.5 px-4 py-2.5 text-[.95rem] whitespace-nowrap rounded-t-lg border border-b-0 cursor-pointer -mb-px"
+    :class="modelValue === t.key ? 'bg-white text-teal-700 font-bold border-slate-300 border-t-[3px] border-t-teal-600' : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-white hover:text-slate-800'">
+    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="iconOf(t.key)"></svg>
+    {{ t.label }}
+    <span v-if="t.count" class="px-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">{{ t.count }}</span>
+  </button>
 </div>
   `,
 };

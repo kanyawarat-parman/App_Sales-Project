@@ -30,6 +30,11 @@ const NOTIFY_TYPES = [
     'announcements_imported' => ['recipient' => 'salesadmin', 'bell_type' => 'system',   'ref_type' => 'announcements_imported', 'page' => 'bid_decision.html', 'email' => false, 'line' => true, 'channels' => ['line']],
     // Sale ยกเลิก / ไม่เข้าประมูลเอง → แจ้งธุรการขายให้ทราบผล (2026-10-10) — ผ่าน notifySaleCancelled()
     'bid_cancelled_by_sale' => ['recipient' => 'salesadmin', 'public_view' => true, 'bell_type' => 'system', 'ref_type' => 'bid_cancelled_by_sale', 'page' => 'assignments.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    // Sale ขอใบเสนอราคา (ให้ธุรการออก) → ธุรการขายทุกคน (2026-10-14) — ผ่าน notifyQuoteRequested() ใน includes/quote_request_helper.php
+    //   page ถูกทับเป็น quote-requests.html?code=QR-… (เปิดคำขอนั้น) / ref_id = quote_requests.quote_request_id
+    'quote_requested' => ['recipient' => 'salesadmin', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    // ธุรการออกใบเสนอราคาตามคำขอแล้ว → Sale เจ้าของดีล (2026-10-14 ระยะ 3) — ผ่าน notifyQuoteIssued() / Sale ออกเองไม่แจ้ง
+    'quote_issued'    => ['recipient' => 'sale', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
 ];
 
 // กลุ่มผู้รับ (เรียงตามลำดับแสดงผลในหน้าตั้งค่าการแจ้งเตือน) — รหัส = users.role
