@@ -309,7 +309,7 @@ CREATE TABLE pipeline_items (
   segment           ENUM('Gov','Private'),
   priority          ENUM('High','Medium','Low') NOT NULL,
   product_category  ENUM('Steel','Chair','Wooden','Other'),
-  brand             ENUM('Taiyo','Motech','Sunon','Hybrida','Other'),
+  brand             ENUM('Taiyo','Hybrida','Motech','Smartform','Sunon','Other'),   -- เพิ่ม Smartform + เรียงใหม่ 2026-10-20 (sql/add_brand_smartform.sql)
   fee_structure     ENUM('No fee','Referral %','Client to resell'),
   specialization    ENUM('Office','Hospital & Wellness','Education','Government','Other'),
   value             DECIMAL(15,2),                 -- มูลค่าดีล
@@ -545,7 +545,7 @@ CREATE TABLE project_code_counters (
     - แท็บ "รอเปิดหน้าบัญชี" ใน accounts.html — sale เห็นเฉพาะดีลตัวเอง / วันที่ชนะ = ครั้งแรกที่ขั้นเปลี่ยนเป็นขั้นชนะใน `pipeline_item_history`
   - **คำขอใบเสนอราคา (Quote Request แบบ Sales Ops / Deal Desk — ยืนยันจากผู้ใช้ 2026-10-14, `sql/add_quote_requests.sql`) ระยะ 1:** กฎธุรกิจ Taiyo — **ใบเสนอราคางานโครงการออกได้เฉพาะจากคำขอในดีลเท่านั้น** (ล็อกระดับ 2 ระบบใบเสนอราคาตรวจตาม Salemanid = `users.sale_id` ไม่ว่าคนเปิดใบเป็นธุรการหรือ Sale) — ทุกงานต้องอยู่ใน Pipeline + log เวลาขอ/รับเรื่อง/ออกใบ
     - ตาราง `quote_requests` (`QR-000001`, ใบใหม่/แก้ไขใบเดิม, ให้ธุรการออก/Sale ออกเอง, สถานะ pending → accepted → issued / cancelled) — กติกากลางอยู่ที่ `includes/quote_request_helper.php`
-    - ขอได้: ขายตรง Interest / Send PI / Negotiating — **งานประมูลเฉพาะ "ชนะการประมูล"** (ใบยื่นซองทำใน e-GP / ใบบริษัทออกหลังชนะเพื่อสัญญาและ SO) / ค้างได้ทีละ 1 คำขอต่อดีล / ขอได้เฉพาะ Sale เจ้าของดีล + admin / ให้ธุรการออกต้องมีรายละเอียด
+    - ขอได้: ขายตรง Interest / Send PI / Negotiating — **งานประมูลเฉพาะ "ชนะการประมูล"** (ใบยื่นซองทำใน e-GP / ใบบริษัทออกหลังชนะเพื่อสัญญาและ SO) / ค้างได้ทีละ 1 คำขอต่อดีล / ขอได้เฉพาะ Sale เจ้าของดีล + admin / รายละเอียดไม่บังคับ (เดิมบังคับเมื่อให้ธุรการออก — ยกเลิก 2026-10-20)
     - **การขอใบไม่เปลี่ยนสถานะดีล** (Send PI = ส่งใบให้ลูกค้าแล้ว) — ระยะ 3: ออกใบแล้ว Interest → Send PI เอง (งานประมูลไม่เปลี่ยน)
     - ดีลออกจากสถานะที่ขอได้ → คำขอค้างยกเลิกเอง (`cancelStaleQuoteRequests()` เรียกใน `updateItem` / `updateAssignment`) / ดีลที่มีคำขอลบไม่ได้
     - หน้าจอ: กล่อง `AppQuoteRequests` (shared/app.js) อยู่ใน**แท็บ "ใบเสนอราคา"** ของหน้าต่างดีล sales-pipeline + รายละเอียดงานประมูล bid-pipeline / my-assignments (ชนะ/ส่งมอบ) — `@summary` ให้กล่องตัวเลข "ใบเสนอราคา" บนหัวสรุป (กดแล้วไปแท็บ) + จำนวนบนแท็บ / ป้ายการ์ด "รอออกใบเสนอราคา" / หน้า `quote-requests.html` (เมนูทุก role — Sale เห็นของตัวเอง, ธุรการเห็นแค่รายการคำขอ ไม่ได้เปิดเมนูงานขายตรง) / แจ้งเตือน `quote_requested` → ธุรการขายทุกคน

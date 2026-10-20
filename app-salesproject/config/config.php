@@ -73,8 +73,8 @@ define('SESSION_TIMEOUT', 8 * 3600); // 8 ชั่วโมง
 
 //----เชื่อมระบบใบเสนอราคา (2026-10-14)------
 
-// ใบเสนอราคา - localhost (token มาจาก env ของ dev server ebidding-qt)
-define('QUOTE_API_TOKEN', envOr('QUOTE_API_TOKEN', ''));
+// ใบเสนอราคา - localhost (รหัสชุด dev — ตรงกับ App_Data ของระบบใบเสนอราคาบนเครื่อง dev / ใช้ได้ทั้ง localhost:8060 และ dev server ebidding-qt)
+define('QUOTE_API_TOKEN', envOr('QUOTE_API_TOKEN', '5c1de24017555b940cec2a5f69fb721e1345ec054d2d7f17d46eaf6e866a309e'));
 define('QUOTATION_WEB_URL', envOr('QUOTATION_WEB_URL', 'http://localhost:57930/'));
 
 

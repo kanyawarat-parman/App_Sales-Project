@@ -809,7 +809,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=84"></script>
+<script src="shared/app.js?v=85"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1168,7 +1168,7 @@ createApp({
         mkChart('chartPieProduct', pd.product.map(p=>p.label), pd.product.map(p=>p.val), pd.product.map(p=>productColors[p.label]||'#cbd5e1'));
       }
       if (pd.brand.length) {
-        const brandColors = { 'Taiyo':'#f97316', 'Sunon':'#16a34a', 'Motech':'#7c6cc8', 'Hybrida':'#1e293b' };
+        const brandColors = { 'Taiyo':'#f97316', 'Sunon':'#16a34a', 'Motech':'#7c6cc8', 'Hybrida':'#1e293b', 'Smartform':'#0ea5e9' };   // Smartform เพิ่ม 2026-10-20
         mkChart('chartPieBrand', pd.brand.map(b=>b.label), pd.brand.map(b=>b.val), pd.brand.map(b=>brandColors[b.label]||'#cbd5e1'));
       }
 

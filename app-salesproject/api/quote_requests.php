@@ -91,7 +91,7 @@ function createQuoteRequest(PDO $db, array $user): void {
         if ($refQuotation === '' || !$chk->fetchColumn()) jsonResponse(false, null, 'กรุณาเลือกใบเสนอราคาเดิมที่ต้องการแก้ไข', 400);
     }
     $note = trim($body['request_note'] ?? '');
-    if ($issueBy === 'salesadmin' && $note === '') jsonResponse(false, null, 'กรุณาระบุรายละเอียดให้ธุรการ เช่น รุ่นสินค้า จำนวน เงื่อนไข', 400);
+    // รายละเอียดไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-20 — เดิมบังคับเมื่อให้ธุรการออก)
 
     $db->beginTransaction();
     try {

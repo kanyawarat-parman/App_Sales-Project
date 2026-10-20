@@ -16,6 +16,18 @@ async function apiCall(method, url, body = null) {
   return res.json();
 }
 
+/* ── อัปโหลดไฟล์ (multipart/form-data) — คู่กับ apiCall สำหรับ endpoint ที่รับไฟล์ (2026-10-20)
+   ไม่ใส่ Content-Type เอง ให้เบราว์เซอร์ใส่ boundary ให้ / 401 พากลับหน้า login แบบเดียวกับ apiCall */
+async function apiUpload(url, formData) {
+  const res = await fetch(url, { method: 'POST', body: formData, credentials: 'same-origin' });
+  if (res.status === 401) {
+    if (!window.location.pathname.endsWith('login.html')) window.location.href = 'login.html';
+    return { success: false };
+  }
+  try { return await res.json(); }
+  catch { return { success: false, message: 'อัปโหลดไม่สำเร็จ (ไฟล์อาจใหญ่เกินที่เซิร์ฟเวอร์รับได้)' }; }
+}
+
 /* ── รหัสงานจากลิงก์ ?code= (ปุ่ม "ดูรายละเอียด" ใน LINE / อีเมล / กระดิ่ง — 2026-10-10) ──
    อ่านแล้วลบออกจาก URL ทันที (กดรีเฟรชแล้วไม่เปิดหน้าต่างซ้ำ) */
 function takeLinkCode() {
@@ -69,6 +81,8 @@ const PAGE_LABELS = {
   'holidays.html': 'วันหยุด',
   'announcements.html': 'ประกาศ',
   'login.html': 'เข้าสู่ระบบ',
+  'manuals.html': 'คู่มือการใช้งาน',
+  'manual-quote-request.html': 'คู่มือ: ออกใบเสนอราคางานโครงการ',
 };
 function pageLabel(filename) {
   if (!filename) return '-';
@@ -607,6 +621,10 @@ const AppNav = {
         }
       }
 
+      // คู่มือการใช้งาน (Help Center ในระบบ — ยืนยันจากผู้ใช้ 2026-10-16) ทุก role เห็น / หน้าคู่มือแต่ละเรื่องใช้ page='manuals'
+      g.push({ type:'section', label:'ช่วยเหลือ' });
+      g.push({ href:'manuals.html', page:'manuals', label:'คู่มือการใช้งาน', icon:'manual' });
+
       // ตัด section header ที่ไม่มีรายการตามหลังเลย (เช่น role salesadmin ไม่มีสิทธิ์เข้าเมนูในหมวด "ขาย" เลยสักอัน)
       return g.filter((item, idx) => {
         if (item.type !== 'section') return true;
@@ -717,6 +735,8 @@ const AppNav = {
         bell:           '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>',
         // คำขอใบเสนอราคา — เอกสาร + ลูกศรส่ง (2026-10-14)
         quote_request:  '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h7"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="13" y2="13"/><polyline points="17 15 21 18 17 21"/><line x1="21" y1="18" x2="14" y2="18"/>',
+        // คู่มือการใช้งาน — หนังสือเปิด (2026-10-16)
+        manual:         '<path d="M2 4h6a4 4 0 014 4v13a3 3 0 00-3-3H2z"/><path d="M22 4h-6a4 4 0 00-4 4v13a3 3 0 013-3h7z"/>',
         master_data:    '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
       };
       return icons[name] || '';
@@ -1372,6 +1392,157 @@ const QUOTE_REQUEST_STATUS = {
   issued:    { label: 'ออกใบแล้ว',     cls: 'bg-emerald-100 text-emerald-800' },
   cancelled: { label: 'ยกเลิก',        cls: 'bg-slate-100 text-slate-500' },
 };
+/* ── AppDealFiles: แท็บ "ไฟล์" ในหน้าต่างดีล — แนบไฟล์ + ประเภท + หมายเหตุ (Files แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-20) ──
+   ผูกด้วย pipeline_item_id (ไม่เปลี่ยนตามสถานะ) → เห็นไฟล์ทุกสถานะของดีล / API: api/deal_files.php (sql/add_deal_files.sql)
+   แนบ: sale เจ้าของดีล, ธุรการ, admin / ลบ: ผู้แนบ, admin (API ตรวจซ้ำ) / เปิดไฟล์ผ่าน API ที่ต้อง login เท่านั้น
+   @count = จำนวนไฟล์ ให้แท็บแสดงตัวเลข */
+const AppDealFiles = {
+  props: ['pipelineItemId'],
+  emits: ['count'],
+  data() {
+    return {
+      loading: false, files: [], canUpload: false, categories: [],
+      showForm: false, saving: false, pickedFile: null,
+      form: { file_category_id: '', comment: '' },
+    };
+  },
+  watch: {
+    pipelineItemId: { immediate: true, handler() { this.showForm = false; this.load(); } },
+  },
+  methods: {
+    formatDateTimeThai,
+    formatFileSize: SharedMethods.formatFileSize,
+    async load() {
+      this.files = [];
+      if (!this.pipelineItemId) return;
+      this.loading = true;
+      const res = await apiCall('GET', 'api/deal_files.php?action=list&pipeline_item_id=' + this.pipelineItemId);
+      this.loading = false;
+      if (!res.success) return;
+      this.files = res.data.files;
+      this.canUpload = res.data.can_upload;
+      this.$emit('count', this.files.length);
+    },
+    async openForm() {
+      if (!this.categories.length) {
+        const res = await apiCall('GET', 'api/deal_files.php?action=categories');
+        if (res.success) this.categories = res.data;
+      }
+      this.form = { file_category_id: '', comment: '' };
+      this.pickedFile = null;
+      this.showForm = true;
+    },
+    onPick(e) {
+      const f = e.target.files[0] || null;
+      e.target.value = '';
+      if (f && f.size > 20 * 1024 * 1024) { this.$root.showAlert('ไฟล์ใหญ่เกิน 20 MB', 'error'); return; }
+      this.pickedFile = f;
+    },
+    async save() {
+      if (!this.pickedFile) return this.$root.showAlert('กรุณาเลือกไฟล์', 'error');
+      if (!this.form.file_category_id) return this.$root.showAlert('กรุณาเลือกประเภทไฟล์', 'error');
+      const fd = new FormData();
+      fd.append('pipeline_item_id', this.pipelineItemId);
+      fd.append('file_category_id', this.form.file_category_id);
+      fd.append('comment', this.form.comment);
+      fd.append('file', this.pickedFile);
+      this.saving = true;
+      const res = await apiUpload('api/deal_files.php?action=upload', fd);
+      this.saving = false;
+      if (!res.success) return this.$root.showAlert(res.message || 'แนบไฟล์ไม่สำเร็จ', 'error');
+      this.showForm = false;
+      await this.load();
+    },
+    async remove(f) {
+      if (!await this.$root.showConfirm('ลบไฟล์นี้?', f.original_name + ' — ลบแล้วกู้คืนไม่ได้', 'ลบไฟล์')) return;
+      const res = await apiCall('POST', 'api/deal_files.php?action=delete', { id: f.id });
+      if (!res.success) return this.$root.showAlert(res.message || 'ลบไม่สำเร็จ', 'error');
+      await this.load();
+    },
+    fileUrl(f, inline) { return 'api/deal_files.php?action=download&id=' + f.id + (inline ? '&inline=1' : ''); },
+    canPreview(f) { return ['application/pdf', 'image/jpeg', 'image/png'].includes(f.mime_type); },
+    isImage(f) { return ['image/jpeg', 'image/png'].includes(f.mime_type); },
+    kindOf(f) {
+      if (f.mime_type === 'application/pdf') return { label: 'PDF', cls: 'bg-red-50 text-red-700' };
+      if (f.mime_type.startsWith('image/')) return { label: 'รูป', cls: 'bg-sky-50 text-sky-700' };
+      if (/sheet|excel/.test(f.mime_type)) return { label: 'Excel', cls: 'bg-emerald-50 text-emerald-700' };
+      if (/word/.test(f.mime_type)) return { label: 'Word', cls: 'bg-blue-50 text-blue-700' };
+      return { label: 'ไฟล์', cls: 'bg-slate-100 text-slate-600' };
+    },
+  },
+  template: `
+<section v-if="pipelineItemId" class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+  <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
+    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+      <svg class="w-5 h-5 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+      ไฟล์แนบของดีลนี้
+    </h3>
+    <button v-if="canUpload && !showForm" type="button" @click="openForm"
+      class="px-4 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer min-h-[40px]">+ แนบไฟล์</button>
+  </div>
+
+  <!-- ฟอร์มแนบไฟล์ (เปิดในกล่องเดียวกัน ไม่ซ้อนหน้าต่าง) -->
+  <div v-if="showForm" class="rounded-xl border-2 border-teal-200 bg-teal-50/40 p-4 space-y-4">
+    <div>
+      <label class="block text-sm font-semibold text-slate-700 mb-1.5">เลือกไฟล์ <span class="text-red-500">*</span></label>
+      <label class="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:border-teal-500 cursor-pointer">
+        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx" @change="onPick">
+        <span class="px-3 py-1.5 rounded-lg bg-teal-700 text-white text-sm font-semibold whitespace-nowrap">เลือกไฟล์</span>
+        <span class="text-sm truncate" :class="pickedFile ? 'text-slate-800 font-semibold' : 'text-slate-400'">{{ pickedFile ? pickedFile.name + ' (' + formatFileSize(pickedFile.size) + ')' : 'PDF, รูป (JPG/PNG), Excel, Word — ไม่เกิน 20 MB' }}</span>
+      </label>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold text-slate-700 mb-1.5">ประเภทไฟล์ <span class="text-red-500">*</span></label>
+      <div class="flex flex-wrap gap-2">
+        <button v-for="c in categories" :key="c.file_category_id" type="button" @click="form.file_category_id = c.file_category_id" :title="c.file_category_description || ''"
+          class="px-3 py-2 rounded-xl border-2 text-sm font-semibold cursor-pointer"
+          :class="form.file_category_id === c.file_category_id ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">{{ c.file_category_name }}</button>
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold text-slate-700 mb-1.5">หมายเหตุ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+      <textarea v-model="form.comment" rows="2" placeholder="เช่น สเปกฉบับแก้ไขล่าสุดจากลูกค้า ใช้ฉบับนี้ทำราคา"
+        class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
+    </div>
+    <div class="flex justify-end gap-2">
+      <button type="button" @click="showForm = false" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+      <button type="button" @click="save" :disabled="saving" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer disabled:opacity-50">{{ saving ? 'กำลังอัปโหลด…' : 'บันทึกไฟล์' }}</button>
+    </div>
+  </div>
+
+  <div v-if="loading" class="text-sm text-slate-400">กำลังโหลด…</div>
+  <div v-else-if="!files.length && !showForm" class="text-sm text-slate-400">ยังไม่มีไฟล์แนบ</div>
+  <div v-for="f in files" :key="f.id" class="flex gap-3 items-start py-3 border-t border-slate-100 first:border-t-0">
+    <!-- รูป = รูปย่อ (กดเปิดรูปเต็ม) / ไฟล์อื่น = ไอคอนเอกสารสีตามชนิด + ป้าย PDF/Excel/Word (ผู้ใช้ขอ 2026-10-20) -->
+    <a v-if="isImage(f)" :href="fileUrl(f, true)" target="_blank" rel="noopener" class="shrink-0 block w-14 h-14 rounded-lg overflow-hidden ring-1 ring-slate-200 bg-slate-50">
+      <img :src="fileUrl(f, true)" :alt="f.original_name" loading="lazy" class="w-full h-full object-cover">
+    </a>
+    <a v-else :href="fileUrl(f, canPreview(f))" target="_blank" rel="noopener" class="shrink-0 w-14 h-14 rounded-lg flex flex-col items-center justify-center no-underline" :class="kindOf(f).cls">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+      <span class="text-[10px] font-bold mt-0.5">{{ kindOf(f).label }}</span>
+    </a>
+    <div class="min-w-0 flex-1">
+      <!-- ประเภทไฟล์ขึ้นบรรทัดแรก ตัวใหญ่มีกรอบ ให้เห็นก่อนชื่อไฟล์ (ผู้ใช้ขอให้ชัดขึ้น 2026-10-20) -->
+      <span class="inline-flex items-center gap-1 px-2.5 py-0.5 mb-1 rounded-lg ring-1 ring-teal-300 bg-teal-50 text-teal-800 text-sm font-bold" title="ประเภทไฟล์">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        {{ f.file_category_name }}
+      </span>
+      <div><a :href="fileUrl(f, canPreview(f))" target="_blank" rel="noopener" class="text-sm font-semibold text-teal-700 hover:underline break-all">{{ f.original_name }}</a></div>
+      <div class="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <!-- เอาป้ายชนิดไฟล์ + ขนาดออก (ผู้ใช้ขอ 2026-10-20) — ชนิดดูจากไอคอน/รูปย่อด้านซ้าย -->
+        <span>{{ f.created_by_name || '-' }}</span>
+        <span>· {{ formatDateTimeThai(f.created_at) }}</span>
+      </div>
+      <div v-if="f.comment" class="text-sm text-slate-700 mt-1 whitespace-pre-line">{{ f.comment }}</div>
+    </div>
+    <div class="shrink-0 flex flex-col sm:flex-row gap-1.5 text-xs">
+      <a :href="fileUrl(f, false)" class="px-2.5 py-1.5 rounded-lg ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 no-underline text-center">ดาวน์โหลด</a>
+      <button v-if="f.can_delete" type="button" @click="remove(f)" class="px-2.5 py-1.5 rounded-lg ring-1 ring-red-200 text-red-600 hover:bg-red-50 bg-white border-0 cursor-pointer">ลบ</button>
+    </div>
+  </div>
+</section>`,
+};
+
 const AppQuoteRequests = {
   props: ['projectCode'],
   emits: ['changed', 'summary'],
@@ -1418,7 +1589,7 @@ const AppQuoteRequests = {
     },
     async submit() {
       if (this.form.request_type === 'revision' && !this.form.ref_quotation_id) return this.$root.showAlert('กรุณาเลือกใบเสนอราคาเดิมที่ต้องการแก้ไข', 'error');
-      if (this.form.issue_by === 'salesadmin' && !this.form.request_note.trim()) return this.$root.showAlert('กรุณาระบุรายละเอียดให้ธุรการ เช่น รุ่นสินค้า จำนวน เงื่อนไข', 'error');
+      // รายละเอียดไม่บังคับแล้ว ทั้งให้ธุรการออกและออกเอง (ยืนยันจากผู้ใช้ 2026-10-20)
       this.saving = true;
       const res = await apiCall('POST', 'api/quote_requests.php?action=create', { project_code: this.projectCode, ...this.form });
       this.saving = false;
@@ -1446,6 +1617,8 @@ const AppQuoteRequests = {
       <svg class="w-5 h-5 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
       ใบเสนอราคา
     </h3>
+    <!-- ลิงก์คู่มือตรงจุดใช้งาน — เปิดแท็บใหม่ หน้าต่างดีลไม่หาย (2026-10-16) -->
+    <a href="manual-quote-request.html" target="_blank" rel="noopener" class="text-sm text-slate-500 hover:text-teal-700 no-underline mr-auto">ⓘ วิธีขอใบเสนอราคา</a>
     <button v-if="info?.can_request && !info.block_reason && !showForm" type="button" @click="openForm"
       class="px-4 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer min-h-[40px]">+ ขอใบเสนอราคา</button>
   </div>
@@ -1461,7 +1634,7 @@ const AppQuoteRequests = {
           <button type="button" @click="form.issue_by='salesadmin'" class="text-left px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
             :class="form.issue_by==='salesadmin' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">ให้ธุรการขายออกใบ<div class="text-xs font-normal text-slate-500">ระบบแจ้งธุรการให้ทันที</div></button>
           <button type="button" @click="form.issue_by='sale'" class="text-left px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
-            :class="form.issue_by==='sale' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">ฉันออกใบเอง<div class="text-xs font-normal text-slate-500">ไม่แจ้งธุรการ</div></button>
+            :class="form.issue_by==='sale' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">Sale ออกใบเอง<div class="text-xs font-normal text-slate-500">ไม่แจ้งธุรการ</div></button>
         </div>
       </div>
       <div v-if="info.quotations.length">
@@ -1477,7 +1650,7 @@ const AppQuoteRequests = {
         </select>
       </div>
       <div>
-        <label class="block text-sm font-semibold text-slate-700 mb-1">รายละเอียด <span v-if="form.issue_by==='salesadmin'" class="text-red-500">*</span><span v-else class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">รายละเอียด <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
         <textarea v-model="form.request_note" rows="3" placeholder="เช่น เก้าอี้รุ่น … 50 ตัว, ส่วนลด, เงื่อนไขการชำระเงิน, วันที่ลูกค้าต้องการใบ"
           class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
       </div>
@@ -1536,6 +1709,7 @@ const RECORD_TAB_ICONS = {
   quote:        '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
   announcement: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/>',
   history:      '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
+  files:        '<path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>',
 };
 const AppRecordTabs = {
   props: { modelValue: { type: String, default: '' }, tabs: { type: Array, default: () => [] } },

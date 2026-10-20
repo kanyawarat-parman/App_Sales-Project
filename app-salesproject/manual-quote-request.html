@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือ: ออกใบเสนอราคางานโครงการ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <!-- page="manuals" ให้เมนูคู่มือการใช้งานยังเป็นสีที่เลือกอยู่ -->
+    <app-nav :user="currentUser" page="manuals" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <a href="manuals.html" class="text-sm text-slate-500 hover:text-teal-700 no-underline whitespace-nowrap">← คู่มือทั้งหมด</a>
+        <a href="manuals/quote-request.pdf" download="ขั้นตอนออกใบเสนอราคางานโครงการ.pdf"
+          class="ml-auto px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-teal-600 text-teal-700 hover:bg-teal-50 no-underline whitespace-nowrap">ดาวน์โหลด PDF</a>
+      </header>
+
+      <!-- คู่มือ: ขั้นตอนออกใบเสนอราคางานโครงการ (2026-10-16) — เนื้อหาเดียวกับ manuals/quote-request.pdf ที่ส่ง LINE กลุ่ม
+           แก้เนื้อหาที่นี่แล้วต้องสร้าง PDF ใหม่ให้ตรงกันด้วย -->
+      <main class="flex-1 w-full max-w-[820px] mx-auto px-4 pb-24 pt-6 md:px-6 md:py-8 flex flex-col gap-10 text-[17px] leading-relaxed text-slate-800">
+
+        <section class="flex flex-col gap-3">
+          <div class="text-sm font-semibold text-teal-700">ระบบงานขาย × ระบบใบเสนอราคา</div>
+          <h1 class="text-3xl font-bold m-0 leading-snug">ขั้นตอนออกใบเสนอราคางานโครงการ (แบบใหม่)</h1>
+          <p class="text-lg text-slate-600 m-0">ตั้งแต่ 16 ตุลาคม 2569 ใบเสนอราคาของ Sale ทีมโครงการ ต้องเริ่มจาก "คำขอใบเสนอราคา" ในดีลของระบบงานขายก่อนเสมอ แล้วจึงออกใบในระบบใบเสนอราคา</p>
+          <div class="text-sm text-slate-500">ผู้อ่าน: <b class="text-slate-700">Sale ทีมโครงการ · ธุรการขาย · หัวหน้าฝ่ายขาย</b></div>
+        </section>
+
+        <section class="flex flex-col gap-4">
+          <h2 class="text-xl font-bold m-0 pb-2 border-b-2 border-slate-200">เปลี่ยนอะไร</h2>
+          <div class="bg-teal-50 border-l-[5px] border-teal-700 rounded-r-xl px-5 py-4 flex flex-col gap-1">
+            <strong class="text-xl">ไม่มีดีล = ออกใบเสนอราคาไม่ได้</strong>
+            <p class="m-0">Sale ทีมโครงการต้องสร้างดีลในระบบงานขาย แล้วกด "ขอใบเสนอราคา" ในดีลนั้นก่อน ระบบใบเสนอราคาจึงจะยอมบันทึกใบ</p>
+          </div>
+          <p class="m-0"><b>เหตุผล:</b> ให้ทุกงานที่เสนอราคาอยู่ใน Pipeline ครบ หัวหน้าเห็นภาพรวมยอดขายจริง และรู้ว่าแต่ละงานขอใบเมื่อไร ใครรับเรื่อง ออกใบเมื่อไร</p>
+          <p class="m-0"><b>ผู้ที่ติดกฎ:</b> ใบที่ระบุรหัส Sale ของทีมโครงการ ไม่ว่าคนเปิดใบจะเป็นธุรการหรือ Sale เอง</p>
+          <ul class="m-0 pl-6 flex flex-col gap-1 list-disc">
+            <li>ใบที่สร้างก่อน 16 ต.ค. 2569 ใช้งาน แก้ไข และพิมพ์ได้ตามเดิม</li>
+            <li>ใบของทีมอื่นที่ไม่ใช่ทีมโครงการ ออกได้ตามเดิม</li>
+          </ul>
+        </section>
+
+        <section class="flex flex-col gap-4">
+          <h2 class="text-xl font-bold m-0 pb-2 border-b-2 border-slate-200">ขั้นตอนใหม่ ตั้งแต่ขอใบจนลูกค้ายืนยัน</h2>
+          <ol class="m-0 p-0 list-none flex flex-col">
+            <li v-for="(s, i) in steps" :key="i" class="grid grid-cols-[44px_1fr] gap-4 relative" :class="i < steps.length - 1 ? 'pb-6' : ''">
+              <span v-if="i < steps.length - 1" class="absolute left-[21px] top-11 bottom-0 w-0.5 bg-slate-200"></span>
+              <span class="w-11 h-11 rounded-full bg-teal-700 text-white font-bold text-lg flex items-center justify-center">{{ i + 1 }}</span>
+              <div class="min-w-0 flex flex-col gap-1 pt-1">
+                <span class="w-fit px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ring-teal-600 text-teal-700">{{ s.who }}</span>
+                <h3 class="text-lg font-bold m-0">{{ s.title }}</h3>
+                <p v-if="s.where" class="m-0 text-slate-500 text-base" v-html="s.where"></p>
+                <p v-if="s.text" class="m-0">{{ s.text }}</p>
+                <ul v-if="s.items" class="m-0 pl-6 flex flex-col gap-1 list-[circle]">
+                  <li v-for="(it, j) in s.items" :key="j" v-html="it"></li>
+                </ul>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section class="flex flex-col gap-4">
+          <h2 class="text-xl font-bold m-0 pb-2 border-b-2 border-slate-200">ขอใบเสนอราคาได้เมื่อไร</h2>
+          <div class="overflow-x-auto bg-white rounded-xl ring-1 ring-slate-200">
+            <table class="w-full min-w-[520px] border-collapse text-base">
+              <thead class="bg-teal-50">
+                <tr><th class="text-left px-4 py-3">ประเภทงาน</th><th class="text-left px-4 py-3">ขอใบได้ตอนดีลอยู่สถานะ</th><th class="text-left px-4 py-3">หมายเหตุ</th></tr>
+              </thead>
+              <tbody>
+                <tr class="border-t border-slate-200 align-top">
+                  <td class="px-4 py-3">ขายตรง</td>
+                  <td class="px-4 py-3">สนใจ · ส่ง PI · ต่อรอง</td>
+                  <td class="px-4 py-3">ดีลที่ปิดแล้วหรือไม่สำเร็จ ขอใบไม่ได้</td>
+                </tr>
+                <tr class="border-t border-slate-200 align-top">
+                  <td class="px-4 py-3">งานประมูล</td>
+                  <td class="px-4 py-3">ชนะการประมูล เท่านั้น</td>
+                  <td class="px-4 py-3">ใบสำหรับยื่นซองทำในระบบ e-GP ส่วนใบของบริษัทออกหลังชนะ เพื่อทำสัญญาและเปิด SO</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ul class="m-0 pl-6 flex flex-col gap-1 list-disc">
+            <li>ดีลหนึ่งมีคำขอที่ยังไม่ออกใบได้ทีละ 1 รายการ</li>
+            <li>ถ้าดีลเลื่อนออกจากสถานะที่ขอได้ (เช่น ปิดดีล หรือไม่สำเร็จ) คำขอที่ค้างอยู่จะถูกยกเลิกให้เอง</li>
+            <li>ดีลที่มีคำขอใบเสนอราคาแล้ว ลบดีลไม่ได้</li>
+          </ul>
+        </section>
+
+        <section class="flex flex-col gap-4">
+          <h2 class="text-xl font-bold m-0 pb-2 border-b-2 border-slate-200">สิ่งที่แต่ละคนต้องทำ</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div v-for="r in roleTodos" :key="r.title" class="bg-white rounded-xl ring-1 ring-slate-200 px-5 py-4 flex flex-col gap-2 min-w-0">
+              <h3 class="text-lg font-bold m-0">{{ r.title }}</h3>
+              <ul class="m-0 pl-5 flex flex-col gap-1 list-disc">
+                <li v-for="(t, j) in r.items" :key="j">{{ t }}</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="flex flex-col gap-4">
+          <h2 class="text-xl font-bold m-0 pb-2 border-b-2 border-slate-200">คำถามที่พบบ่อย</h2>
+          <dl class="m-0 flex flex-col gap-5">
+            <div v-for="f in faqs" :key="f.q">
+              <dt class="font-bold text-lg">{{ f.q }}</dt>
+              <dd class="m-0 mt-1">{{ f.a }}</dd>
+            </div>
+          </dl>
+          <div class="bg-amber-50 ring-1 ring-amber-300 rounded-xl px-5 py-4">
+            <strong class="text-amber-800">เปิดหน้าแล้วไม่เห็นปุ่มหรือแท็บใหม่</strong>
+            <p class="m-0">กด Ctrl + F5 เพื่อโหลดหน้าใหม่ เบราว์เซอร์อาจยังจำหน้าเก่าไว้</p>
+          </div>
+        </section>
+
+        <footer class="text-sm text-slate-500 border-t border-slate-200 pt-4 flex items-center justify-between flex-wrap gap-2">
+          <span>สอบถามหรือแจ้งปัญหา: ผู้ดูแลระบบ · ปรับปรุงล่าสุด 16 ต.ค. 2569</span>
+          <a href="manuals.html" class="text-teal-700 font-semibold no-underline">← คู่มือทั้งหมด</a>
+        </footer>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=85"></script>
+<script>
+const { createApp } = Vue;
+// ชื่อปุ่ม/แท็บบนหน้าจอ แสดงตัวหนาในวงเล็บเหลี่ยม
+const ui = t => `<span class="whitespace-nowrap"><span class="text-slate-400">[</span><b>${t}</b><span class="text-slate-400">]</span></span>`;
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      steps: [
+        { who: 'Sale', title: 'สร้างดีล หรือเปิดดีลที่มีอยู่', where: 'ระบบงานขาย → งานขายตรง (หรืองานประมูลที่ชนะแล้ว)' },
+        { who: 'Sale', title: 'กดขอใบเสนอราคาในดีล', where: `หน้าต่างดีล → แท็บ ${ui('ใบเสนอราคา')} → ${ui('+ ขอใบเสนอราคา')}`, items: [
+          'เลือกผู้ออกใบ: <b>ให้ธุรการขายออกใบ</b> (ใส่รายละเอียดได้ เช่น รุ่นสินค้า จำนวน เงื่อนไข — ไม่บังคับ) หรือ <b>Sale ออกใบเอง</b>',
+          'เลือกประเภท: <b>ใบใหม่</b> หรือ <b>แก้ไขใบเดิม (Revision)</b> แล้วเลือกเลขใบเดิม',
+          'ได้เลขที่คำขอ เช่น QR-000012',
+        ] },
+        { who: 'ธุรการขาย', title: 'ได้รับแจ้งเตือนทันที', text: 'ถ้าเลือก "ให้ธุรการขายออกใบ" ธุรการขายทุกคนจะได้แจ้งเตือนผ่านกระดิ่ง และ LINE / อีเมลตามที่ตั้งไว้ กดแล้วเปิดคำขอนั้นได้เลย' },
+        { who: 'ธุรการขาย หรือ Sale ที่ออกเอง', title: 'ออกใบในระบบใบเสนอราคา', where: `ระบบใบเสนอราคา → แท็บ ${ui('รอเปิดใบเสนอราคา งาน Project')}`, items: [
+          `กด ${ui('เริ่มออกใบ')} ระบบเติมรหัสงาน (PJ) เลขที่คำขอ (QR) และ Sale ให้เอง แก้ไม่ได้`,
+          `ถ้าเคยบันทึกร่างไว้แล้ว ปุ่มจะเป็น ${ui('ทำต่อร่าง')}`,
+          'ใส่รายการสินค้าและราคาตามปกติ แล้วบันทึก',
+        ] },
+        { who: 'ระบบทำให้เอง', title: 'ผลกลับมาที่ดีล', items: [
+          'คำขอเปลี่ยนเป็น "ออกใบแล้ว" พร้อมเลขใบ (QT…) กดเลขใบเพื่อเปิดดูได้ (ต้องเข้าสู่ระบบใบเสนอราคา)',
+          '<b>ขายตรง:</b> ดีลที่อยู่ "สนใจ" เลื่อนเป็น "ส่ง PI" ให้เอง',
+          '<b>ขายตรง:</b> มูลค่าดีลเปลี่ยนเป็นยอดของใบล่าสุด (ยอดก่อน VAT) และบันทึกในประวัติดีล',
+          '<b>งานประมูล:</b> สถานะและมูลค่าไม่เปลี่ยน',
+          'ถ้าธุรการเป็นคนออกใบ Sale เจ้าของดีลได้แจ้งเตือนว่าออกใบแล้ว',
+        ] },
+        { who: 'Sale', title: 'ลูกค้ายืนยันใบ แล้วปิดดีล', text: 'เมื่อลูกค้ายืนยันใบในระบบใบเสนอราคา การ์ดดีลจะขึ้นป้าย "ลูกค้ายืนยันใบ … แล้ว — กดปิดดีล" ระบบไม่ปิดดีลให้เอง Sale ต้องกดปิดดีลเอง' },
+      ],
+      roleTodos: [
+        { title: 'Sale ทีมโครงการ', items: [
+          'ก่อนออกใบทุกครั้ง ต้องมีดีลในระบบงานขาย',
+          'ขอใบจากแท็บ "ใบเสนอราคา" ในดีล',
+          'จะแก้ใบเดิม (Revision) ก็ต้องขอแบบ "แก้ไขใบเดิม" ก่อนเช่นกัน',
+          'เลื่อนสถานะดีลต่อเอง เช่น ต่อรอง ปิดดีล',
+        ] },
+        { title: 'ธุรการขาย', items: [
+          'ดูงานที่ต้องออกใบที่แท็บ "รอเปิดใบเสนอราคา งาน Project" ในระบบใบเสนอราคา',
+          'เริ่มออกใบจากปุ่มในแท็บนั้นเท่านั้น ไม่เปิดใบเปล่าเอง',
+          'ติดตามคำขอทั้งหมดได้ที่เมนู "คำขอใบเสนอราคา" ในระบบงานขาย',
+        ] },
+        { title: 'หัวหน้าฝ่ายขาย', items: [
+          'ใบเสนอราคาทุกใบของทีมโครงการผูกกับดีล มูลค่าใน Pipeline จึงตรงกับใบล่าสุด',
+          'ดูเวลาขอ รับเรื่อง และออกใบของแต่ละคำขอได้ที่เมนู "คำขอใบเสนอราคา"',
+        ] },
+      ],
+      faqs: [
+        { q: 'เปิดใบเสนอราคาเองโดยไม่มีคำขอ จะเป็นอย่างไร', a: 'บันทึกไม่ได้ ระบบใบเสนอราคาจะขึ้นหน้าต่างแจ้งว่าต้องออกจากคำขอในดีล พร้อมปุ่มพาไปแท็บ "รอเปิดใบเสนอราคา งาน Project"' },
+        { q: 'ใบเก่าที่ทำไว้ก่อน 16 ต.ค. 2569 ล่ะ', a: 'ใช้ได้ตามเดิมทุกอย่าง ทั้งเปิดดู พิมพ์ และแก้ไข ไม่ต้องย้อนไปสร้างดีล' },
+        { q: 'ทำ Revision (แก้ไขใบ) แล้วสถานะดีลเปลี่ยนไหม', a: 'ไม่เปลี่ยน มูลค่าดีลอัปเดตเป็นยอดของใบล่าสุดให้ ส่วนสถานะ Sale เลื่อนเอง' },
+        { q: 'ขอใบแล้ว ดีลเปลี่ยนเป็น "ส่ง PI" เลยไหม', a: 'ยังไม่เปลี่ยน ดีลเปลี่ยนเป็น "ส่ง PI" ตอนออกใบเสร็จแล้วเท่านั้น (เฉพาะดีลขายตรงที่ยังอยู่ "สนใจ")' },
+        { q: 'ถ้าระบบงานขายใช้งานไม่ได้ ต้องออกใบด่วน', a: 'แจ้งผู้ดูแลระบบ ผู้ดูแลกดปลดล็อกชั่วคราวในระบบใบเสนอราคาได้ (หมดอายุ 23:59 น. ของวันนั้น) ระบบจดไว้ว่าใบไหนออกช่วงปลดล็อก เพื่อตรวจย้อนหลังได้' },
+        { q: 'กดเลขใบ QT ในดีลแล้วขึ้นหน้าเข้าสู่ระบบ', a: 'ปกติ เพราะใบเสนอราคาดูได้เฉพาะคนที่เข้าสู่ระบบใบเสนอราคาแล้ว เข้าสู่ระบบแล้วจะเปิดใบนั้นให้เอง' },
+      ],
+    };
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+  },
+  methods: {
+    ...SharedMethods,
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
