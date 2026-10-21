@@ -1,0 +1,3070 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1e3a8a">
+<meta name="description" content="ระบบจัดการประกาศจัดซื้อเฟอร์นิเจอร์ภาครัฐ">
+<title>ระบบจัดการประกาศ e-Bidding เฟอร์นิเจอร์</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-152.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        primary: { 50:'#eff6ff',100:'#dbeafe',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e40af',900:'#1e3a8a' }
+      },
+      fontFamily: { sans: ['Sarabun','Noto Sans Thai','sans-serif'] }
+    }
+  }
+}
+</script>
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- DataTables -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+
+<style>
+/* ============ BASE ============ */
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; background: #f6f4fc; margin: 0; }
+
+/* ============ SCROLLBAR ============ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f0ecf8; }
+::-webkit-scrollbar-thumb { background: #c8b8e0; border-radius: 3px; }
+
+/* ============ SIDEBAR ============ */
+.sidebar { width: 240px; min-height: 100vh; background: linear-gradient(180deg,#ccd8f8 0%,#e4d0f8 100%); position: fixed; top: 0; left: 0; z-index: 40; display: flex; flex-direction: column; transition: transform .25s; border-right: 1px solid #c0c8ec; }
+.sidebar-logo { padding: 1.25rem 1rem; border-bottom: 1px solid rgba(70,60,120,.12); }
+.sidebar-logo h1 { color: #3c5878; font-size: .9rem; font-weight: 700; line-height: 1.4; margin: 0; }
+.sidebar-nav { flex: 1; padding: .75rem 0; overflow-y: auto; }
+.nav-item { display: flex; align-items: center; gap: .75rem; padding: .65rem 1.25rem; color: rgba(60,70,110,.65); cursor: pointer; transition: all .15s; font-size: .9rem; border-radius: 0; position: relative; text-decoration: none; }
+.nav-item:hover { background: rgba(60,70,110,.09); color: #3c5878; }
+.nav-item.active { background: rgba(60,70,110,.13); color: #3c5878; font-weight: 600; }
+.nav-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #8ab8e0; border-radius: 0 2px 2px 0; }
+.nav-icon { width: 20px; text-align: center; font-size: 1.1rem; }
+.sidebar-footer { padding: 1rem; border-top: 1px solid rgba(70,60,120,.12); }
+.user-chip { display: flex; align-items: center; gap: .6rem; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; color: #fff; flex-shrink: 0; }
+
+/* ============ MAIN LAYOUT ============ */
+.main-content { margin-left: 240px; min-height: 100vh; display: flex; flex-direction: column; }
+.topbar { background: #fff; border-bottom: 1px solid #dcd4f0; padding: .75rem 1.5rem; display: flex; align-items: center; gap: 1rem; position: sticky; top: 0; z-index: 30; }
+.topbar h2 { margin: 0; font-size: 1.1rem; font-weight: 700; color: #445870; flex: 1; }
+.content-area { flex: 1; padding: 1.5rem; }
+
+/* ============ CARDS ============ */
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(70,60,110,.07); }
+.card-header { padding: 1rem 1.25rem; border-bottom: 1px solid #ece8f8; font-weight: 600; color: #445870; font-size: .95rem; display: flex; align-items: center; justify-content: space-between; }
+.card-body { padding: 1.25rem; }
+
+/* ============ STAT CARDS ============ */
+.stat-card { background: #fff; border-radius: 12px; padding: 1.25rem; box-shadow: 0 1px 4px rgba(70,60,110,.07); position: relative; overflow: hidden; }
+.stat-card .bg-icon { position: absolute; right: -8px; bottom: -8px; font-size: 4rem; opacity: .08; }
+.stat-value { font-size: 2rem; font-weight: 800; line-height: 1; }
+.stat-label { font-size: .8rem; color: #8898b8; margin-top: .25rem; }
+
+/* ============ DATATABLES OVERRIDE ============ */
+.dataTables_wrapper { font-size: .875rem; }
+.dataTables_wrapper .dataTables_filter input { border: 1px solid #d4cce8; border-radius: 6px; padding: .35rem .7rem; outline: none; }
+.dataTables_wrapper .dataTables_filter input:focus { border-color: #8ab8e0; box-shadow: 0 0 0 3px rgba(138,184,224,.15); }
+.dataTables_wrapper .dataTables_length select { border: 1px solid #d4cce8; border-radius: 6px; padding: .3rem .5rem; }
+table.dataTable thead th { background: #f3f0fc; color: #6878a8; font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; border-bottom: 2px solid #d4cce8 !important; padding: .75rem 1rem; }
+table.dataTable tbody tr:hover { background: #eee8fc; }
+table.dataTable tbody td { padding: .65rem 1rem; vertical-align: middle; border-bottom: 1px solid #ece8f8 !important; }
+.dataTables_paginate .paginate_button { border-radius: 6px !important; margin: 0 2px !important; }
+.dataTables_paginate .paginate_button.current { background: #8ab8e0 !important; color: #fff !important; border-color: #8ab8e0 !important; }
+.dataTables_processing { background: rgba(255,255,255,.9) !important; border: 1px solid #d4cce8 !important; border-radius: 8px; padding: 1rem !important; }
+
+/* ============ BADGES ============ */
+.badge { display: inline-flex; align-items: center; padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 600; line-height: 1.4; }
+
+/* ============ BUTTONS ============ */
+.btn { display: inline-flex; align-items: center; gap: .4rem; padding: .5rem 1rem; border-radius: 8px; font-size: .875rem; font-weight: 500; border: none; cursor: pointer; transition: all .15s; text-decoration: none; }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+.btn-primary { background: #8ab8e0; color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #7aacd8; }
+.btn-success { background: #7cc898; color: #fff; }
+.btn-success:hover:not(:disabled) { background: #6cb888; }
+.btn-danger  { background: #e08898; color: #fff; }
+.btn-danger:hover:not(:disabled)  { background: #d07888; }
+.btn-outline { background: transparent; border: 1px solid #d4cce8; color: #6878a8; }
+.btn-outline:hover:not(:disabled) { background: #f3f0fc; }
+.btn-sm { padding: .3rem .7rem; font-size: .8rem; }
+.btn-icon { padding: .45rem; }
+
+/* ============ FORMS ============ */
+.form-group { margin-bottom: 1rem; }
+.form-label { display: block; font-size: .85rem; font-weight: 600; color: #506080; margin-bottom: .35rem; }
+.form-control { width: 100%; border: 1px solid #c4b8e4; border-radius: 8px; padding: .55rem .85rem; font-size: .9rem; font-family: inherit; color: #445870; outline: none; transition: border-color .15s; background: #fff; }
+.form-control:focus { border-color: #8ab8e0; box-shadow: 0 0 0 3px rgba(138,184,224,.12); }
+select.form-control { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right .75rem center; padding-right: 2.2rem; }
+
+/* ============ MODAL ============ */
+.modal-overlay { position: fixed; inset: 0; background: rgba(60,50,100,.35); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.modal-box { background: #fff; border-radius: 14px; width: 100%; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(70,60,110,.18); }
+.modal-sm { max-width: 440px; }
+.modal-md { max-width: 600px; }
+.modal-lg { max-width: 800px; }
+.modal-header { padding: 1.1rem 1.5rem; border-bottom: 1px solid #ece8f8; display: flex; align-items: center; justify-content: space-between; }
+.modal-header h3 { font-size: 1rem; font-weight: 700; color: #445870; margin: 0; }
+.modal-body { flex: 1; overflow-y: auto; padding: 1.5rem; }
+.modal-footer { padding: 1rem 1.5rem; border-top: 1px solid #ece8f8; display: flex; justify-content: flex-end; gap: .75rem; }
+.modal-close { background: none; border: none; color: #a8a0c8; cursor: pointer; font-size: 1.4rem; line-height: 1; padding: 0; }
+.modal-close:hover { color: #506080; }
+
+/* ============ DETAIL SECTION ============ */
+.detail-section { margin-bottom: 1.25rem; }
+.detail-section-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #8898b8; margin-bottom: .5rem; border-bottom: 1px solid #ece8f8; padding-bottom: .35rem; }
+.detail-row { display: grid; grid-template-columns: 130px 1fr; gap: .4rem; padding: .3rem 0; font-size: .875rem; }
+.detail-label { color: #8898b8; font-weight: 500; }
+.detail-value { color: #445870; }
+.detail-text { background: #f3f0fc; border-radius: 6px; padding: .6rem .8rem; font-size: .85rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+
+/* ============ ASSIGNMENT CARDS ============ */
+.assignment-card { border: 1px solid #d4cce8; border-radius: 10px; padding: 1rem; transition: all .15s; background: #fff; cursor: pointer; }
+.assignment-card:hover { border-color: #a8c4e4; box-shadow: 0 2px 8px rgba(138,184,224,.12); }
+.assignment-card.sla-breach { border-left: 3px solid #e08898; }
+.assignment-card.sla-warn   { border-left: 3px solid #e8b87a; }
+
+/* ============ HISTORY ============ */
+.history-item { display: flex; gap: .75rem; position: relative; padding-bottom: .75rem; }
+.history-item:not(:last-child)::before { content: ''; position: absolute; left: 14px; top: 28px; bottom: 0; width: 1px; background: #d4cce8; }
+.history-dot { width: 28px; height: 28px; border-radius: 50%; background: #d4cce8; display: flex; align-items: center; justify-content: center; font-size: .7rem; flex-shrink: 0; }
+
+/* ============ TOAST ============ */
+.toast { position: fixed; bottom: 5rem; right: 1.25rem; z-index: 200; padding: .85rem 1.25rem; border-radius: 10px; font-size: .9rem; font-weight: 500; box-shadow: 0 4px 16px rgba(70,60,110,.18); max-width: 320px; animation: slideup .25s ease; }
+.toast-success { background: #7cc898; color: #fff; }
+.toast-error   { background: #e08898; color: #fff; }
+.toast-info    { background: #8ab8e0; color: #fff; }
+@keyframes slideup { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* ============ MOBILE ============ */
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { margin-left: 0; padding-bottom: 5rem; }
+  .content-area { padding: .875rem; }
+  .topbar { padding: .65rem 1rem; }
+  .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 39; display: none; }
+  .sidebar-overlay.show { display: block; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #dcd4f0; display: flex; z-index: 50; height: 56px; }
+  .bottom-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #a8a0c8; font-size: .65rem; cursor: pointer; transition: color .15s; border: none; background: none; padding: 0; }
+  .bottom-nav-item.active { color: #8ab8e0; }
+  .bottom-nav-item .bn-icon { font-size: 1.2rem; }
+  .modal-box { max-height: 88vh; }
+}
+@media (min-width: 769px) {
+  .bottom-nav { display: none; }
+  .hamburger-btn { display: none; }
+}
+
+/* ============ LOGIN ============ */
+.login-bg { min-height: 100vh; background: linear-gradient(135deg,#b8a8e8 0%,#c8d8f8 100%); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.login-card { background: #fff; border-radius: 16px; padding: 2.5rem 2rem; width: 100%; max-width: 380px; box-shadow: 0 16px 48px rgba(70,60,110,.16); }
+.login-logo { text-align: center; margin-bottom: 1.75rem; }
+.login-logo h1 { font-size: 1.35rem; font-weight: 800; color: #3c5878; margin: .5rem 0 .25rem; }
+.login-logo p { font-size: .85rem; color: #8898b8; margin: 0; }
+
+/* ============ LOADING SPINNER ============ */
+.spinner { width: 36px; height: 36px; border: 3px solid #d4cce8; border-top-color: #8ab8e0; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============ TABS ============ */
+.tab-bar { display: flex; border-bottom: 2px solid #d4cce8; gap: 0; overflow-x: auto; }
+.tab-item { padding: .6rem 1.1rem; font-size: .875rem; font-weight: 500; color: #8898b8; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; transition: all .15s; }
+.tab-item:hover { color: #6080b0; }
+.tab-item.active { color: #6080b0; border-bottom-color: #8ab8e0; font-weight: 600; }
+
+/* ============ EMPTY STATE ============ */
+.empty-state { text-align: center; padding: 3rem 1rem; }
+.empty-state .empty-icon { font-size: 3.5rem; margin-bottom: .75rem; }
+.empty-state p { color: #8898b8; margin: 0; }
+
+/* ============ PIPELINE KANBAN ============ */
+.pipeline-kanban { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; }
+.pipeline-col { min-width: 215px; flex-shrink: 0; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; max-height: calc(100vh - 220px); }
+.pipeline-col-header { padding: 9px 14px; color: #fff; font-size: .83rem; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+.pipeline-col-sub { padding: 3px 14px; font-size: .72rem; font-weight: 600; color: rgba(255,255,255,.85); }
+.pipeline-col-body { background: #eee8fc; padding: 6px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 80px; }
+.pipeline-card { background: #fff; border-radius: 8px; padding: 9px 10px; border: 1px solid #d4cce8; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.pipeline-card:hover { border-color: #a8c4e4; box-shadow: 0 2px 8px rgba(138,184,224,.12); }
+.pipeline-card-name { font-weight: 700; font-size: .8rem; line-height: 1.4; margin-bottom: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: #445870; }
+.pipeline-card-price { font-size: .77rem; color: #7cc898; font-weight: 600; margin-bottom: 2px; }
+.pipeline-card-unit { font-size: .72rem; color: #8898b8; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.pipeline-card-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 5px; border-top: 1px solid #ece8f8; margin-top: 4px; }
+.pipeline-card-btns { display: flex; gap: 3px; margin-top: 5px; }
+.pcbtn { border-radius: 5px; font-size: .7rem; font-weight: 600; padding: 2px 6px; cursor: pointer; border: 1px solid; transition: all .12s; }
+.pcbtn-gray  { background:#f3f0fc; border-color:#d4cce8; color:#8898b8; }
+.pcbtn-blue  { background:#eee8fc; border-color:#b8b8e4; color:#6080b0; border: none; }
+.pcbtn-green { background:#e0f4ec; border-color:#a0d8b8; color:#4e9870; border: none; }
+.pcbtn-red   { background:#fce0e8; border-color:#e8a8c0; color:#c07080; border: none; }
+.col-cnt { background: rgba(255,255,255,.22); border-radius: 10px; padding: 1px 8px; font-size: .75rem; font-weight: 700; }
+.pipeline-empty { text-align:center; padding: 1.25rem .5rem; color: #a8a0c8; font-size: .78rem; }
+
+/* ===== SALES PIPELINE ===== */
+.sp-header-bar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem; margin-bottom:1.25rem; }
+.sp-title { font-size:1.3rem; font-weight:700; color:#445870; }
+.sp-add-btn { background:#7cc898; color:#fff; border:none; border-radius:10px; padding:.75rem 1.5rem; font-size:1rem; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:.5rem; transition:background .15s; min-height:48px; }
+.sp-add-btn:hover { background:#6cb888; }
+.sp-stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:.75rem; margin-bottom:1.25rem; }
+.sp-stat { background:#fff; border-radius:12px; padding:1rem 1.25rem; border:1.5px solid #d4cce8; text-align:center; }
+.sp-stat-val { font-size:1.6rem; font-weight:800; line-height:1; margin-bottom:.3rem; }
+.sp-stat-lbl { font-size:.82rem; color:#8898b8; font-weight:500; }
+.sp-filter-row { display:flex; align-items:center; flex-wrap:wrap; gap:.6rem; margin-bottom:1rem; background:#fff; border-radius:10px; padding:.75rem 1rem; border:1px solid #d4cce8; }
+.sp-filter-row label { font-size:.9rem; font-weight:700; color:#6878a8; white-space:nowrap; }
+.sp-filter-group { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+.sp-filter-divider { width:1px; height:28px; background:#d4cce8; margin:0 .25rem; }
+.sp-chips { display:flex; flex-wrap:wrap; gap:.35rem; }
+.sp-chip { border:1.5px solid #c4b8e4; border-radius:20px; padding:.3rem .9rem; font-size:.875rem; font-weight:600; cursor:pointer; background:#fff; color:#8898b8; min-height:36px; transition:all .15s; white-space:nowrap; line-height:1.4; }
+.sp-chip:hover:not(.active) { border-color:#8ab8e0; color:#8ab8e0; background:#eee8fc; }
+.sp-chip.active { background:#8ab8e0; color:#fff; border-color:#8ab8e0; }
+.sp-chip.active-green { background:#7cc898; color:#fff; border-color:#7cc898; }
+.sp-select { border:1.5px solid #c4b8e4; border-radius:8px; padding:.45rem .75rem; font-size:.9rem; color:#445870; min-height:40px; background:#fff; cursor:pointer; }
+.sp-view-btn { padding:.45rem 1rem; border-radius:8px; font-size:.9rem; font-weight:600; cursor:pointer; border:1.5px solid #c4b8e4; min-height:40px; transition:all .15s; }
+.sp-section { margin-bottom:1rem; border-radius:10px; overflow:hidden; border:1px solid #d4cce8; }
+.sp-section-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem; padding:.65rem 1rem; color:#fff; font-weight:700; font-size:1rem; }
+.sp-section-head-blue { background:#7aacd8; }
+.sp-section-head-green { background:#6cb888; }
+.sp-section-body { background:#f3f0fc; padding:12px; overflow-x:auto; }
+.sp-section-body-blue  { background:#eee8fc; }
+.sp-section-body-green { background:#e4f8ec; }
+.sp-section-chips { display:flex; gap:.3rem; flex-wrap:wrap; align-items:center; }
+.sp-section-chip { border:1.5px solid rgba(255,255,255,.5); border-radius:16px; padding:.2rem .7rem; font-size:.8rem; font-weight:600; cursor:pointer; color:#fff; background:transparent; white-space:nowrap; transition:all .12s; }
+.sp-section-chip.active { background:#fff; color:#6cb888; border-color:#fff; }
+.sp-section-chip-blue.active { background:#fff; color:#7aacd8; border-color:#fff; }
+.sp-kanban { display:flex; gap:12px; overflow-x:auto; padding-bottom:12px; align-items:flex-start; }
+.sp-col { min-width:250px; flex-shrink:0; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; max-height:calc(100vh - 280px); }
+.sp-col-head { padding:10px 14px; color:#fff; font-size:.95rem; font-weight:700; display:flex; justify-content:space-between; align-items:center; }
+.sp-col-sub { padding:4px 14px 6px; font-size:.8rem; font-weight:600; color:rgba(255,255,255,.9); }
+.sp-col-body { background:#ece8f8; padding:8px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; min-height:100px; }
+.sp-empty { text-align:center; padding:1.5rem .5rem; color:#a8a0c8; font-size:.9rem; }
+.sp-card { background:#fff; border-radius:10px; padding:14px; border:1.5px solid #d4cce8; transition:border-color .15s, box-shadow .15s; }
+.sp-card:hover { border-color:#a8c4e4; box-shadow:0 3px 10px rgba(138,184,224,.12); }
+.sp-card-title { font-weight:700; font-size:.95rem; line-height:1.45; margin-bottom:4px; color:#445870; }
+.sp-card-client { font-size:.85rem; color:#6878a8; margin-bottom:6px; }
+.sp-card-value { font-size:1.1rem; font-weight:800; color:#7cc898; margin-bottom:8px; }
+.sp-card-badges { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px; }
+.sp-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:.75rem; font-weight:600; }
+.sp-card-action { width:100%; border:none; border-radius:8px; padding:.6rem; font-size:.9rem; font-weight:700; cursor:pointer; transition:all .15s; display:flex; align-items:center; justify-content:center; gap:.4rem; min-height:40px; }
+.sp-card-action-row { display:flex; gap:6px; margin-top:6px; }
+.sp-card-action-row .sp-card-action { flex:1; }
+.sp-btn-next  { background:#eee8fc; color:#6080b0; border:1.5px solid #b8b8e4; }
+.sp-btn-next:hover  { background:#d8d4f8; }
+.sp-btn-won   { background:#e0f4ec; border:1.5px solid #a0d8b8; color:#4e9870; }
+.sp-btn-won:hover   { background:#ccecd8; }
+.sp-btn-lost  { background:#fce0e8; color:#c07080; border:1.5px solid #e8a8c0; }
+.sp-btn-lost:hover  { background:#f8d0e0; }
+.sp-btn-edit  { background:#f3f0fc; color:#6878a8; border:1.5px solid #d4cce8; }
+.sp-btn-edit:hover  { background:#ece8f8; }
+.sp-table { width:100%; border-collapse:collapse; font-size:.9rem; }
+.sp-table th { background:#f3f0fc; padding:.7rem 1rem; text-align:left; font-size:.82rem; font-weight:700; color:#6878a8; border-bottom:2px solid #d4cce8; white-space:nowrap; }
+.sp-table td { padding:.75rem 1rem; border-bottom:1px solid #ece8f8; vertical-align:middle; }
+.sp-table tr:hover td { background:#f3f0fc; }
+.sp-form-section { margin-bottom:1.25rem; }
+.sp-form-title { font-size:1rem; font-weight:700; color:#445870; margin-bottom:.75rem; padding-bottom:.5rem; border-bottom:2px solid #ece8f8; }
+.sp-form-label { display:block; font-size:.95rem; font-weight:600; color:#506080; margin-bottom:.4rem; }
+.sp-form-hint { font-size:.8rem; color:#8898b8; margin-top:.25rem; }
+.sp-form-control { width:100%; border:1.5px solid #c4b8e4; border-radius:8px; padding:.65rem .9rem; font-size:.95rem; color:#445870; min-height:44px; background:#fff; }
+.sp-form-control:focus { outline:none; border-color:#8ab8e0; box-shadow:0 0 0 3px rgba(138,184,224,.1); }
+.sp-source-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; }
+.sp-source-btn { border:1.5px solid #d4cce8; border-radius:8px; padding:.6rem .5rem; text-align:center; cursor:pointer; transition:all .15s; font-size:.85rem; background:#fff; }
+.sp-source-btn.active { border-color:#8ab8e0; background:#eee8fc; color:#6080b0; font-weight:600; }
+.sp-stage-sel { display:flex; flex-wrap:wrap; gap:.4rem; }
+.sp-stage-pill { padding:.4rem .9rem; border-radius:20px; border:1.5px solid #d4cce8; font-size:.85rem; cursor:pointer; background:#fff; transition:all .15s; }
+.sp-stage-pill.active { color:#fff; border-color:transparent; font-weight:600; }
+.sp-confirm { background:#fff; border-radius:14px; padding:1.75rem; max-width:380px; width:90%; text-align:center; box-shadow:0 16px 48px rgba(70,60,110,.16); }
+.sp-confirm-icon { font-size:2.5rem; margin-bottom:.75rem; }
+.sp-confirm-title { font-size:1.15rem; font-weight:700; color:#445870; margin-bottom:.5rem; }
+.sp-confirm-sub { font-size:.9rem; color:#6878a8; margin-bottom:1.25rem; line-height:1.5; }
+.sp-confirm-btns { display:flex; gap:.75rem; }
+.sp-confirm-btns button { flex:1; padding:.75rem; border-radius:10px; font-size:1rem; font-weight:700; cursor:pointer; border:none; min-height:48px; }
+
+@media(max-width:640px) {
+  .sp-stats-row { grid-template-columns:repeat(2,1fr); }
+  .sp-stat-val { font-size:1.3rem; }
+  .sp-col { min-width:220px; }
+  .sp-source-grid { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ===================== LOADING ===================== -->
+  <div v-if="!authChecked" class="login-bg">
+    <div class="spinner" style="width:48px;height:48px"></div>
+  </div>
+
+  <!-- ===================== LOGIN ===================== -->
+  <div v-else-if="!currentUser" class="login-bg">
+    <div class="login-card">
+      <div class="login-logo">
+        <div style="font-size:3rem">📋</div>
+        <h1>ระบบจัดการประกาศ<br>e-Bidding เฟอร์นิเจอร์</h1>
+        <p>กรุณาเข้าสู่ระบบเพื่อดำเนินการ</p>
+      </div>
+      <form @submit.prevent="doLogin">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input v-model="loginForm.username" class="form-control" type="text" placeholder="กรอก username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input v-model="loginForm.password" class="form-control" type="password" placeholder="กรอก password" autocomplete="current-password" required>
+        </div>
+        <div v-if="loginForm.error" class="badge" style="background:#fee2e2;color:#991b1b;width:100%;justify-content:center;margin-bottom:.75rem;padding:.5rem">
+          {{ loginForm.error }}
+        </div>
+        <button type="submit" class="btn btn-primary w-full" style="width:100%;justify-content:center;padding:.7rem" :disabled="loginForm.loading">
+          <span v-if="loginForm.loading" class="spinner" style="width:16px;height:16px;border-width:2px"></span>
+          <span v-else>เข้าสู่ระบบ</span>
+        </button>
+      </form>
+      <p style="text-align:center;font-size:.75rem;color:#94a3b8;margin-top:1.5rem">
+        ระบบจัดการประกาศ e-Bidding เฟอร์นิเจอร์ v1.0.0
+      </p>
+    </div>
+  </div>
+
+  <!-- ===================== MAIN APP ===================== -->
+  <template v-else>
+    <!-- Sidebar Overlay (mobile) -->
+    <div class="sidebar-overlay" :class="{show: sidebarOpen}" @click="sidebarOpen=false"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" :class="{open: sidebarOpen}">
+      <div class="sidebar-logo">
+        <h1>📋 e-Bidding<br>เฟอร์นิเจอร์</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-item" :class="{active: currentView==='dashboard'}" @click="navigate('dashboard')">
+          <span class="nav-icon">🏠</span> ภาพรวม
+        </div>
+
+        <!-- SalesAdmin เท่านั้น: จัดการประกาศ + มอบหมาย -->
+        <template v-if="isSalesAdmin">
+          <div class="nav-item" :class="{active: currentView==='announcements'}" @click="navigate('announcements')">
+            <span class="nav-icon">📢</span> ประกาศวันนี้
+          </div>
+          <div class="nav-item" :class="{active: currentView==='assignments'}" @click="navigate('assignments')">
+            <span class="nav-icon">📋</span> จัดการงาน
+          </div>
+          <div class="nav-item" :class="{active: currentView==='import'}" @click="navigate('import')">
+            <span class="nav-icon">⬆️</span> นำเข้าข้อมูล
+          </div>
+        </template>
+
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:.5rem 1rem">
+
+        <!-- ทุก role เห็น งานขาย -->
+        <div class="nav-item" :class="{active: currentView==='sales-pipeline'}" @click="navigate('sales-pipeline')">
+          <span class="nav-icon">💼</span> งานขาย
+        </div>
+
+        <!-- SalesAdmin + Manager + Admin เห็น Pipeline e-Bidding -->
+        <div v-if="isSalesAdmin || isManager" class="nav-item" :class="{active: currentView==='pipeline'}" @click="navigate('pipeline')">
+          <span class="nav-icon">📊</span> Pipeline (e-Bidding)
+        </div>
+
+        <!-- Admin เท่านั้น: จัดการ Users -->
+        <template v-if="isAdmin">
+          <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:.5rem 1rem">
+          <div class="nav-item" :class="{active: currentView==='users'}" @click="navigate('users')">
+            <span class="nav-icon">👥</span> ผู้ใช้งาน
+          </div>
+        </template>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <div class="avatar" :style="{background: currentUser.avatar_color}">
+            {{ avatarInitials(currentUser.full_name) }}
+          </div>
+          <div style="flex:1;overflow:hidden">
+            <div style="color:#fff;font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ currentUser.full_name }}</div>
+            <div style="color:rgba(255,255,255,.6);font-size:.75rem">{{ currentUser.role }}</div>
+          </div>
+          <button @click="doLogout" title="ออกจากระบบ" style="background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:1.1rem" title="ออกจากระบบ">🚪</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <button class="hamburger-btn btn btn-outline btn-icon" @click="sidebarOpen=!sidebarOpen" aria-label="เมนู">☰</button>
+        <h2>{{ viewTitle }}</h2>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <div class="avatar" :style="{background:currentUser.avatar_color,width:'32px',height:'32px',fontSize:'.7rem'}">
+            {{ avatarInitials(currentUser.full_name) }}
+          </div>
+          <span style="font-size:.85rem;color:#475569;display:none" class="md:inline">{{ currentUser.full_name }}</span>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <main class="content-area">
+
+        <!-- ===== DASHBOARD ===== -->
+        <div v-show="currentView==='dashboard'">
+          <div v-if="!dashboardData" class="empty-state"><div class="spinner mx-auto"></div></div>
+          <template v-else>
+
+            <!-- ========== SALE KPI DASHBOARD ========== -->
+            <template v-if="currentUser?.role==='sale'">
+              <!-- KPI Row -->
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.875rem;margin-bottom:1rem">
+                <div class="stat-card" style="border-left:4px solid #3b82f6">
+                  <div class="stat-value text-blue-700">{{ dashboardData.active_count }}</div>
+                  <div class="stat-label">งานกำลังดำเนินการ</div>
+                  <div class="bg-icon">⚙️</div>
+                </div>
+                <div class="stat-card" style="border-left:4px solid #f59e0b">
+                  <div class="stat-value text-amber-600">{{ dashboardData.status_counts?.['รอดำเนินการ'] ?? 0 }}</div>
+                  <div class="stat-label">รอดำเนินการ</div>
+                  <div class="bg-icon">📋</div>
+                </div>
+                <div class="stat-card" style="border-left:4px solid #8b5cf6">
+                  <div class="stat-value" style="color:#8b5cf6">{{ dashboardData.status_counts?.['ยื่นข้อเสนอแล้ว'] ?? 0 }}</div>
+                  <div class="stat-label">ยื่นข้อเสนอแล้ว</div>
+                  <div class="bg-icon">📤</div>
+                </div>
+                <div class="stat-card" :style="(dashboardData.urgent_count??0)>0 ? 'border-left:4px solid #ef4444;border:1px solid #fca5a5' : 'border-left:4px solid #ef4444'">
+                  <div class="stat-value text-red-600">{{ dashboardData.urgent_count ?? 0 }}</div>
+                  <div class="stat-label">เร่งด่วน / SLA เกิน</div>
+                  <div class="bg-icon">⚠️</div>
+                </div>
+              </div>
+
+              <!-- Mid Row: Win Rate + Status + SLA -->
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.875rem;margin-bottom:1rem">
+                <!-- Win Rate -->
+                <div class="card">
+                  <div class="card-header">🏆 Win Rate</div>
+                  <div class="card-body" style="padding:1rem 1.25rem">
+                    <div style="font-size:2.8rem;font-weight:900;color:#16a34a;line-height:1">{{ dashboardData.win_rate ?? 0 }}%</div>
+                    <div style="font-size:.8rem;color:#64748b;margin:.3rem 0 .75rem">ชนะ {{ dashboardData.win_count ?? 0 }} จาก {{ (dashboardData.win_count??0)+(dashboardData.lose_count??0) }} ที่ตัดสินแล้ว</div>
+                    <div style="font-size:.72rem;color:#94a3b8;display:flex;justify-content:space-between;margin-bottom:3px">
+                      <span>ชนะ {{ dashboardData.win_count ?? 0 }}</span>
+                      <span>แพ้ {{ dashboardData.lose_count ?? 0 }}</span>
+                    </div>
+                    <div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden">
+                      <div :style="{width:(dashboardData.win_rate??0)+'%',height:'100%',background:'#16a34a',borderRadius:'99px'}"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Status breakdown -->
+                <div class="card">
+                  <div class="card-header">📊 สถานะงาน</div>
+                  <div class="card-body" style="padding:.75rem 1.25rem">
+                    <div v-for="row in saleStatusRows" :key="row.st"
+                      style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.8rem">
+                      <div :style="{width:'8px',height:'8px',borderRadius:'50%',background:row.color,flexShrink:0}"></div>
+                      <span style="flex:1">{{ row.st }}</span>
+                      <div style="flex:2;background:#e2e8f0;border-radius:99px;height:5px;overflow:hidden">
+                        <div :style="{width:row.pct+'%',height:'100%',background:row.color,borderRadius:'99px'}"></div>
+                      </div>
+                      <span style="font-weight:700;width:20px;text-align:right">{{ row.cnt }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- SLA Status -->
+                <div class="card">
+                  <div class="card-header">⏱ SLA Status</div>
+                  <div class="card-body" style="padding:.75rem 1.25rem">
+                    <div style="display:flex;align-items:center;gap:1rem">
+                      <!-- Ring -->
+                      <svg width="76" height="76" viewBox="0 0 80 80" style="transform:rotate(-90deg);flex-shrink:0">
+                        <circle cx="40" cy="40" r="32" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                        <circle cx="40" cy="40" r="32" fill="none" stroke="#16a34a" stroke-width="10"
+                          :stroke-dasharray="slaRingDash('ปกติ') + ' ' + (201 - slaRingDash('ปกติ'))" stroke-linecap="round"/>
+                        <circle cx="40" cy="40" r="32" fill="none" stroke="#f59e0b" stroke-width="10"
+                          :stroke-dasharray="'0 ' + slaRingDash('ปกติ') + ' ' + slaRingDash('ใกล้ถึง') + ' ' + (201 - slaRingDash('ปกติ') - slaRingDash('ใกล้ถึง'))" stroke-linecap="round"/>
+                        <circle cx="40" cy="40" r="32" fill="none" stroke="#ef4444" stroke-width="10"
+                          :stroke-dasharray="'0 ' + (slaRingDash('ปกติ')+slaRingDash('ใกล้ถึง')) + ' ' + slaRingDash('เกิน') + ' ' + (201 - slaRingDash('ปกติ') - slaRingDash('ใกล้ถึง') - slaRingDash('เกิน'))" stroke-linecap="round"/>
+                      </svg>
+                      <div style="position:relative;margin-left:-86px;width:76px;text-align:center;font-size:1rem;font-weight:800;color:#16a34a;pointer-events:none">
+                        {{ slaOkPct }}%
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:.5rem;font-size:.8rem">
+                        <div style="display:flex;justify-content:space-between;gap:.75rem">
+                          <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#16a34a;display:inline-block"></span>ปกติ</span>
+                          <strong style="color:#16a34a">{{ dashboardData.sla_breakdown?.ปกติ ?? 0 }}</strong>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;gap:.75rem">
+                          <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>ใกล้ถึง</span>
+                          <strong style="color:#d97706">{{ dashboardData.sla_breakdown?.['ใกล้ถึง'] ?? 0 }}</strong>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;gap:.75rem">
+                          <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block"></span>เกิน</span>
+                          <strong style="color:#ef4444">{{ dashboardData.sla_breakdown?.เกิน ?? 0 }}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bottom Row: Upcoming + Value -->
+              <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:.875rem">
+                <!-- Upcoming deadlines -->
+                <div class="card">
+                  <div class="card-header">
+                    ⏰ งานใกล้ครบกำหนด
+                    <button class="btn btn-outline btn-sm" @click="navigate('my-projects')">ดูทั้งหมด →</button>
+                  </div>
+                  <div class="card-body" style="padding:0">
+                    <div v-if="!dashboardData.upcoming?.length" class="empty-state" style="padding:1.5rem">
+                      <div class="empty-icon">📭</div><p>ไม่มีงานที่ต้องติดตาม</p>
+                    </div>
+                    <div v-for="item in dashboardData.upcoming" :key="item.id"
+                      style="display:flex;align-items:center;gap:.75rem;padding:.7rem 1.25rem;border-bottom:1px solid #f8fafc;font-size:.82rem"
+                      @click="openAssignmentDetail(item.id)" class="cursor-pointer hover-row">
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:.7rem;color:#94a3b8">{{ item.project_no }}</div>
+                        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.project_name }}</div>
+                      </div>
+                      <span class="badge"
+                        :style="item.sla_status==='เกิน' ? 'background:#fee2e2;color:#dc2626' : item.sla_status==='ใกล้ถึง' ? 'background:#fef3c7;color:#d97706' : 'background:#dcfce7;color:#16a34a'">
+                        {{ item.sla_status==='เกิน' ? '🔴 เกินแล้ว' : item.sla_status==='ใกล้ถึง' ? '🟡 ใกล้ถึง' : '🟢 ปกติ' }}
+                      </span>
+                      <div style="color:#64748b;font-size:.75rem;flex-shrink:0">{{ item.close_date }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Value Summary -->
+                <div class="card">
+                  <div class="card-header">💰 มูลค่างาน</div>
+                  <div class="card-body" style="padding:.75rem 1.25rem">
+                    <div v-for="row in saleValueRows" :key="row.field"
+                      style="display:flex;justify-content:space-between;align-items:baseline;padding:.55rem 0;border-bottom:1px solid #f1f5f9;font-size:.82rem">
+                      <span style="color:#64748b">{{ row.label }}</span>
+                      <span :style="{fontWeight:700, color:row.color}">{{ formatPrice(dashboardData.value_summary?.[row.field]) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- ========== SECRETARY / ADMIN DASHBOARD ========== -->
+            <template v-else>
+              <!-- Stat cards -->
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem">
+                <div class="stat-card">
+                  <div class="stat-value text-blue-700">{{ dashboardData.today_count }}</div>
+                  <div class="stat-label">ประกาศวันนี้</div>
+                  <div class="bg-icon">📢</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value text-green-700">{{ dashboardData.bid_stats?.['ได้'] ?? 0 }}</div>
+                  <div class="stat-label">เข้าประมูลได้</div>
+                  <div class="bg-icon">✅</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value text-amber-600">{{ dashboardData.active_count }}</div>
+                  <div class="stat-label">งานที่ดำเนินการอยู่</div>
+                  <div class="bg-icon">⚙️</div>
+                </div>
+                <div class="stat-card" :style="dashboardData.sla_breach>0 ? 'border:1px solid #fca5a5' : ''">
+                  <div class="stat-value" :class="dashboardData.sla_breach>0 ? 'text-red-600' : 'text-gray-400'">{{ dashboardData.sla_breach }}</div>
+                  <div class="stat-label">SLA เกินกำหนด</div>
+                  <div class="bg-icon">⚠️</div>
+                </div>
+                <div class="stat-card" v-if="isSecretary">
+                  <div class="stat-value text-purple-700">{{ dashboardData.unassigned_count ?? 0 }}</div>
+                  <div class="stat-label">รอมอบหมาย</div>
+                  <div class="bg-icon">📌</div>
+                </div>
+              </div>
+
+              <!-- Status summary (secretary) -->
+              <div v-if="isSecretary && dashboardData.status_stats" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem">
+                <div class="card">
+                  <div class="card-header">สถานะงานทั้งหมด</div>
+                  <div class="card-body" style="padding:.75rem 1.25rem">
+                    <div v-for="(cnt, status) in dashboardData.status_stats" :key="status"
+                      style="display:flex;justify-content:space-between;align-items:center;padding:.35rem 0;border-bottom:1px solid #f1f5f9">
+                      <span><span class="badge" :class="statusBadge(status)">{{ status }}</span></span>
+                      <strong style="font-size:1.1rem">{{ cnt }}</strong>
+                    </div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-header">ประกาศวันนี้แยกตามประเภท</div>
+                  <div class="card-body" style="padding:.75rem 1.25rem">
+                    <div v-for="(cnt, cat) in dashboardData.bid_stats" :key="cat"
+                      style="display:flex;justify-content:space-between;align-items:center;padding:.35rem 0;border-bottom:1px solid #f1f5f9">
+                      <span><span class="badge" :class="canBidBadge(cat)">{{ cat }}</span></span>
+                      <strong style="font-size:1.1rem">{{ cnt }}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Recent assignments -->
+              <div class="card">
+                <div class="card-header">
+                  งานล่าสุด
+                  <button class="btn btn-outline btn-sm" @click="isSecretary ? navigate('assignments') : navigate('my-projects')">ดูทั้งหมด →</button>
+                </div>
+                <div class="card-body" style="padding:0">
+                  <div v-if="!dashboardData.recent?.length" class="empty-state">
+                    <div class="empty-icon">📭</div><p>ยังไม่มีงาน</p>
+                  </div>
+                  <div v-for="item in dashboardData.recent" :key="item.id"
+                    style="padding:.85rem 1.25rem;border-bottom:1px solid #f8fafc;display:flex;align-items:center;gap:.75rem">
+                    <div v-if="item.sale_color" class="avatar" :style="{background:item.avatar_color??item.sale_color??'#94a3b8',width:'32px',height:'32px',fontSize:'.7rem'}">
+                      {{ avatarInitials(item.sale_name) }}
+                    </div>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-size:.875rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.project_name }}</div>
+                      <div style="font-size:.75rem;color:#64748b">ปิดรับ: {{ item.close_date }} · ราคากลาง: {{ formatPrice(item.price_median) }}</div>
+                    </div>
+                    <div style="display:flex;gap:.4rem;flex-shrink:0">
+                      <span class="badge" :class="statusBadge(item.status)">{{ item.status }}</span>
+                      <span class="badge" :class="slaClass(item.sla_status)" style="background:transparent">{{ item.sla_status === 'เกิน' ? '🔴' : item.sla_status === 'ใกล้ถึง' ? '🟡' : '🟢' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+          </template>
+        </div>
+
+        <!-- ===== ANNOUNCEMENTS (DataTables) ===== -->
+        <div v-show="currentView==='announcements'">
+          <!-- Filters bar -->
+          <div class="card" style="margin-bottom:1rem">
+            <div class="card-body" style="padding:.875rem 1.25rem">
+              <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end">
+                <div>
+                  <label class="form-label" style="margin-bottom:.2rem">วันที่ประกาศ</label>
+                  <input type="date" v-model="annDate" class="form-control" style="width:auto">
+                </div>
+                <div>
+                  <label class="form-label" style="margin-bottom:.2rem">สถานะการกรอง</label>
+                  <select v-model="annFilterStatus" class="form-control" style="width:auto">
+                    <option value="">ทั้งหมด</option>
+                    <option value="ตรง">ตรง</option>
+                    <option value="ต้องตรวจสอบ">ต้องตรวจสอบ</option>
+                    <option value="ไม่ตรง">ไม่ตรง</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" style="margin-bottom:.2rem">เข้าประมูล</label>
+                  <select v-model="annCanBid" class="form-control" style="width:auto">
+                    <option value="">ทั้งหมด</option>
+                    <option value="ได้">ได้</option>
+                    <option value="ต้องตรวจสอบ">ต้องตรวจสอบ</option>
+                    <option value="ไม่ได้">ไม่ได้</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" @click="reloadDatatable">🔍 กรอง</button>
+                <button class="btn btn-outline" @click="modal={type:'import',data:null}">⬆️ นำเข้าข้อมูล</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-body" style="overflow-x:auto">
+              <table id="announcements-table" class="display" style="width:100%">
+                <thead>
+                  <tr>
+                    <th>เลขที่โครงการ</th>
+                    <th>ชื่อโครงการ</th>
+                    <th>หน่วยงาน</th>
+                    <th>วันปิดรับ</th>
+                    <th>ราคากลาง (บาท)</th>
+                    <th>เข้าประมูล</th>
+                    <th>มอบหมายให้</th>
+                    <th>จัดการ</th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== ASSIGNMENTS (Secretary view) ===== -->
+        <div v-show="currentView==='assignments'">
+          <!-- Filter bar -->
+          <div class="card" style="margin-bottom:1rem">
+            <div class="card-body" style="padding:.875rem 1.25rem">
+              <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end">
+                <div>
+                  <label class="form-label" style="margin-bottom:.2rem">สถานะ</label>
+                  <select v-model="assignFilter.status" class="form-control" style="width:auto">
+                    <option value="">ทั้งหมด</option>
+                    <option>รอดำเนินการ</option>
+                    <option>กำลังดำเนินการ</option>
+                    <option>ยื่นข้อเสนอแล้ว</option>
+                    <option>ชนะ</option>
+                    <option>แพ้</option>
+                    <option>ยกเลิก</option>
+                  </select>
+                </div>
+                <div v-if="isSecretary">
+                  <label class="form-label" style="margin-bottom:.2rem">Sales</label>
+                  <select v-model="assignFilter.assigned_to" class="form-control" style="width:auto">
+                    <option value="">ทุกคน</option>
+                    <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" @click="loadAssignments">🔍 กรอง</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="loading" class="empty-state"><div class="spinner mx-auto"></div></div>
+          <div v-else-if="!assignments.length" class="empty-state">
+            <div class="empty-icon">📭</div><p>ไม่พบงาน</p>
+          </div>
+          <div v-else style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">
+            <div v-for="a in assignments" :key="a.id"
+              class="assignment-card"
+              :class="{'sla-breach': a.sla_status==='เกิน', 'sla-warn': a.sla_status==='ใกล้ถึง'}"
+              @click="openAssignmentDetail(a.id)">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem">
+                <span class="badge" :class="statusBadge(a.status)">{{ a.status }}</span>
+                <div style="display:flex;gap:.35rem">
+                  <span class="badge" :class="priorityBadge(a.priority)">{{ a.priority }}</span>
+                  <span style="font-size:.85rem" :title="'SLA: '+a.sla_status">
+                    {{ a.sla_status==='เกิน' ? '🔴' : a.sla_status==='ใกล้ถึง' ? '🟡' : '🟢' }}
+                  </span>
+                </div>
+              </div>
+              <h4 style="font-size:.875rem;font-weight:600;color:#1e293b;margin:.25rem 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ a.project_name }}</h4>
+              <p style="font-size:.78rem;color:#64748b;margin:.2rem 0">{{ a.unit_name }}</p>
+              <!-- SLA Countdown Bar -->
+              <div v-if="a.close_date" style="margin:.6rem 0 .4rem">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.25rem">
+                  <span style="font-size:.72rem;color:#64748b">ปิดรับ {{ a.close_date }}</span>
+                  <span :style="{color: countdownColor(daysToClose(a.close_date))}"
+                        style="font-size:.75rem;font-weight:700">
+                    {{ countdownText(daysToClose(a.close_date)) }}
+                  </span>
+                </div>
+                <div style="height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden">
+                  <div :style="{
+                    width: countdownBarWidth(a.close_date, a.assigned_at)+'%',
+                    background: countdownColor(daysToClose(a.close_date))
+                  }" style="height:100%;border-radius:3px;transition:width .3s"></div>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.5rem;padding-top:.5rem;border-top:1px solid #f1f5f9">
+                <div style="display:flex;align-items:center;gap:.5rem">
+                  <div class="avatar" :style="{background:a.sale_color??'#94a3b8',width:'24px',height:'24px',fontSize:'.65rem'}">{{ avatarInitials(a.sale_name) }}</div>
+                  <span style="font-size:.8rem;color:#475569">{{ a.sale_name }}</span>
+                </div>
+                <span v-if="a.price_median" style="font-size:.78rem;font-weight:600;color:#0f766e">฿{{ Number(a.price_median).toLocaleString() }}</span>
+              </div>
+              <div v-if="a.secretary_notes" style="background:#f8fafc;border-radius:6px;padding:.4rem .6rem;margin-top:.5rem;font-size:.78rem;color:#64748b">
+                💬 {{ a.secretary_notes }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== MY PROJECTS (Sale view) ===== -->
+        <div v-show="currentView==='my-projects'">
+          <!-- Tabs -->
+          <div class="tab-bar" style="margin-bottom:1rem;background:#fff;border-radius:10px 10px 0 0;padding:.5rem .75rem 0">
+            <div class="tab-item" :class="{active: myTab==='active'}" @click="myTab='active';filterMyProjects()">🔄 กำลังดำเนินการ</div>
+            <div class="tab-item" :class="{active: myTab==='submitted'}" @click="myTab='submitted';filterMyProjects()">📤 ยื่นแล้ว</div>
+            <div class="tab-item" :class="{active: myTab==='done'}" @click="myTab='done';filterMyProjects()">✅ เสร็จสิ้น</div>
+            <div class="tab-item" :class="{active: myTab==='all'}" @click="myTab='all';filterMyProjects()">📋 ทั้งหมด</div>
+          </div>
+
+          <div v-if="loading" class="empty-state"><div class="spinner mx-auto"></div></div>
+          <div v-else-if="!filteredMyProjects.length" class="empty-state">
+            <div class="empty-icon">📭</div><p>ไม่มีงานในหมวดนี้</p>
+          </div>
+          <div v-else style="display:flex;flex-direction:column;gap:.75rem">
+            <div v-for="a in filteredMyProjects" :key="a.id"
+              class="assignment-card"
+              :class="{'sla-breach': a.sla_status==='เกิน', 'sla-warn': a.sla_status==='ใกล้ถึง'}"
+              @click="openAssignmentDetail(a.id)">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.4rem">
+                    <span class="badge" :class="statusBadge(a.status)">{{ a.status }}</span>
+                    <span class="badge" :class="priorityBadge(a.priority)">{{ a.priority }}</span>
+                    <span style="font-size:.8rem" :title="'SLA: '+a.sla_status">{{ a.sla_status==='เกิน' ? '🔴 เกิน SLA' : a.sla_status==='ใกล้ถึง' ? '🟡 ใกล้ถึง' : '🟢' }}</span>
+                  </div>
+                  <h4 style="font-size:.9rem;font-weight:700;color:#1e293b;margin:.15rem 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ a.project_name }}</h4>
+                  <p style="font-size:.8rem;color:#64748b;margin:.15rem 0">{{ a.unit_name }}</p>
+                </div>
+                <button class="btn btn-primary btn-sm" style="flex-shrink:0;margin-left:.5rem" @click.stop="openStatusModal(a)">อัพเดต</button>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-top:.75rem;padding-top:.5rem;border-top:1px solid #f1f5f9;font-size:.8rem">
+                <div><span style="color:#64748b">วันปิดรับ:</span> {{ a.close_date }}</div>
+                <div><span style="color:#64748b">ราคากลาง:</span> {{ formatPrice(a.price_median) }}</div>
+                <div v-if="a.bid_amount"><span style="color:#64748b">ราคาที่เสนอ:</span> {{ formatPrice(a.bid_amount) }}</div>
+              </div>
+              <div v-if="a.secretary_notes" style="background:#eff6ff;border-radius:6px;padding:.4rem .7rem;margin-top:.5rem;font-size:.8rem;color:#1e40af">
+                💬 หมายเหตุจากธุรการ: {{ a.secretary_notes }}
+              </div>
+              <div v-if="a.sale_notes" style="background:#f0fdf4;border-radius:6px;padding:.4rem .7rem;margin-top:.3rem;font-size:.8rem;color:#166534">
+                📝 บันทึกของฉัน: {{ a.sale_notes }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== IMPORT ===== -->
+        <div v-show="currentView==='import'">
+          <div class="card">
+            <div class="card-header">นำเข้าข้อมูลประกาศ (JSON)</div>
+            <div class="card-body">
+              <p style="font-size:.875rem;color:#64748b;margin-bottom:1rem">
+                เลือกไฟล์ .json จากระบบ AI หรือวาง JSON array ลงช่องด้านล่าง<br>
+                ระบบจะเพิ่มข้อมูลใหม่ หรืออัพเดตถ้า project_no ซ้ำ
+              </p>
+              <div style="margin-bottom:1rem">
+                <label class="btn btn-outline" style="cursor:pointer;display:inline-flex;align-items:center;gap:.4rem">
+                  📂 เลือกไฟล์ JSON
+                  <input type="file" accept=".json" style="display:none" @change="loadJsonFile">
+                </label>
+                <span v-if="importFileName" style="margin-left:.75rem;font-size:.85rem;color:#475569">{{ importFileName }}</span>
+              </div>
+              <div class="form-group">
+                <label class="form-label">JSON Data</label>
+                <textarea v-model="importJson" class="form-control" rows="16" placeholder='[&#10;  {&#10;    "project_no": "...",&#10;    "project_name": "...",&#10;    "announce_date": "2026-07-08",&#10;    ...&#10;  }&#10;]' style="font-family:monospace;font-size:.8rem"></textarea>
+              </div>
+              <div style="display:flex;gap:.75rem">
+                <button class="btn btn-primary" @click="submitImport" :disabled="!importJson.trim()">⬆️ นำเข้าข้อมูล</button>
+                <button class="btn btn-outline" @click="importJson='';importFileName=''">ล้าง</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== PIPELINE ===== -->
+        <div v-show="currentView==='pipeline'">
+
+          <!-- Stats row -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.875rem;margin-bottom:1rem">
+            <div class="stat-card" style="border-left:4px solid #3b82f6">
+              <div class="stat-value" style="color:#2563eb">{{ pipelineStats?.active ?? 0 }}</div>
+              <div class="stat-label">โครงการในมือ</div>
+              <div class="bg-icon">📋</div>
+            </div>
+            <div class="stat-card" style="border-left:4px solid #7c3aed">
+              <div class="stat-value" style="color:#7c3aed">{{ pipelineStats?.submitted ?? 0 }}</div>
+              <div class="stat-label">ยื่นแล้ว รอผล</div>
+              <div class="bg-icon">📤</div>
+            </div>
+            <div class="stat-card" style="border-left:4px solid #16a34a">
+              <div class="stat-value" style="color:#16a34a">{{ pipelineStats?.won ?? 0 }}</div>
+              <div class="stat-label">ชนะประมูล</div>
+              <div class="bg-icon">🏆</div>
+            </div>
+            <div class="stat-card" style="border-left:4px solid #f59e0b">
+              <div class="stat-value" style="color:#d97706">{{ pipelineStats?.win_rate != null ? pipelineStats.win_rate + '%' : '-' }}</div>
+              <div class="stat-label">Win Rate</div>
+              <div class="bg-icon">📈</div>
+            </div>
+          </div>
+
+          <!-- Sales Performance Summary (Admin/Secretary only, when viewing all) -->
+          <div v-if="isSecretary && pipelineSaleStats.length && !pipelineFilter.assigned_to" class="card" style="margin-bottom:1rem">
+            <div class="card-header" style="font-size:.88rem">
+              👥 ภาพรวมทีม Sales
+              <span style="font-size:.75rem;color:#64748b;font-weight:400">คลิกที่แถวเพื่อกรอง Kanban</span>
+            </div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:.83rem">
+                <thead>
+                  <tr style="background:#f8fafc">
+                    <th style="padding:.6rem 1rem;text-align:left;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Sales</th>
+                    <th style="padding:.6rem .875rem;text-align:center;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Active</th>
+                    <th style="padding:.6rem .875rem;text-align:center;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">ยื่นแล้ว</th>
+                    <th style="padding:.6rem .875rem;text-align:center;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">ชนะ</th>
+                    <th style="padding:.6rem .875rem;text-align:center;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">แพ้</th>
+                    <th style="padding:.6rem .875rem;text-align:center;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Win Rate</th>
+                    <th style="padding:.6rem 1rem;text-align:right;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">มูลค่าชนะ</th>
+                    <th style="padding:.6rem 1rem;text-align:left;font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Pipeline Stage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="s in pipelineSaleStats" :key="s.id"
+                      @click="pipelineFilter.assigned_to = s.id; loadPipeline()"
+                      style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .1s"
+                      @mouseover="$event.currentTarget.style.background='#f0f7ff'"
+                      @mouseout="$event.currentTarget.style.background=''">
+                    <!-- Sales name + avatar -->
+                    <td style="padding:.7rem 1rem">
+                      <div style="display:flex;align-items:center;gap:.55rem">
+                        <div class="avatar" :style="{background:s.avatar_color||'#64748b',width:'30px',height:'30px',fontSize:'.72rem'}">
+                          {{ avatarInitials(s.full_name) }}
+                        </div>
+                        <span style="font-weight:600;color:#1e293b">{{ s.full_name }}</span>
+                      </div>
+                    </td>
+                    <!-- Active -->
+                    <td style="padding:.7rem .875rem;text-align:center">
+                      <span style="font-weight:700;font-size:.95rem;color:#2563eb">{{ s.active }}</span>
+                    </td>
+                    <!-- ยื่นแล้ว -->
+                    <td style="padding:.7rem .875rem;text-align:center">
+                      <span style="font-weight:600;color:#7c3aed">{{ s.submitted }}</span>
+                    </td>
+                    <!-- ชนะ -->
+                    <td style="padding:.7rem .875rem;text-align:center">
+                      <span style="font-weight:700;color:#16a34a;font-size:.95rem">{{ s.won }}</span>
+                    </td>
+                    <!-- แพ้ -->
+                    <td style="padding:.7rem .875rem;text-align:center">
+                      <span style="color:#dc2626">{{ s.lost }}</span>
+                    </td>
+                    <!-- Win Rate -->
+                    <td style="padding:.7rem .875rem;text-align:center">
+                      <span v-if="s.win_rate !== null"
+                            :style="{color: s.win_rate>=60?'#16a34a':s.win_rate>=40?'#d97706':'#dc2626', fontWeight:'700'}"
+                            style="font-size:.9rem">
+                        {{ s.win_rate }}%
+                      </span>
+                      <span v-else style="color:#94a3b8">—</span>
+                    </td>
+                    <!-- มูลค่าชนะ -->
+                    <td style="padding:.7rem 1rem;text-align:right;font-weight:600;color:#16a34a">
+                      {{ s.won_value > 0 ? '฿'+formatNumber(s.won_value) : '—' }}
+                    </td>
+                    <!-- Pipeline bar -->
+                    <td style="padding:.7rem 1rem;min-width:160px">
+                      <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;gap:1px">
+                        <div v-if="Number(s.active)>0"
+                             :style="{flex: s.active, background:'#3b82f6'}" :title="'Active: '+s.active"></div>
+                        <div v-if="Number(s.submitted)>0"
+                             :style="{flex: s.submitted, background:'#7c3aed'}" :title="'ยื่น: '+s.submitted"></div>
+                        <div v-if="Number(s.won)>0"
+                             :style="{flex: s.won, background:'#16a34a'}" :title="'ชนะ: '+s.won"></div>
+                        <div v-if="Number(s.lost)>0"
+                             :style="{flex: s.lost, background:'#dc2626'}" :title="'แพ้: '+s.lost"></div>
+                        <div v-if="!Number(s.active) && !Number(s.submitted) && !Number(s.won) && !Number(s.lost)"
+                             style="flex:1;background:#e2e8f0"></div>
+                      </div>
+                      <div style="display:flex;gap:.5rem;margin-top:3px;font-size:.67rem;color:#94a3b8">
+                        <span v-if="Number(s.active)>0" style="color:#3b82f6">●Active {{s.active}}</span>
+                        <span v-if="Number(s.submitted)>0" style="color:#7c3aed">●ยื่น {{s.submitted}}</span>
+                        <span v-if="Number(s.won)>0" style="color:#16a34a">●ชนะ {{s.won}}</span>
+                        <span v-if="Number(s.lost)>0" style="color:#dc2626">●แพ้ {{s.lost}}</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Toolbar -->
+          <div class="card" style="margin-bottom:1rem">
+            <div class="card-body" style="padding:.65rem 1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+              <div style="display:flex;border:1.5px solid #e2e8f0;border-radius:8px;overflow:hidden">
+                <button @click="pipelineView='kanban'"
+                        :style="pipelineView==='kanban'?'background:#2563eb;color:#fff':'background:#fff;color:#64748b'"
+                        style="padding:.35rem .9rem;font-size:.82rem;font-weight:600;border:none;cursor:pointer">🗂 Kanban</button>
+                <button @click="pipelineView='table'"
+                        :style="pipelineView==='table'?'background:#2563eb;color:#fff':'background:#fff;color:#64748b'"
+                        style="padding:.35rem .9rem;font-size:.82rem;font-weight:600;border:none;cursor:pointer">📋 Table</button>
+              </div>
+              <select v-if="isSecretary" v-model="pipelineFilter.assigned_to" @change="loadPipeline()" class="form-control" style="width:auto;min-width:160px">
+                <option value="">— Sales ทั้งหมด —</option>
+                <option v-for="s in salesUsers" :key="s.id" :value="s.id">{{ s.full_name }}</option>
+              </select>
+              <button v-if="isSecretary && pipelineFilter.assigned_to" class="btn btn-outline btn-sm"
+                      @click="pipelineFilter.assigned_to=''; loadPipeline()" style="color:#dc2626;border-color:#fca5a5">
+                ✕ ล้างตัวกรอง
+              </button>
+              <button class="btn btn-outline btn-sm" @click="loadPipeline()">🔄 รีเฟรช</button>
+              <div v-if="pipelineLoading" style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:#64748b">
+                <div class="spinner" style="width:16px;height:16px;border-width:2px"></div> กำลังโหลด...
+              </div>
+            </div>
+          </div>
+
+          <!-- KANBAN VIEW -->
+          <div v-show="pipelineView==='kanban'" class="pipeline-kanban">
+            <div v-for="stage in pipelineStages" :key="stage.key" class="pipeline-col">
+              <div class="pipeline-col-header" :style="{background: stage.color}">
+                <span>{{ stage.label }}</span>
+                <span class="col-cnt">{{ (pipelineKanban[stage.key]||[]).length }}</span>
+              </div>
+              <div class="pipeline-col-sub" :style="{background: stage.darkColor}">
+                {{ pipelineStageValue(stage.key) }}&nbsp;
+              </div>
+              <div class="pipeline-col-body">
+                <div v-if="!(pipelineKanban[stage.key]||[]).length" class="pipeline-empty">ไม่มีงานในขั้นนี้</div>
+                <div v-for="card in (pipelineKanban[stage.key]||[])" :key="card.id"
+                     class="pipeline-card" @click="openAssignmentDetail(card.id)">
+                  <div class="pipeline-card-name">{{ card.project_name }}</div>
+                  <div class="pipeline-card-price" v-if="card.price_median">฿{{ formatNumber(card.price_median) }}</div>
+                  <div class="pipeline-card-unit">{{ card.unit_name }}</div>
+                  <div class="pipeline-card-footer">
+                    <div style="display:flex;align-items:center;gap:4px">
+                      <div class="avatar" :style="{background:card.sale_color||'#64748b',width:'22px',height:'22px',fontSize:'.62rem'}">
+                        {{ avatarInitials(card.sale_name) }}
+                      </div>
+                      <span style="font-size:.73rem;color:#475569">{{ (card.sale_name||'').split(' ')[0] }}</span>
+                    </div>
+                    <span class="badge" :class="priorityBadge(card.priority)" style="font-size:.68rem">{{ card.priority }}</span>
+                  </div>
+                  <div v-if="card.close_date" style="margin-top:4px;font-size:.7rem;text-align:right"
+                       :style="{color: countdownColor(daysToClose(card.close_date))}">
+                    📅 {{ countdownText(daysToClose(card.close_date)) }}
+                  </div>
+                  <div v-if="card.win_loss_reason" style="margin-top:4px;font-size:.7rem;padding:2px 6px;border-radius:4px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569">
+                    📌 {{ card.win_loss_reason }}
+                  </div>
+                  <!-- Stage action buttons -->
+                  <div v-if="!['ชนะ','แพ้','ยกเลิก'].includes(card.status)"
+                       class="pipeline-card-btns" @click.stop>
+                    <button v-if="pipelineStageIndex(card.status) > 0"
+                            @click.stop="quickMoveStage(card, pipelinePrevStage(card.status))"
+                            class="pcbtn pcbtn-gray">← ถอย</button>
+                    <button v-if="card.status !== 'ยื่นข้อเสนอแล้ว'"
+                            @click.stop="quickMoveStage(card, pipelineNextStage(card.status))"
+                            class="pcbtn pcbtn-blue" style="flex:1">ส่งต่อ →</button>
+                    <template v-if="card.status === 'ยื่นข้อเสนอแล้ว'">
+                      <button @click.stop="openWinLossModal(card, 'ชนะ')" class="pcbtn pcbtn-green" style="flex:1">🏆 ชนะ</button>
+                      <button @click.stop="openWinLossModal(card, 'แพ้')"  class="pcbtn pcbtn-red"   style="flex:1">❌ แพ้</button>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TABLE VIEW -->
+          <div v-show="pipelineView==='table'" class="card">
+            <div class="card-body" style="padding:0;overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+                <thead>
+                  <tr style="background:#f8fafc">
+                    <th style="padding:.7rem 1rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">ชื่อโครงการ</th>
+                    <th style="padding:.7rem 1rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">หน่วยงาน</th>
+                    <th style="padding:.7rem 1rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Sales</th>
+                    <th style="padding:.7rem 1rem;text-align:right;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">ราคากลาง</th>
+                    <th style="padding:.7rem 1rem;text-align:center;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">ปิดรับ</th>
+                    <th style="padding:.7rem 1rem;text-align:center;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Priority</th>
+                    <th style="padding:.7rem 1rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Stage</th>
+                    <th style="padding:.7rem 1rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Win/Loss Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!pipelineTableData.length">
+                    <td colspan="8" style="text-align:center;padding:2rem;color:#94a3b8">ไม่มีข้อมูล</td>
+                  </tr>
+                  <tr v-for="card in pipelineTableData" :key="card.id"
+                      style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .1s"
+                      @mouseover="$event.currentTarget.style.background='#f8fafc'"
+                      @mouseout="$event.currentTarget.style.background=''"
+                      @click="openAssignmentDetail(card.id)">
+                    <td style="padding:.65rem 1rem;max-width:220px">
+                      <div style="font-weight:600;font-size:.83rem;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ card.project_name }}</div>
+                    </td>
+                    <td style="padding:.65rem 1rem;max-width:140px">
+                      <div style="font-size:.78rem;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="card.unit_name">{{ card.unit_name }}</div>
+                    </td>
+                    <td style="padding:.65rem 1rem">
+                      <div style="display:flex;align-items:center;gap:5px">
+                        <div class="avatar" :style="{background:card.sale_color||'#64748b',width:'24px',height:'24px',fontSize:'.65rem'}">{{ avatarInitials(card.sale_name) }}</div>
+                        <span style="font-size:.8rem">{{ (card.sale_name||'').split(' ')[0] }}</span>
+                      </div>
+                    </td>
+                    <td style="padding:.65rem 1rem;text-align:right;font-weight:600;color:#16a34a;font-size:.83rem">
+                      {{ card.price_median ? '฿'+formatNumber(card.price_median) : '-' }}
+                    </td>
+                    <td style="padding:.65rem 1rem;text-align:center;font-size:.8rem"
+                        :style="{color: countdownColor(daysToClose(card.close_date)), fontWeight: daysToClose(card.close_date)<=3?'700':'400'}">
+                      {{ card.close_date || '-' }}
+                    </td>
+                    <td style="padding:.65rem 1rem;text-align:center">
+                      <span class="badge" :class="priorityBadge(card.priority)" style="font-size:.72rem">{{ card.priority }}</span>
+                    </td>
+                    <td style="padding:.65rem 1rem">
+                      <span class="badge" :class="statusBadge(card.status)" style="font-size:.75rem">{{ pipelineStageName(card.status) }}</span>
+                    </td>
+                    <td style="padding:.65rem 1rem;font-size:.78rem">
+                      <span v-if="card.win_loss_reason" :style="{color: card.status==='ชนะ'?'#16a34a':'#dc2626'}">
+                        {{ card.status==='ชนะ' ? '✅' : '❌' }} {{ card.win_loss_reason }}
+                      </span>
+                      <span v-else-if="card.status==='ยื่นข้อเสนอแล้ว'" style="color:#7c3aed">⏳ รอผล</span>
+                      <span v-else style="color:#94a3b8">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ===== SALES PIPELINE ===== -->
+        <div v-show="currentView==='sales-pipeline'">
+
+          <!-- Header row -->
+          <div class="sp-header-bar">
+            <div class="sp-title">💼 งานขาย (Sales Pipeline)</div>
+            <button class="sp-add-btn" @click="openSpForm(null)">
+              ➕ เพิ่มงานใหม่
+            </button>
+          </div>
+
+          <!-- Stats row -->
+          <div class="sp-stats-row">
+            <div class="sp-stat">
+              <div style="font-size:.78rem;color:#94a3b8;font-weight:600;margin-bottom:.2rem">📁 Total Jobs · งานทั้งหมด</div>
+              <div class="sp-stat-val" style="color:#2563eb">{{ spStats?.total ?? 0 }}</div>
+              <div class="sp-stat-lbl">งาน (ทุกสถานะ)</div>
+            </div>
+            <div class="sp-stat">
+              <div style="font-size:.78rem;color:#94a3b8;font-weight:600;margin-bottom:.2rem">🔄 Pipeline Active · งานที่กำลังดำเนินการ</div>
+              <div class="sp-stat-val" style="color:#7c3aed;font-size:1.15rem">฿{{ spStats ? formatNumber(spStats.pipeline_value) : '0' }}</div>
+              <div class="sp-stat-lbl">มูลค่าที่รอปิดดีล ({{ spStats?.active ?? 0 }} งาน)</div>
+            </div>
+            <div class="sp-stat">
+              <div style="font-size:.78rem;color:#94a3b8;font-weight:600;margin-bottom:.2rem">✅ Revenue · ยอดขายที่ส่งมอบแล้ว</div>
+              <div class="sp-stat-val" style="color:#16a34a;font-size:1.15rem">฿{{ spStats ? formatNumber(spStats.delivered_value) : '0' }}</div>
+              <div class="sp-stat-lbl">รายได้จริงที่ได้รับ</div>
+            </div>
+            <div class="sp-stat">
+              <div style="font-size:.78rem;color:#94a3b8;font-weight:600;margin-bottom:.2rem">🏆 Win Rate · อัตราการชนะ</div>
+              <div class="sp-stat-val" style="color:#d97706">{{ spStats?.win_rate != null ? spStats.win_rate + '%' : '-' }}</div>
+              <div class="sp-stat-lbl">ชนะ {{ spStats?.won ?? 0 }} / แพ้ {{ spStats?.lost ?? 0 }} งาน</div>
+            </div>
+          </div>
+
+          <!-- ========= มุมมอง Sale ========= -->
+          <template v-if="!isSecretary">
+
+            <!-- Section A: e-Bidding -->
+            <div class="sp-section">
+              <div class="sp-section-head sp-section-head-blue">
+                <span>📋 งาน e-Bidding ของฉัน
+                  <span style="font-size:.8rem;font-weight:400;margin-left:.5rem;opacity:.8">จากระบบประมูล e-GP</span>
+                </span>
+                <span style="background:rgba(255,255,255,.2);border-radius:12px;padding:2px 12px;font-size:.85rem">
+                  {{ spEbiddingTotal }} งาน
+                </span>
+              </div>
+              <div class="sp-section-body sp-section-body-blue">
+                <div v-if="spEbiddingLoading" style="padding:1.5rem;text-align:center;color:#64748b">
+                  <div class="spinner" style="margin:0 auto .5rem"></div> กำลังโหลด...
+                </div>
+                <div v-else class="sp-kanban">
+                  <div v-for="st in spEbiddingStages" :key="st.key" class="sp-col">
+                    <div class="sp-col-head" :style="{background:st.color}">
+                      <span>{{ st.label }}</span>
+                      <span style="background:rgba(255,255,255,.22);border-radius:10px;padding:1px 9px;font-size:.8rem">{{ (spEbiddingKanban[st.key]||[]).length }}</span>
+                    </div>
+                    <div class="sp-col-body">
+                      <div v-if="!(spEbiddingKanban[st.key]||[]).length" class="sp-empty">ไม่มีงาน</div>
+                      <div v-for="card in (spEbiddingKanban[st.key]||[])" :key="card.id" class="sp-card">
+                        <div class="sp-card-title">{{ card.project_name }}</div>
+                        <div style="font-size:.8rem;color:#64748b;margin-bottom:.25rem">🏢 {{ card.unit_name }}</div>
+                        <div v-if="card.price_median" class="sp-card-value">฿{{ formatNumber(card.price_median) }}</div>
+                        <div v-if="card.close_date" style="font-size:.78rem;color:#dc2626;margin:.25rem 0">⏰ ปิดรับ: {{ card.close_date }}</div>
+                        <span class="sp-badge" style="background:#dbeafe;color:#1d4ed8">{{ card.priority || 'ปกติ' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section B: Sales Pipeline -->
+            <div class="sp-section">
+              <div class="sp-section-head sp-section-head-green">
+                <span>💼 งานขายของฉัน</span>
+                <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+                  <div class="sp-section-chips">
+                    <button class="sp-section-chip" :class="{active: spFilter.source_type===''}"
+                            @click="spFilter.source_type=''; loadSpKanban()">ทั้งหมด</button>
+                    <button v-for="s in spSourceTypes" :key="s.val"
+                            class="sp-section-chip" :class="{active: spFilter.source_type===s.val}"
+                            @click="spFilter.source_type=s.val; loadSpKanban()">{{ s.icon }} {{ s.label }}</button>
+                  </div>
+                  <button class="sp-add-btn" style="padding:.3rem .85rem;font-size:.85rem;min-height:34px;margin-left:.25rem"
+                          @click="openSpForm(null)">➕ เพิ่มงาน</button>
+                </div>
+              </div>
+              <div class="sp-section-body sp-section-body-green">
+                <div v-if="spLoading" style="padding:1.5rem;text-align:center;color:#64748b">
+                  <div class="spinner" style="margin:0 auto .5rem"></div> กำลังโหลด...
+                </div>
+                <div v-else class="sp-kanban">
+                  <div v-for="stage in spStages" :key="stage.key" class="sp-col">
+                    <div class="sp-col-head" :style="{background:stage.color}">
+                      <span>{{ stage.label }}</span>
+                      <span style="background:rgba(255,255,255,.22);border-radius:10px;padding:1px 9px;font-size:.8rem">{{ (spKanban[stage.key]||[]).length }}</span>
+                    </div>
+                    <div class="sp-col-sub" :style="{background:stage.darkColor}">{{ spColValue(stage.key) }}</div>
+                    <div class="sp-col-body">
+                      <div v-if="!(spKanban[stage.key]||[]).length" class="sp-empty">ยังไม่มีงาน</div>
+                      <div v-for="card in (spKanban[stage.key]||[])" :key="card.id" class="sp-card">
+                        <div class="sp-card-badges">
+                          <span class="sp-badge" :style="spSourceStyle(card.source_type)">{{ card.source_label }}</span>
+                          <span class="sp-badge" :style="spPriorityStyle(card.priority)">{{ card.priority }}</span>
+                          <span v-if="card.segment" class="sp-badge" style="background:#f1f5f9;color:#475569">{{ card.segment }}</span>
+                        </div>
+                        <div class="sp-card-title">{{ card.title }}</div>
+                        <div class="sp-card-client" v-if="card.client_name">🏢 {{ card.client_name }}</div>
+                        <div class="sp-card-value" v-if="card.value">฿{{ formatNumber(card.value) }}</div>
+                        <div v-if="card.next_action" style="font-size:.8rem;color:#2563eb;background:#eff6ff;border-radius:6px;padding:4px 8px;margin-bottom:8px;">📌 {{ card.next_action }}</div>
+                        <button v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)"
+                                class="sp-card-action sp-btn-next"
+                                @click="confirmSpMove(card, spNextStage(card.stage))">
+                          ▶ {{ spNextLabel(card.stage) }}
+                        </button>
+                        <div v-if="card.stage === 'Negotiating'" class="sp-card-action-row">
+                          <button class="sp-card-action sp-btn-won" @click="openSpWinLoss(card, 'Deal Signed')">✅ ปิดดีล</button>
+                          <button class="sp-card-action sp-btn-lost" @click="openSpWinLoss(card, 'Lost')">❌ ไม่สำเร็จ</button>
+                        </div>
+                        <div v-if="card.stage === 'Deal Signed'" class="sp-card-action-row">
+                          <button class="sp-card-action sp-btn-won" @click="confirmSpMove(card, 'Delivered')">🚚 ส่งสินค้าแล้ว</button>
+                        </div>
+                        <button class="sp-card-action sp-btn-edit" style="margin-top:5px" @click="openSpForm(card)">✏️ แก้ไขรายละเอียด</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </template>
+
+          <!-- ========= มุมมอง Admin/Secretary ========= -->
+          <template v-if="isSecretary">
+
+          <!-- Per-sale summary (Admin/Secretary) -->
+          <div v-if="isSecretary && spSaleStats.length && !spFilter.assigned_to" class="card" style="margin-bottom:1rem">
+            <div class="card-header" style="font-size:1rem">📈 สรุปผลงานรายบุคคล <small style="color:#94a3b8;font-size:.8rem">(คลิกที่ชื่อเพื่อกรอง)</small></div>
+            <div class="card-body" style="padding:0;overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:.9rem">
+                <thead>
+                  <tr style="background:#f8fafc">
+                    <th style="padding:.65rem 1rem;text-align:left;font-size:.8rem;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0">Sale</th>
+                    <th style="padding:.65rem 1rem;text-align:center;font-size:.8rem;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0">Active</th>
+                    <th style="padding:.65rem 1rem;text-align:center;font-size:.8rem;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0">ปิดแล้ว</th>
+                    <th style="padding:.65rem 1rem;text-align:center;font-size:.8rem;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0">แพ้</th>
+                    <th style="padding:.65rem 1rem;text-align:right;font-size:.8rem;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0">ยอดรวม (บาท)</th>
+                    <th style="padding:.65rem 1rem;text-align:center;font-size:.8rem;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0">Win Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="s in spSaleStats" :key="s.id"
+                      @click="spFilter.assigned_to=s.id; loadSpKanban()"
+                      style="cursor:pointer;transition:background .12s"
+                      @mouseenter="$event.currentTarget.style.background='#f0f9ff'"
+                      @mouseleave="$event.currentTarget.style.background=''">
+                    <td style="padding:.65rem 1rem">
+                      <div style="display:flex;align-items:center;gap:.5rem">
+                        <div class="avatar" :style="{background:s.avatar_color||'#2563eb'}" style="width:30px;height:30px;font-size:.8rem">{{ avatarInitials(s.full_name) }}</div>
+                        <span style="font-weight:600">{{ s.full_name }}</span>
+                      </div>
+                    </td>
+                    <td style="text-align:center;font-weight:600;color:#2563eb">{{ s.active }}</td>
+                    <td style="text-align:center;font-weight:600;color:#16a34a">{{ s.won }}</td>
+                    <td style="text-align:center;font-weight:600;color:#dc2626">{{ s.lost }}</td>
+                    <td style="text-align:right;font-weight:700;color:#16a34a">{{ formatNumber(s.won_value) }}</td>
+                    <td style="text-align:center">
+                      <span :style="{color: (s.won+s.lost)>0 && s.won/(s.won+s.lost)>=0.5 ? '#16a34a' : '#dc2626', fontWeight:700}">
+                        {{ (+s.won + +s.lost)>0 ? Math.round(+s.won/(+s.won + +s.lost)*100)+'%' : '-' }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Filter & View toggle row -->
+          <div class="sp-filter-row">
+            <!-- Sale chips (admin/secretary) -->
+            <template v-if="isSecretary">
+              <div class="sp-filter-group">
+                <label>👤 Sale:</label>
+                <div class="sp-chips">
+                  <button class="sp-chip" :class="{active: spFilter.assigned_to===''}"
+                          @click="spFilter.assigned_to=''; loadSpKanban()">ทุกคน</button>
+                  <button v-for="u in salesUsers" :key="u.id"
+                          class="sp-chip" :class="{active: spFilter.assigned_to==u.id}"
+                          @click="spFilter.assigned_to=u.id; loadSpKanban()">{{ u.full_name.split(' ')[0] }}</button>
+                </div>
+              </div>
+              <div class="sp-filter-divider"></div>
+            </template>
+            <!-- Source chips -->
+            <div class="sp-filter-group">
+              <label>📌 แหล่งที่มา:</label>
+              <div class="sp-chips">
+                <button class="sp-chip" :class="{active: spFilter.source_type===''}"
+                        @click="spFilter.source_type=''; loadSpKanban()">ทั้งหมด</button>
+                <button v-for="s in spSourceTypes" :key="s.val"
+                        class="sp-chip" :class="{'active-green': spFilter.source_type===s.val}"
+                        @click="spFilter.source_type=s.val; loadSpKanban()">{{ s.icon }} {{ s.label }}</button>
+              </div>
+            </div>
+            <div style="margin-left:auto;display:flex;gap:4px">
+              <button class="sp-view-btn" @click="spView='kanban'"
+                      :style="spView==='kanban' ? 'background:#2563eb;color:#fff;border-color:#2563eb' : 'background:#fff;color:#64748b'">
+                🗂️ Kanban
+              </button>
+              <button class="sp-view-btn" @click="spView='table'"
+                      :style="spView==='table' ? 'background:#2563eb;color:#fff;border-color:#2563eb' : 'background:#fff;color:#64748b'">
+                📋 ตาราง
+              </button>
+              <button class="sp-view-btn" style="background:#fff;color:#64748b" @click="loadSpKanban()">🔄</button>
+            </div>
+            <div v-if="spLoading" style="display:flex;align-items:center;gap:.4rem;font-size:.9rem;color:#64748b">
+              <div class="spinner" style="width:16px;height:16px;border-width:2px"></div> กำลังโหลด...
+            </div>
+          </div>
+
+          <!-- KANBAN VIEW -->
+          <div v-show="spView==='kanban'" class="sp-kanban">
+            <div v-for="stage in spStages" :key="stage.key" class="sp-col">
+              <div class="sp-col-head" :style="{background:stage.color}">
+                <span>{{ stage.label }}</span>
+                <span style="background:rgba(255,255,255,.22);border-radius:10px;padding:1px 9px;font-size:.8rem">{{ (spKanban[stage.key]||[]).length }}</span>
+              </div>
+              <div class="sp-col-sub" :style="{background:stage.darkColor}">
+                {{ spColValue(stage.key) }}
+              </div>
+              <div class="sp-col-body">
+                <div v-if="!(spKanban[stage.key]||[]).length" class="sp-empty">ยังไม่มีงาน</div>
+                <div v-for="card in (spKanban[stage.key]||[])" :key="card.id" class="sp-card">
+                  <!-- Source badge + Priority -->
+                  <div class="sp-card-badges">
+                    <span class="sp-badge" :style="spSourceStyle(card.source_type)">{{ card.source_label }}</span>
+                    <span class="sp-badge" :style="spPriorityStyle(card.priority)">{{ card.priority }}</span>
+                    <span v-if="card.segment" class="sp-badge" style="background:#f1f5f9;color:#475569">{{ card.segment }}</span>
+                  </div>
+                  <!-- Title & Client -->
+                  <div class="sp-card-title">{{ card.title }}</div>
+                  <div class="sp-card-client" v-if="card.client_name">🏢 {{ card.client_name }}</div>
+                  <!-- Value -->
+                  <div class="sp-card-value" v-if="card.value">฿{{ formatNumber(card.value) }}</div>
+                  <!-- Sale name (admin view) -->
+                  <div v-if="isSecretary && !spFilter.assigned_to"
+                       style="font-size:.8rem;color:#64748b;margin-bottom:8px;display:flex;align-items:center;gap:.3rem">
+                    <div class="avatar" :style="{background:card.sale_color||'#64748b'}" style="width:20px;height:20px;font-size:.6rem">{{ avatarInitials(card.sale_name) }}</div>
+                    {{ card.sale_name }}
+                  </div>
+                  <!-- Next action -->
+                  <div v-if="card.next_action" style="font-size:.8rem;color:#2563eb;background:#eff6ff;border-radius:6px;padding:4px 8px;margin-bottom:8px;">
+                    📌 {{ card.next_action }}
+                  </div>
+                  <!-- Action buttons -->
+                  <button v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)"
+                          class="sp-card-action sp-btn-next"
+                          @click="confirmSpMove(card, spNextStage(card.stage))">
+                    ▶ {{ spNextLabel(card.stage) }}
+                  </button>
+                  <div v-if="card.stage === 'Negotiating'" class="sp-card-action-row">
+                    <button class="sp-card-action sp-btn-won" @click="openSpWinLoss(card, 'Deal Signed')">✅ ปิดดีล</button>
+                    <button class="sp-card-action sp-btn-lost" @click="openSpWinLoss(card, 'Lost')">❌ ไม่สำเร็จ</button>
+                  </div>
+                  <div v-if="card.stage === 'Deal Signed'" class="sp-card-action-row">
+                    <button class="sp-card-action sp-btn-won" @click="confirmSpMove(card, 'Delivered')">🚚 ส่งสินค้าแล้ว</button>
+                  </div>
+                  <button class="sp-card-action sp-btn-edit" style="margin-top:5px" @click="openSpForm(card)">
+                    ✏️ แก้ไขรายละเอียด
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TABLE VIEW -->
+          <div v-show="spView==='table'" class="card">
+            <div class="card-body" style="padding:0;overflow-x:auto">
+              <table class="sp-table">
+                <thead>
+                  <tr>
+                    <th>โครงการ / ลูกค้า</th>
+                    <th>ขั้นตอน</th>
+                    <th>แหล่งที่มา</th>
+                    <th>มูลค่า (฿)</th>
+                    <th v-if="isSecretary">Sale</th>
+                    <th>ความสำคัญ</th>
+                    <th>หมวด</th>
+                    <th>วันคาดปิด</th>
+                    <th>จัดการ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!spTableData.length">
+                    <td :colspan="isSecretary?9:8" style="text-align:center;padding:2rem;color:#94a3b8">ไม่มีข้อมูล</td>
+                  </tr>
+                  <tr v-for="card in spTableData" :key="card.id">
+                    <td>
+                      <div style="font-weight:700;font-size:.9rem;color:#1e293b">{{ card.title }}</div>
+                      <div v-if="card.client_name" style="font-size:.82rem;color:#64748b">{{ card.client_name }}</div>
+                    </td>
+                    <td>
+                      <span class="sp-badge" :style="spStageStyle(card.stage)">{{ card.stage }}</span>
+                    </td>
+                    <td><span class="sp-badge" :style="spSourceStyle(card.source_type)">{{ card.source_label }}</span></td>
+                    <td style="font-weight:700;color:#16a34a;white-space:nowrap">{{ card.value ? '฿'+formatNumber(card.value) : '-' }}</td>
+                    <td v-if="isSecretary" style="white-space:nowrap">
+                      <div style="display:flex;align-items:center;gap:.35rem">
+                        <div class="avatar" :style="{background:card.sale_color||'#64748b'}" style="width:22px;height:22px;font-size:.65rem">{{ avatarInitials(card.sale_name) }}</div>
+                        {{ card.sale_name }}
+                      </div>
+                    </td>
+                    <td><span class="sp-badge" :style="spPriorityStyle(card.priority)">{{ card.priority }}</span></td>
+                    <td style="font-size:.82rem;color:#475569">{{ card.product_category || '-' }}</td>
+                    <td style="font-size:.82rem;white-space:nowrap;color:#475569">{{ card.expected_close || '-' }}</td>
+                    <td>
+                      <div style="display:flex;gap:4px">
+                        <button class="pcbtn pcbtn-blue" @click="openSpForm(card)">✏️ แก้ไข</button>
+                        <button class="pcbtn pcbtn-red" @click="deleteSpItem(card)">🗑️</button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          </template><!-- end isSecretary -->
+        </div>
+
+        <!-- ===== USERS (Admin) ===== -->
+        <div v-show="currentView==='users'">
+          <div class="card">
+            <div class="card-header">
+              ผู้ใช้งานในระบบ
+              <button class="btn btn-primary btn-sm" @click="openUserModal(null)">+ เพิ่มผู้ใช้</button>
+            </div>
+            <div class="card-body" style="padding:0">
+              <div v-if="!allUsers.length" class="empty-state"><div class="spinner mx-auto"></div></div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+                  <thead>
+                    <tr style="background:#f8fafc">
+                      <th style="padding:.75rem 1rem;text-align:left;font-weight:600;color:#475569;font-size:.8rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0">ชื่อ</th>
+                      <th style="padding:.75rem 1rem;text-align:left;font-weight:600;color:#475569;font-size:.8rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0">Username</th>
+                      <th style="padding:.75rem 1rem;text-align:left;font-weight:600;color:#475569;font-size:.8rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0">บทบาท</th>
+                      <th style="padding:.75rem 1rem;text-align:left;font-weight:600;color:#475569;font-size:.8rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0">LINE ID</th>
+                      <th style="padding:.75rem 1rem;text-align:left;font-weight:600;color:#475569;font-size:.8rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0">งานที่ดำเนินการ</th>
+                      <th style="padding:.75rem 1rem;text-align:left;font-weight:600;color:#475569;font-size:.8rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0">สถานะ</th>
+                      <th style="padding:.75rem 1rem;border-bottom:2px solid #e2e8f0"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="u in allUsers" :key="u.id" style="border-bottom:1px solid #f1f5f9">
+                      <td style="padding:.75rem 1rem">
+                        <div style="display:flex;align-items:center;gap:.6rem">
+                          <div class="avatar" :style="{background:u.avatar_color,width:'30px',height:'30px',fontSize:'.7rem'}">{{ avatarInitials(u.full_name) }}</div>
+                          <span style="font-weight:500">{{ u.full_name }}</span>
+                        </div>
+                      </td>
+                      <td style="padding:.75rem 1rem;color:#64748b">{{ u.username }}</td>
+                      <td style="padding:.75rem 1rem">
+                        <span class="badge" :class="u.role==='admin'?'bg-purple-100 text-purple-700':u.role==='salesadmin'?'bg-amber-100 text-amber-700':u.role==='manager'?'bg-teal-100 text-teal-700':'bg-blue-100 text-blue-700'">
+  {{ {admin:'Admin',salesadmin:'SalesAdmin',manager:'Manager',sale:'Sale'}[u.role] || u.role }}
+</span>
+                      </td>
+                      <td style="padding:.75rem 1rem;font-size:.8rem;color:#64748b">{{ u.line_user_id || '-' }}</td>
+                      <td style="padding:.75rem 1rem;font-weight:600;text-align:center">{{ u.active_tasks ?? 0 }}</td>
+                      <td style="padding:.75rem 1rem">
+                        <span class="badge" :class="u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">{{ u.is_active ? 'ใช้งาน' : 'ปิดใช้' }}</span>
+                      </td>
+                      <td style="padding:.75rem 1rem">
+                        <button class="btn btn-outline btn-sm" @click="openUserModal(u)">✏️ แก้ไข</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- Mobile Bottom Nav -->
+    <nav class="bottom-nav">
+      <button class="bottom-nav-item" :class="{active:currentView==='dashboard'}" @click="navigate('dashboard')">
+        <span class="bn-icon">🏠</span> ภาพรวม
+      </button>
+      <template v-if="isSecretary">
+        <button class="bottom-nav-item" :class="{active:currentView==='announcements'}" @click="navigate('announcements')">
+          <span class="bn-icon">📢</span> ประกาศ
+        </button>
+        <button class="bottom-nav-item" :class="{active:currentView==='assignments'}" @click="navigate('assignments')">
+          <span class="bn-icon">📋</span> งาน
+        </button>
+        <button class="bottom-nav-item" :class="{active:currentView==='import'}" @click="navigate('import')">
+          <span class="bn-icon">⬆️</span> นำเข้า
+        </button>
+      </template>
+      <template v-if="isSale">
+        <button class="bottom-nav-item" :class="{active:currentView==='my-projects'}" @click="navigate('my-projects')">
+          <span class="bn-icon">💼</span> งานของฉัน
+        </button>
+      </template>
+      <button class="bottom-nav-item" :class="{active:currentView==='pipeline'}" @click="navigate('pipeline')">
+        <span class="bn-icon">📊</span> Pipeline
+      </button>
+      <button class="bottom-nav-item" :class="{active:currentView==='sales-pipeline'}" @click="navigate('sales-pipeline')">
+        <span class="bn-icon">💼</span> งานขาย
+      </button>
+      <button class="bottom-nav-item" @click="doLogout">
+        <span class="bn-icon">🚪</span> ออก
+      </button>
+    </nav>
+
+    <!-- ===================== MODALS ===================== -->
+    <div class="modal-overlay" v-if="modal.type" @click.self="closeModal">
+
+      <!-- Assign Modal -->
+      <div v-if="modal.type==='assign'" class="modal-box modal-md">
+        <div class="modal-header">
+          <h3>📌 มอบหมายงาน</h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <!-- Workload Visualizer -->
+          <div class="form-group">
+            <label class="form-label">มอบหมายให้ Sales <span style="color:red">*</span></label>
+            <div style="display:flex;flex-direction:column;gap:.5rem">
+              <div v-for="s in salesUsers" :key="s.id"
+                   @click="assignForm.assigned_to = s.id"
+                   :style="assignForm.assigned_to===s.id
+                     ? 'border:2px solid #3b82f6;background:#eff6ff'
+                     : 'border:1.5px solid #e2e8f0;background:#fff'"
+                   style="border-radius:10px;padding:.6rem .85rem;cursor:pointer;display:flex;align-items:center;gap:.75rem;transition:all .15s">
+                <div :style="{background: s.avatar_color||'#64748b'}"
+                     style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.85rem;flex-shrink:0">
+                  {{ s.full_name.charAt(0) }}
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.25rem">
+                    <span style="font-weight:600;font-size:.9rem;color:#1e293b">{{ s.full_name }}</span>
+                    <span v-if="s.overdue_tasks>0" style="font-size:.7rem;background:#fee2e2;color:#b91c1c;padding:.1rem .35rem;border-radius:4px">🔴 เกิน {{ s.overdue_tasks }}</span>
+                    <span v-if="s.urgent_tasks>0 && s.overdue_tasks===0" style="font-size:.7rem;background:#fff7ed;color:#c2410c;padding:.1rem .35rem;border-radius:4px">⚡ ด่วน {{ s.urgent_tasks }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:.5rem">
+                    <div style="flex:1;height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden">
+                      <div :style="{
+                        width: Math.min(s.active_tasks*12,100)+'%',
+                        background: s.active_tasks>=7?'#ef4444':s.active_tasks>=4?'#f59e0b':'#22c55e'
+                      }" style="height:100%;border-radius:4px;transition:width .4s ease"></div>
+                    </div>
+                    <span style="font-size:.75rem;color:#64748b;white-space:nowrap;min-width:80px">{{ s.active_tasks }} งาน active</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.2rem">
+                  <span v-if="salesUsers.indexOf(s)===0" style="font-size:.7rem;background:#dcfce7;color:#15803d;padding:.15rem .45rem;border-radius:5px;white-space:nowrap">⭐ แนะนำ</span>
+                  <span v-if="assignForm.assigned_to===s.id" style="color:#3b82f6;font-size:1.2rem;line-height:1">✓</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Priority Level -->
+          <div class="form-group">
+            <label class="form-label">ระดับความสำคัญ</label>
+            <div style="display:flex;gap:.5rem">
+              <div v-for="p in [{val:'ต่ำ',icon:'🔵',desc:'SLA 7 วัน',bg:'#eff6ff',border:'#bfdbfe',text:'#1d4ed8'},
+                                 {val:'ปกติ',icon:'🟢',desc:'SLA 3 วัน',bg:'#f0fdf4',border:'#bbf7d0',text:'#15803d'},
+                                 {val:'เร่งด่วน',icon:'🔴',desc:'SLA 1 วัน',bg:'#fff1f2',border:'#fecdd3',text:'#be123c'}]"
+                   :key="p.val" @click="assignForm.priority=p.val"
+                   :style="assignForm.priority===p.val
+                     ? {background:p.bg, border:'2px solid '+p.border, color:p.text}
+                     : {background:'#f8fafc', border:'1.5px solid #e2e8f0', color:'#64748b'}"
+                   style="flex:1;border-radius:8px;padding:.5rem;text-align:center;cursor:pointer;transition:all .15s">
+                <div style="font-size:1.1rem">{{ p.icon }}</div>
+                <div style="font-size:.8rem;font-weight:600">{{ p.val }}</div>
+                <div style="font-size:.7rem;opacity:.8">{{ p.desc }}</div>
+              </div>
+            </div>
+            <!-- SLA description for selected priority -->
+            <div v-if="assignForm.priority" style="margin-top:.55rem;padding:.55rem .8rem;border-radius:7px;font-size:.82rem;line-height:1.55;transition:all .2s"
+              :style="assignForm.priority==='ต่ำ'
+                ? {background:'#eff6ff',color:'#1d4ed8',border:'1px solid #bfdbfe'}
+                : assignForm.priority==='เร่งด่วน'
+                  ? {background:'#fff1f2',color:'#be123c',border:'1px solid #fecdd3'}
+                  : {background:'#f0fdf4',color:'#15803d',border:'1px solid #bbf7d0'}">
+              <span v-if="assignForm.priority==='ต่ำ'">🔵 <strong>SLA 7 วัน</strong> — งานมีเวลาเตรียมตัวเยอะ หรือวันปิดรับซองยังอีกนาน Sales มีเวลาทยอยทำได้ภายใน 7 วัน</span>
+              <span v-else-if="assignForm.priority==='ปกติ'">🟢 <strong>SLA 3 วัน</strong> — มาตรฐานทั่วไป Sales ต้องสรุปสเปก ถอดราคา และเตรียมเอกสารยื่นซองให้เสร็จภายใน 3 วัน</span>
+              <span v-else-if="assignForm.priority==='เร่งด่วน'">🔴 <strong>SLA 1 วัน</strong> — โครงการใกล้วันปิดรับซองแล้ว Sales ต้องจัดการให้เสร็จแบบ Priority สูงสุดภายใน 24 ชั่วโมง</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">หมายเหตุสำหรับ Sales</label>
+            <textarea v-model="assignForm.secretary_notes" class="form-control" rows="2" placeholder="เช่น ราคาไม่สูง, ต้องการเอกสาร Made in Thailand..."></textarea>
+          </div>
+          <div v-if="assignForm.assigned_to" style="background:#eff6ff;border-radius:8px;padding:.65rem .85rem;font-size:.85rem;color:#1e40af">
+            📱 ระบบจะส่ง LINE แจ้งเตือนไปยัง Sales ที่เลือก (ถ้าตั้งค่า LINE User ID ไว้แล้ว)
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeModal">ยกเลิก</button>
+          <button class="btn btn-primary" @click="submitAssign">📌 มอบหมาย</button>
+        </div>
+      </div>
+
+      <!-- Announcement Detail Modal -->
+      <div v-if="modal.type==='ann-detail'" class="modal-box modal-lg">
+        <div class="modal-header">
+          <h3>📋 รายละเอียดประกาศ</h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-section">
+            <div class="detail-section-title">ข้อมูลโครงการ</div>
+            <div class="detail-row"><span class="detail-label">เลขที่โครงการ</span><span class="detail-value font-mono">{{ modal.data.project_no }}</span></div>
+            <div class="detail-row"><span class="detail-label">ชื่อโครงการ</span><span class="detail-value" style="font-weight:600">{{ modal.data.project_name }}</span></div>
+            <div class="detail-row"><span class="detail-label">หน่วยงาน</span><span class="detail-value">{{ modal.data.unit_name }}</span></div>
+            <div class="detail-row"><span class="detail-label">วันที่ประกาศ</span><span class="detail-value">{{ modal.data.announce_date }}</span></div>
+            <div class="detail-row"><span class="detail-label">วันปิดรับ</span><span class="detail-value" style="font-weight:600;color:#dc2626">{{ modal.data.close_date }}</span></div>
+            <div class="detail-row"><span class="detail-label">ราคากลาง</span><span class="detail-value" style="font-weight:600;color:#16a34a">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <div class="detail-row"><span class="detail-label">เข้าประมูล</span>
+              <span><span class="badge" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span></span>
+            </div>
+            <div class="detail-row"><span class="detail-label">keyword</span><span class="detail-value text-blue-700">{{ modal.data.keyword_match }}</span></div>
+          </div>
+
+          <div class="detail-section" v-if="modal.data.reason">
+            <div class="detail-section-title">เหตุผล</div>
+            <div class="detail-text">{{ modal.data.reason }}</div>
+          </div>
+          <div class="detail-section" v-if="modal.data.items">
+            <div class="detail-section-title">รายการสินค้า</div>
+            <div class="detail-text">{{ modal.data.items }}</div>
+          </div>
+          <div class="detail-section" v-if="modal.data.spec">
+            <div class="detail-section-title">คุณลักษณะ (Spec)</div>
+            <div class="detail-text">{{ modal.data.spec }}</div>
+          </div>
+          <div class="detail-section" v-if="modal.data.docs_required">
+            <div class="detail-section-title">เอกสารที่ต้องใช้</div>
+            <div class="detail-text">{{ modal.data.docs_required }}</div>
+          </div>
+          <div class="detail-section" v-if="modal.data.conditions">
+            <div class="detail-section-title">เงื่อนไข</div>
+            <div class="detail-text">{{ modal.data.conditions }}</div>
+          </div>
+          <div v-if="modal.data.need_sample==='ใช่'" style="background:#fff7ed;border-radius:8px;padding:.75rem;margin-bottom:1rem">
+            ⚠️ <strong>ต้องการตัวอย่าง:</strong> {{ modal.data.sample_detail }}
+          </div>
+          <div v-if="modal.data.url" style="margin-bottom:1rem">
+            <a :href="modal.data.url" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" style="display:inline-block;text-decoration:none">🔗 เปิดลิงก์ประกาศ</a>
+          </div>
+
+          <div v-if="modal.data.assignments?.length" class="detail-section">
+            <div class="detail-section-title">การมอบหมาย</div>
+            <div v-for="pa in modal.data.assignments" :key="pa.id" style="display:flex;align-items:center;gap:.6rem;padding:.4rem 0">
+              <div class="avatar" :style="{background:pa.avatar_color??'#94a3b8',width:'28px',height:'28px',fontSize:'.65rem'}">{{ avatarInitials(pa.assigned_to_name) }}</div>
+              <span style="font-size:.875rem">{{ pa.assigned_to_name }}</span>
+              <span class="badge" :class="statusBadge(pa.status)">{{ pa.status }}</span>
+              <span class="badge" :class="priorityBadge(pa.priority)">{{ pa.priority }}</span>
+            </div>
+          </div>
+
+          <div v-if="modal.data.view_logs?.length" class="detail-section">
+            <div class="detail-section-title">👁 ประวัติการเข้าดู</div>
+            <div v-for="log in modal.data.view_logs" :key="log.viewed_at+log.full_name"
+                 style="display:flex;align-items:center;gap:.6rem;padding:.3rem 0;font-size:.8rem;color:#64748b">
+              <span style="color:#334155;font-weight:500">{{ log.full_name }}</span>
+              <span class="badge badge-gray" style="font-size:.7rem">{{ log.role }}</span>
+              <span>{{ formatDateTime(log.viewed_at) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeModal">ปิด</button>
+          <button v-if="isSecretary" class="btn btn-primary" @click="openAssignModal(modal.data.id)">📌 มอบหมายงาน</button>
+        </div>
+      </div>
+
+      <!-- Assignment Detail Modal -->
+      <div v-if="modal.type==='assign-detail'" class="modal-box modal-lg">
+        <div class="modal-header">
+          <h3>📋 รายละเอียดงาน</h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+            <span class="badge" :class="statusBadge(modal.data.status)" style="font-size:.875rem">{{ modal.data.status }}</span>
+            <span class="badge" :class="priorityBadge(modal.data.priority)">{{ modal.data.priority }}</span>
+            <span :class="slaClass(modal.data.sla_status)" style="font-size:.85rem">
+              {{ modal.data.sla_status==='เกิน' ? '🔴 เกิน SLA' : modal.data.sla_status==='ใกล้ถึง' ? '🟡 ใกล้ถึง SLA' : '🟢 SLA ปกติ' }}
+            </span>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-section-title">ข้อมูลโครงการ</div>
+            <div class="detail-row"><span class="detail-label">เลขที่โครงการ</span><span class="detail-value font-mono">{{ modal.data.project_no }}</span></div>
+            <div class="detail-row"><span class="detail-label">ชื่อโครงการ</span><span class="detail-value" style="font-weight:600">{{ modal.data.project_name }}</span></div>
+            <div class="detail-row"><span class="detail-label">หน่วยงาน</span><span class="detail-value">{{ modal.data.unit_name }}</span></div>
+            <div class="detail-row"><span class="detail-label">วันปิดรับ</span><span class="detail-value" style="font-weight:600;color:#dc2626">{{ modal.data.close_date }}</span></div>
+            <div class="detail-row"><span class="detail-label">ราคากลาง</span><span class="detail-value" style="font-weight:600;color:#16a34a">{{ formatPrice(modal.data.price_median) }}</span></div>
+            <div class="detail-row"><span class="detail-label">เข้าประมูล</span><span><span class="badge" :class="canBidBadge(modal.data.can_bid)">{{ modal.data.can_bid }}</span></span></div>
+            <div class="detail-row" v-if="modal.data.url"><span class="detail-label">ลิงก์</span>
+              <a :href="modal.data.url" target="_blank" rel="noopener" class="text-blue-600 text-sm hover:underline">เปิดประกาศ ↗</a>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-section-title">การมอบหมาย</div>
+            <div class="detail-row"><span class="detail-label">มอบหมายให้</span><span class="detail-value" style="font-weight:600">{{ modal.data.sale_name }}</span></div>
+            <div class="detail-row"><span class="detail-label">มอบหมายโดย</span><span class="detail-value">{{ modal.data.secretary_name }}</span></div>
+            <div class="detail-row"><span class="detail-label">วันที่มอบหมาย</span><span class="detail-value">{{ modal.data.assigned_at }}</span></div>
+            <div class="detail-row"><span class="detail-label">SLA Deadline</span><span class="detail-value" :class="modal.data.sla_status!=='ปกติ'?'font-bold text-red-600':''">{{ modal.data.sla_deadline }}</span></div>
+          </div>
+
+          <div v-if="modal.data.secretary_notes" class="detail-section">
+            <div class="detail-section-title">หมายเหตุจากธุรการ</div>
+            <div class="detail-text text-blue-800" style="background:#eff6ff">{{ modal.data.secretary_notes }}</div>
+          </div>
+          <div v-if="modal.data.sale_notes" class="detail-section">
+            <div class="detail-section-title">บันทึก Sales</div>
+            <div class="detail-text text-green-800" style="background:#f0fdf4">{{ modal.data.sale_notes }}</div>
+          </div>
+          <div v-if="modal.data.bid_amount" class="detail-section">
+            <div class="detail-section-title">ราคาที่เสนอ</div>
+            <div style="font-size:1.25rem;font-weight:700;color:#16a34a">{{ formatPrice(modal.data.bid_amount) }}</div>
+          </div>
+
+          <div v-if="modal.data.spec" class="detail-section">
+            <div class="detail-section-title">คุณลักษณะ (Spec)</div>
+            <div class="detail-text" style="max-height:200px;overflow-y:auto">{{ modal.data.spec }}</div>
+          </div>
+          <div v-if="modal.data.docs_required" class="detail-section">
+            <div class="detail-section-title">เอกสารที่ต้องใช้</div>
+            <div class="detail-text" style="max-height:150px;overflow-y:auto">{{ modal.data.docs_required }}</div>
+          </div>
+
+          <!-- History -->
+          <div v-if="modal.data.history?.length" class="detail-section">
+            <div class="detail-section-title">ประวัติการเปลี่ยนสถานะ</div>
+            <div v-for="h in modal.data.history" :key="h.id" class="history-item">
+              <div class="history-dot">📝</div>
+              <div style="flex:1">
+                <div style="font-size:.85rem;font-weight:500">{{ h.changed_by_name }}</div>
+                <div style="font-size:.8rem;color:#64748b">
+                  <span v-if="h.old_status">{{ h.old_status }} → </span>
+                  <span class="badge" :class="statusBadge(h.new_status)" style="padding:.1rem .5rem">{{ h.new_status }}</span>
+                  <span v-if="h.note"> · {{ h.note }}</span>
+                </div>
+                <div style="font-size:.75rem;color:#94a3b8">{{ h.changed_at }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeModal">ปิด</button>
+          <button class="btn btn-primary" @click="openStatusModal(modal.data)">✏️ อัพเดตสถานะ</button>
+        </div>
+      </div>
+
+      <!-- Status Update Modal -->
+      <div v-if="modal.type==='status'" class="modal-box modal-sm">
+        <div class="modal-header">
+          <h3>✏️ อัพเดตสถานะงาน</h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">สถานะใหม่</label>
+            <select v-model="statusForm.status" class="form-control">
+              <template v-if="isSale">
+                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                <option value="ยื่นข้อเสนอแล้ว">ยื่นข้อเสนอแล้ว</option>
+                <option value="ชนะ">ชนะ</option>
+                <option value="แพ้">แพ้</option>
+                <option value="ยกเลิก">ยกเลิก</option>
+              </template>
+              <template v-else>
+                <option value="รอดำเนินการ">รอดำเนินการ</option>
+                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                <option value="ยื่นข้อเสนอแล้ว">ยื่นข้อเสนอแล้ว</option>
+                <option value="ชนะ">ชนะ</option>
+                <option value="แพ้">แพ้</option>
+                <option value="ยกเลิก">ยกเลิก</option>
+              </template>
+            </select>
+          </div>
+          <div class="form-group" v-if="statusForm.status === 'ยื่นข้อเสนอแล้ว' || statusForm.status === 'ชนะ'">
+            <label class="form-label">ราคาที่เสนอ (บาท)</label>
+            <input type="number" v-model="statusForm.bid_amount" class="form-control" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">บันทึก / ความคืบหน้า</label>
+            <textarea v-model="statusForm.sale_notes" class="form-control" rows="3" placeholder="ระบุความคืบหน้า, ปัญหา, หรือผลลัพธ์..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">หมายเหตุการเปลี่ยนสถานะ</label>
+            <input type="text" v-model="statusForm.note" class="form-control" placeholder="(ไม่บังคับ)">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeModal">ยกเลิก</button>
+          <button class="btn btn-success" @click="submitStatusUpdate">💾 บันทึก</button>
+        </div>
+      </div>
+
+      <!-- Import Modal (from announcements view) -->
+      <div v-if="modal.type==='import'" class="modal-box modal-lg">
+        <div class="modal-header">
+          <h3>⬆️ นำเข้าข้อมูลประกาศ</h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom:.75rem">
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:.4rem">
+              📂 เลือกไฟล์ JSON
+              <input type="file" accept=".json" style="display:none" @change="loadJsonFile">
+            </label>
+            <span v-if="importFileName" style="margin-left:.75rem;font-size:.85rem;color:#475569">{{ importFileName }}</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">หรือวาง JSON Array ด้านล่าง</label>
+            <textarea v-model="importJson" class="form-control" rows="12" placeholder='[{"project_no":"...","project_name":"...","announce_date":"2026-07-08",...}]' style="font-family:monospace;font-size:.8rem"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeModal;importJson='';importFileName=''">ยกเลิก</button>
+          <button class="btn btn-primary" @click="submitImport" :disabled="!importJson.trim()">⬆️ นำเข้าเดี๋ยวนี้</button>
+        </div>
+      </div>
+
+      <!-- Win/Loss Analysis Modal -->
+      <div v-if="modal.type==='win-loss'" class="modal-box modal-md">
+        <div class="modal-header" :style="winLossForm.status==='ชนะ' ? 'background:#f0fdf4;border-bottom:1px solid #bbf7d0' : 'background:#fff1f2;border-bottom:1px solid #fecdd3'">
+          <h3 :style="winLossForm.status==='ชนะ' ? 'color:#15803d' : 'color:#b91c1c'">
+            {{ winLossForm.status==='ชนะ' ? '🏆 บันทึกเหตุผลที่ชนะ' : '❌ บันทึกเหตุผลที่แพ้' }}
+          </h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div style="font-size:.875rem;font-weight:600;color:#1e293b;margin-bottom:1rem;padding:.6rem .85rem;background:#f8fafc;border-radius:7px;border:1px solid #e2e8f0">
+            📋 {{ modal.data?.project_name }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">เหตุผลหลัก <span style="color:red">*</span></label>
+            <div style="display:flex;gap:.45rem;flex-wrap:wrap">
+              <div v-for="r in (winLossForm.status==='ชนะ' ? wonReasons : lostReasons)" :key="r"
+                   @click="winLossForm.reason = r"
+                   :style="winLossForm.reason===r
+                     ? (winLossForm.status==='ชนะ' ? 'background:#166534;color:#fff;border-color:#166534' : 'background:#b91c1c;color:#fff;border-color:#b91c1c')
+                     : (winLossForm.status==='ชนะ' ? 'background:#f0fdf4;color:#166534;border-color:#86efac' : 'background:#fff1f2;color:#b91c1c;border-color:#fca5a5')"
+                   style="padding:.4rem .85rem;border-radius:7px;font-size:.82rem;font-weight:600;border:1.5px solid;cursor:pointer;transition:all .12s">
+                {{ r }}
+              </div>
+            </div>
+          </div>
+          <div class="form-group" v-if="winLossForm.status==='ชนะ'">
+            <label class="form-label">ราคาที่เสนอ (บาท)</label>
+            <input type="number" v-model="winLossForm.bid_amount" class="form-control" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">รายละเอียดเพิ่มเติม</label>
+            <textarea v-model="winLossForm.note" class="form-control" rows="3"
+              :placeholder="winLossForm.status==='ชนะ' ? 'เช่น ราคาต่างจากคู่แข่ง / ปัจจัยที่ทำให้ชนะ...' : 'เช่น ชื่อผู้ชนะ / ราคาที่ต่างกัน / สเปกที่ขาด...'"></textarea>
+          </div>
+          <div style="font-size:.78rem;color:#64748b;background:#f8fafc;border-radius:6px;padding:.5rem .75rem">
+            💡 ข้อมูลนี้จะนำไปวิเคราะห์ Win Rate และกลยุทธ์การประมูลต่อ
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeModal">ยกเลิก</button>
+          <button class="btn" :class="winLossForm.status==='ชนะ' ? 'btn-success' : 'btn-danger'" @click="submitWinLoss">
+            {{ winLossForm.status==='ชนะ' ? '✅ ยืนยันชนะ' : '❌ ยืนยันแพ้' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- User Modal -->
+      <div v-if="modal.type==='user'" class="modal-box modal-md">
+        <div class="modal-header">
+          <h3>{{ userForm.id ? '✏️ แก้ไขผู้ใช้' : '➕ เพิ่มผู้ใช้' }}</h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+            <div class="form-group">
+              <label class="form-label">ชื่อ-นามสกุล <span style="color:red">*</span></label>
+              <input v-model="userForm.full_name" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Username <span style="color:red">*</span></label>
+              <input v-model="userForm.username" class="form-control" :disabled="!!userForm.id" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password {{ userForm.id ? '(เว้นว่างถ้าไม่เปลี่ยน)' : '*' }}</label>
+              <input v-model="userForm.password" class="form-control" type="password" :required="!userForm.id">
+            </div>
+            <div class="form-group">
+              <label class="form-label">บทบาท <span style="color:red">*</span></label>
+              <select v-model="userForm.role" class="form-control">
+                <option value="admin">Admin (ผู้ดูแลระบบ)</option>
+                <option value="salesadmin">SalesAdmin (ธุรการขาย)</option>
+                <option value="manager">Manager (ผู้จัดการฝ่ายขาย)</option>
+                <option value="sale">Sale (พนักงานขาย)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">LINE User ID</label>
+              <input v-model="userForm.line_user_id" class="form-control" placeholder="Uxxxxxxxx...">
+            </div>
+            <div class="form-group">
+              <label class="form-label">เบอร์โทรศัพท์</label>
+              <input v-model="userForm.phone" class="form-control" placeholder="08x-xxx-xxxx">
+            </div>
+            <div class="form-group">
+              <label class="form-label">สีอวตาร</label>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <input type="color" v-model="userForm.avatar_color" style="width:40px;height:36px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;padding:2px">
+                <div class="avatar" :style="{background:userForm.avatar_color,width:'36px',height:'36px'}">{{ avatarInitials(userForm.full_name||'?') }}</div>
+              </div>
+            </div>
+            <div class="form-group" v-if="userForm.id">
+              <label class="form-label">สถานะ</label>
+              <select v-model="userForm.is_active" class="form-control">
+                <option :value="1">ใช้งาน</option>
+                <option :value="0">ปิดใช้งาน</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeModal">ยกเลิก</button>
+          <button class="btn btn-primary" @click="submitUser">💾 บันทึก</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== SP: Add / Edit Deal Modal ===== -->
+    <div v-if="modal.type==='sp-form'" class="modal-overlay" @click.self="closeModal">
+      <div class="modal-box" style="max-width:560px;max-height:90vh;overflow-y:auto">
+        <div class="modal-header">
+          <h3>{{ spForm.id ? '✏️ แก้ไขรายละเอียดงาน' : '➕ เพิ่มงานใหม่' }}</h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body" style="padding:1.25rem">
+
+          <!-- แหล่งที่มา -->
+          <div class="sp-form-section">
+            <div class="sp-form-title">📌 แหล่งที่มาของงาน</div>
+            <div class="sp-source-grid">
+              <div v-for="s in spSourceTypes.filter(s=>s.val!=='ebidding')" :key="s.val"
+                   class="sp-source-btn" :class="{active: spForm.source_type===s.val}"
+                   @click="spForm.source_type=s.val">
+                {{ s.icon }} {{ s.label }}
+              </div>
+            </div>
+          </div>
+
+          <!-- ข้อมูลหลัก -->
+          <div class="sp-form-section">
+            <div class="sp-form-title">📋 ข้อมูลโครงการ / ลูกค้า</div>
+            <div class="form-group">
+              <label class="sp-form-label">ชื่อโครงการ / รายการสินค้า <span style="color:red">*</span></label>
+              <input v-model="spForm.title" class="sp-form-control" placeholder="เช่น โต๊ะทำงาน 50 ชุด, เก้าอี้ประชุม">
+              <div class="sp-form-hint">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
+            </div>
+            <div class="form-group">
+              <label class="sp-form-label">ชื่อลูกค้า / บริษัท</label>
+              <input v-model="spForm.client_name" class="sp-form-control" placeholder="เช่น บริษัท ABC จำกัด, สำนักงาน ก.">
+            </div>
+            <div class="form-group" v-if="isSecretary">
+              <label class="sp-form-label">มอบหมายให้ Sale</label>
+              <select v-model="spForm.assigned_to" class="sp-form-control">
+                <option value="">-- เลือก Sale --</option>
+                <option v-for="u in salesUsers" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- ขั้นตอนและความสำคัญ -->
+          <div class="sp-form-section">
+            <div class="sp-form-title">🔄 ขั้นตอนและความสำคัญ</div>
+            <div class="form-group">
+              <label class="sp-form-label">ขั้นตอนปัจจุบัน</label>
+              <div class="sp-stage-sel">
+                <div v-for="st in spStages.filter(s=>!['Delivered','Lost'].includes(s.key))" :key="st.key"
+                     class="sp-stage-pill" :class="{active: spForm.stage===st.key}"
+                     :style="spForm.stage===st.key ? {background:st.color} : {}"
+                     @click="spForm.stage=st.key">
+                  {{ st.icon }} {{ st.thLabel }}
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="sp-form-label">ระดับความสำคัญ</label>
+              <div style="display:flex;gap:.5rem">
+                <div v-for="p in [{val:'High',icon:'🔴',label:'สูง'},{val:'Medium',icon:'🟡',label:'กลาง'},{val:'Low',icon:'🟢',label:'ต่ำ'}]"
+                     :key="p.val" @click="spForm.priority=p.val"
+                     :style="spForm.priority===p.val ? 'background:#eff6ff;border-color:#2563eb;color:#1d4ed8' : 'background:#f8fafc;border-color:#e2e8f0;color:#64748b'"
+                     style="flex:1;border:1.5px solid;border-radius:8px;padding:.6rem;text-align:center;cursor:pointer">
+                  <div style="font-size:1.2rem">{{ p.icon }}</div>
+                  <div style="font-size:.9rem;font-weight:600;margin-top:2px">{{ p.label }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- รายละเอียดดีล -->
+          <div class="sp-form-section">
+            <div class="sp-form-title">💰 รายละเอียดดีล</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+              <div class="form-group">
+                <label class="sp-form-label">มูลค่า (บาท)</label>
+                <input v-model="spForm.value" type="number" class="sp-form-control" placeholder="0">
+              </div>
+              <div class="form-group">
+                <label class="sp-form-label">วันคาดปิดดีล</label>
+                <input v-model="spForm.expected_close" type="date" class="sp-form-control">
+              </div>
+              <div class="form-group">
+                <label class="sp-form-label">ประเภทลูกค้า</label>
+                <select v-model="spForm.segment" class="sp-form-control">
+                  <option value="">-- เลือก --</option>
+                  <option value="Gov">ภาครัฐ (Gov)</option>
+                  <option value="Private">เอกชน (Private)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="sp-form-label">หมวดสินค้า</label>
+                <select v-model="spForm.product_category" class="sp-form-control">
+                  <option value="">-- เลือก --</option>
+                  <option>Steel</option><option>Chair</option><option>Wooden</option><option>Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="sp-form-label">แบรนด์</label>
+                <select v-model="spForm.brand" class="sp-form-control">
+                  <option value="">-- เลือก --</option>
+                  <option>Taiyo</option><option>Motech</option><option>Sunon</option><option>Hybrida</option><option>Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="sp-form-label">Fee Structure</label>
+                <select v-model="spForm.fee_structure" class="sp-form-control">
+                  <option value="">-- เลือก --</option>
+                  <option>No fee</option><option>Referral %</option><option>Client to resell</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="sp-form-label">กลุ่มลูกค้า (Specialization)</label>
+              <select v-model="spForm.specialization" class="sp-form-control">
+                <option value="">-- เลือก --</option>
+                <option>Office</option><option>Hospital &amp; Wellness</option><option>Education</option><option>Government</option><option>Other</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- สิ่งที่ต้องทำต่อ -->
+          <div class="sp-form-section">
+            <div class="sp-form-title">📌 แผนการดำเนินงาน</div>
+            <div class="form-group">
+              <label class="sp-form-label">สิ่งที่ต้องทำต่อ (Next Action)</label>
+              <input v-model="spForm.next_action" class="sp-form-control" placeholder="เช่น โทรติดตาม, ส่งตัวอย่างสินค้า, นัดพรีเซนต์">
+              <div class="sp-form-hint">ระบุให้ชัดว่าต้องทำอะไร เพื่อให้ติดตามงานได้ง่าย</div>
+            </div>
+            <div class="form-group">
+              <label class="sp-form-label">หมายเหตุ</label>
+              <textarea v-model="spForm.notes" class="sp-form-control" rows="2" placeholder="รายละเอียดเพิ่มเติม ข้อตกลงพิเศษ ฯลฯ" style="min-height:70px;resize:vertical"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" style="min-height:44px;font-size:.95rem" @click="closeModal">ยกเลิก</button>
+          <button class="btn btn-primary" style="min-height:44px;font-size:.95rem;padding:.65rem 1.5rem" @click="submitSpForm">
+            💾 {{ spForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มงานใหม่' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SP: Win/Loss Modal ===== -->
+    <div v-if="modal.type==='sp-win-loss'" class="modal-overlay" @click.self="closeModal">
+      <div class="modal-box modal-md">
+        <div class="modal-header" :style="spWinLossForm.stage==='Deal Signed' ? 'background:#f0fdf4;border-bottom:1px solid #bbf7d0' : 'background:#fff1f2;border-bottom:1px solid #fecdd3'">
+          <h3 :style="spWinLossForm.stage==='Deal Signed' ? 'color:#15803d' : 'color:#b91c1c'" style="font-size:1.1rem">
+            {{ spWinLossForm.stage==='Deal Signed' ? '🏆 บันทึกการปิดดีล' : '❌ บันทึกการไม่สำเร็จ' }}
+          </h3>
+          <button class="modal-close" @click="closeModal">×</button>
+        </div>
+        <div class="modal-body" style="padding:1.25rem">
+          <div style="font-size:1rem;font-weight:600;color:#1e293b;margin-bottom:1rem;padding:.75rem;background:#f8fafc;border-radius:8px">
+            📋 {{ spWinLossForm.title }}
+          </div>
+          <div class="sp-form-section">
+            <label class="sp-form-label">
+              {{ spWinLossForm.stage==='Deal Signed' ? 'เหตุผลที่ปิดดีลได้ *' : 'เหตุผลที่ไม่สำเร็จ *' }}
+            </label>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem">
+              <div v-for="r in (spWinLossForm.stage==='Deal Signed' ? spWonReasons : spLostReasons)" :key="r"
+                   @click="spWinLossForm.reason=r"
+                   :style="spWinLossForm.reason===r
+                     ? (spWinLossForm.stage==='Deal Signed' ? 'background:#dcfce7;border-color:#16a34a;color:#15803d' : 'background:#fee2e2;border-color:#dc2626;color:#b91c1c')
+                     : 'background:#f8fafc;border-color:#e2e8f0;color:#475569'"
+                   style="border:1.5px solid;border-radius:8px;padding:.5rem 1rem;cursor:pointer;font-size:.9rem;font-weight:500">
+                {{ r }}
+              </div>
+            </div>
+          </div>
+          <div class="form-group" v-if="spWinLossForm.stage==='Deal Signed'">
+            <label class="sp-form-label">มูลค่าที่ปิดได้ (บาท)</label>
+            <input v-model="spWinLossForm.value" type="number" class="sp-form-control" placeholder="ระบุมูลค่าจริงที่ปิดดีลได้">
+          </div>
+          <div class="form-group">
+            <label class="sp-form-label">บันทึกเพิ่มเติม</label>
+            <textarea v-model="spWinLossForm.note" class="sp-form-control" rows="2" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)" style="min-height:70px;resize:vertical"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" style="min-height:44px;font-size:.95rem" @click="closeModal">ยกเลิก</button>
+          <button class="btn" style="min-height:44px;font-size:.95rem;font-weight:700"
+                  :style="spWinLossForm.stage==='Deal Signed' ? 'background:#16a34a;color:#fff' : 'background:#dc2626;color:#fff'"
+                  @click="submitSpWinLoss">
+            {{ spWinLossForm.stage==='Deal Signed' ? '✅ ยืนยันปิดดีล' : '❌ ยืนยันไม่สำเร็จ' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SP: Confirm Stage Move ===== -->
+    <div v-if="modal.type==='sp-confirm'" class="modal-overlay" @click.self="closeModal">
+      <div class="sp-confirm">
+        <div class="sp-confirm-icon">{{ spConfirm.icon }}</div>
+        <div class="sp-confirm-title">{{ spConfirm.title }}</div>
+        <div class="sp-confirm-sub">{{ spConfirm.sub }}</div>
+        <div class="sp-confirm-btns">
+          <button @click="closeModal" style="background:#f1f5f9;color:#475569">ยกเลิก</button>
+          <button @click="execSpConfirm" :style="spConfirm.danger ? 'background:#dc2626;color:#fff' : 'background:#2563eb;color:#fff'">
+            {{ spConfirm.ok }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div v-if="toast" class="toast" :class="'toast-'+toast.type">{{ toast.msg }}</div>
+
+  </template>
+</div>
+
+<!-- jQuery (required for DataTables) -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<!-- DataTables -->
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<!-- Vue.js 3 -->
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+<script>
+const { createApp } = Vue;
+
+const app = createApp({
+  data() {
+    const today = new Date().toISOString().slice(0,10);
+    return {
+      /* auth */
+      currentUser: null,
+      authChecked: false,
+      loginForm: { username: '', password: '', loading: false, error: '' },
+      /* nav */
+      currentView: 'dashboard',
+      sidebarOpen: false,
+      /* data */
+      dashboardData: null,
+      assignments: [],
+      salesUsers: [],
+      allUsers: [],
+      /* filters */
+      annDate: today,
+      annFilterStatus: '',
+      annCanBid: '',
+      assignFilter: { status: '', assigned_to: '' },
+      myTab: 'active',
+      /* forms */
+      assignForm: { announcement_id: null, assigned_to: null, priority: 'ปกติ', secretary_notes: '' },
+      statusForm:  { id: null, status: '', sale_notes: '', bid_amount: null, note: '' },
+      userForm:    { id: null, username: '', password: '', full_name: '', role: 'sale', line_user_id: '', phone: '', avatar_color: '#3B82F6', is_active: 1 },
+      importJson: '',
+      importFileName: '',
+      /* modal */
+      modal: { type: null, data: null },
+      /* pipeline */
+      pipelineView: 'kanban',
+      pipelineKanban: {},
+      pipelineStats: null,
+      pipelineSaleStats: [],
+      pipelineFilter: { assigned_to: '' },
+      pipelineLoading: false,
+      winLossForm: { id: null, status: '', reason: '', note: '', bid_amount: null },
+      /* Sales Pipeline (pipeline_items) */
+      spView: 'kanban',
+      spKanban: {},
+      spStats: null,
+      spSaleStats: [],
+      spFilter: { assigned_to: '', source_type: '' },
+      spLoading: false,
+      spEbiddingKanban: {},
+      spEbiddingLoading: false,
+      spForm: { id:null, source_type:'self_sourced', title:'', client_name:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', expected_close:'', next_action:'', notes:'' },
+      spWinLossForm: { id:null, stage:'', title:'', reason:'', note:'', value:'' },
+      spConfirm: { icon:'', title:'', sub:'', ok:'', danger:false, action:null },
+      /* state */
+      loading: false,
+      toast: null,
+      dt: null,
+    };
+  },
+
+  computed: {
+    isAdmin()      { return this.currentUser?.role === 'admin'; },
+    isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
+    isSalesAdmin() { return ['admin','salesadmin'].includes(this.currentUser?.role); },
+    isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
+    isSale()       { return this.currentUser?.role === 'sale'; },
+
+    viewTitle() {
+      const map = {
+        'dashboard':    'ภาพรวม',
+        'announcements':'ประกาศวันนี้',
+        'assignments':  'จัดการงาน',
+        'my-projects':  'งานของฉัน',
+        'import':       'นำเข้าข้อมูล',
+        'users':        'ผู้ใช้งาน',
+        'pipeline':          'Pipeline & Project Tracking (e-Bidding)',
+        'sales-pipeline':    '💼 งานขาย (Sales Pipeline)',
+      };
+      return map[this.currentView] || '';
+    },
+
+    pipelineStages() {
+      return [
+        { key: 'รอดำเนินการ',     label: '📥 รอคัดกรอง',               color: '#64748b', darkColor: '#475569' },
+        { key: 'กำลังดำเนินการ',  label: '📝 จัดเตรียมสเปก/เอกสาร',   color: '#2563eb', darkColor: '#1d4ed8' },
+        { key: 'ยื่นข้อเสนอแล้ว', label: '📤 ยื่นข้อเสนอแล้ว',         color: '#7c3aed', darkColor: '#6d28d9' },
+        { key: 'ชนะ',             label: '🏆 ชนะการประมูล',            color: '#16a34a', darkColor: '#15803d' },
+        { key: 'แพ้',             label: '❌ แพ้การประมูล',            color: '#dc2626', darkColor: '#b91c1c' },
+      ];
+    },
+
+    pipelineTableData() {
+      const all = [];
+      for (const stage of this.pipelineStages) {
+        all.push(...(this.pipelineKanban[stage.key] || []));
+      }
+      return all;
+    },
+
+    wonReasons() {
+      return ['ราคากลาง', 'คุณสมบัติตรงสเปก', 'ความสัมพันธ์ลูกค้า', 'ส่งเร็วกว่าคู่แข่ง', 'อื่นๆ'];
+    },
+
+    lostReasons() {
+      return ['ราคาสูงกว่าคู่แข่ง', 'ตกสเปก', 'เอกสารไม่ครบ', 'เวลาไม่พอ', 'ลูกค้าเลื่อน/ยกเลิก', 'อื่นๆ'];
+    },
+
+    /* ── Sales Pipeline computed ── */
+    spStages() {
+      if (this.spFilter.source_type === 'ebidding') {
+        return [
+          { key:'Interest',    thLabel:'รับงาน/ศึกษา TOR', label:'📥 รับงาน / ศึกษา TOR',     icon:'📥', color:'#64748b', darkColor:'#475569' },
+          { key:'Send PI',     thLabel:'เตรียม/ยื่นซอง',   label:'📝 เตรียม & ยื่นข้อเสนอ',   icon:'📝', color:'#0891b2', darkColor:'#0e7490' },
+          { key:'Negotiating', thLabel:'รอประกาศผล',        label:'⏳ รอประกาศผล',              icon:'⏳', color:'#7c3aed', darkColor:'#6d28d9' },
+          { key:'Deal Signed', thLabel:'ชนะประมูล',         label:'🏆 ชนะประมูล',              icon:'🏆', color:'#16a34a', darkColor:'#15803d' },
+          { key:'Delivered',   thLabel:'ส่งมอบแล้ว',        label:'🚚 ส่งมอบแล้ว',             icon:'🚚', color:'#0f766e', darkColor:'#0d6660' },
+          { key:'Lost',        thLabel:'แพ้/ยกเลิก',        label:'❌ แพ้ / ยกเลิก',           icon:'❌', color:'#dc2626', darkColor:'#b91c1c' },
+        ];
+      }
+      return [
+        { key:'Interest',    thLabel:'สนใจ/ติดต่อ',    label:'🤝 สนใจ / ติดต่อ',       icon:'🤝', color:'#64748b', darkColor:'#475569' },
+        { key:'Send PI',     thLabel:'ส่ง PI/ใบเสนอ',  label:'📄 ส่ง PI / ใบเสนอราคา', icon:'📄', color:'#0891b2', darkColor:'#0e7490' },
+        { key:'Negotiating', thLabel:'ต่อรอง/เจรจา',   label:'💬 ต่อรอง / เจรจา',       icon:'💬', color:'#7c3aed', darkColor:'#6d28d9' },
+        { key:'Deal Signed', thLabel:'ปิดดีลแล้ว',     label:'🏆 ปิดดีลแล้ว',           icon:'🏆', color:'#16a34a', darkColor:'#15803d' },
+        { key:'Delivered',   thLabel:'ส่งมอบแล้ว',     label:'🚚 ส่งมอบแล้ว',           icon:'🚚', color:'#0f766e', darkColor:'#0d6660' },
+        { key:'Lost',        thLabel:'ไม่สำเร็จ',       label:'❌ ไม่สำเร็จ',            icon:'❌', color:'#dc2626', darkColor:'#b91c1c' },
+      ];
+    },
+
+    spSourceTypes() {
+      return [
+        { val:'ebidding',       label:'e-Bidding',        icon:'🏛️' },
+        { val:'purchased_data', label:'เว็บซื้อข้อมูล',   icon:'📋' },
+        { val:'self_sourced',   label:'Sales Hunt งานเอง', icon:'🎯' },
+      ];
+    },
+
+    spEbiddingStages() {
+      return [
+        { key:'รอดำเนินการ',     label:'📥 รอดำเนินการ',     color:'#64748b' },
+        { key:'กำลังดำเนินการ',  label:'🔧 กำลังดำเนินการ',  color:'#2563eb' },
+        { key:'ยื่นข้อเสนอแล้ว', label:'📤 ยื่นข้อเสนอแล้ว', color:'#7c3aed' },
+        { key:'ชนะ',             label:'🏆 ชนะ',             color:'#16a34a' },
+        { key:'แพ้',             label:'❌ แพ้',             color:'#dc2626' },
+      ];
+    },
+
+    spEbiddingTotal() {
+      return Object.values(this.spEbiddingKanban).reduce((s, arr) => s + arr.length, 0);
+    },
+
+    spTableData() {
+      const order = ['Interest','Send PI','Negotiating','Deal Signed','Delivered','Lost'];
+      const all = [];
+      for (const k of order) all.push(...(this.spKanban[k] || []));
+      return all;
+    },
+
+    spWonReasons() {
+      return ['ราคาเหมาะสม','คุณภาพสินค้าดี','ความสัมพันธ์ดี','ส่งเร็ว/ตรงเวลา','ครบสเปก','อื่นๆ'];
+    },
+    spLostReasons() {
+      return ['ราคาสูงกว่าคู่แข่ง','สินค้าไม่ตรงสเปก','ลูกค้าเลื่อน/ยกเลิก','งบประมาณถูกตัด','ติดต่อช้าไป','อื่นๆ'];
+    },
+
+    filteredMyProjects() {
+      if (this.myTab === 'all') return this.assignments;
+      if (this.myTab === 'active')    return this.assignments.filter(a => ['รอดำเนินการ','กำลังดำเนินการ'].includes(a.status));
+      if (this.myTab === 'submitted') return this.assignments.filter(a => a.status === 'ยื่นข้อเสนอแล้ว');
+      if (this.myTab === 'done')      return this.assignments.filter(a => ['ชนะ','แพ้','ยกเลิก'].includes(a.status));
+      return this.assignments;
+    },
+
+    totalAssign() {
+      const sc = this.dashboardData?.status_counts;
+      if (!sc) return 0;
+      return Object.values(sc).reduce((s, v) => s + v, 0);
+    },
+
+    slaOkPct() {
+      const sl = this.dashboardData?.sla_breakdown;
+      if (!sl) return 0;
+      const total = (sl['ปกติ'] || 0) + (sl['ใกล้ถึง'] || 0) + (sl['เกิน'] || 0);
+      return total > 0 ? Math.round((sl['ปกติ'] || 0) / total * 100) : 0;
+    },
+
+    saleStatusRows() {
+      const sc = this.dashboardData?.status_counts || {};
+      const t  = this.totalAssign || 1;
+      return [
+        { st:'รอดำเนินการ',    color:'#94a3b8', cnt: sc['รอดำเนินการ']    || 0, pct: Math.round((sc['รอดำเนินการ']    || 0)/t*100) },
+        { st:'กำลังดำเนินการ', color:'#3b82f6', cnt: sc['กำลังดำเนินการ'] || 0, pct: Math.round((sc['กำลังดำเนินการ'] || 0)/t*100) },
+        { st:'ยื่นข้อเสนอแล้ว',color:'#8b5cf6', cnt: sc['ยื่นข้อเสนอแล้ว']|| 0, pct: Math.round((sc['ยื่นข้อเสนอแล้ว']|| 0)/t*100) },
+        { st:'ชนะ',            color:'#16a34a', cnt: sc['ชนะ']            || 0, pct: Math.round((sc['ชนะ']            || 0)/t*100) },
+        { st:'แพ้',            color:'#ef4444', cnt: sc['แพ้']            || 0, pct: Math.round((sc['แพ้']            || 0)/t*100) },
+      ];
+    },
+
+    saleValueRows() {
+      const v = this.dashboardData?.value_summary || {};
+      return [
+        { label:'มูลค่ารวมทั้งหมด', field:'total_value',  color:'#3b82f6' },
+        { label:'กำลังดำเนินการ',   field:'active_value', color:'#f59e0b' },
+        { label:'ชนะประมูล',        field:'won_value',    color:'#16a34a' },
+        { label:'แพ้ประมูล',        field:'lost_value',   color:'#ef4444' },
+      ];
+    },
+  },
+
+  methods: {
+    slaRingDash(key) {
+      const sl = this.dashboardData?.sla_breakdown;
+      if (!sl) return 0;
+      const total = (sl['ปกติ'] || 0) + (sl['ใกล้ถึง'] || 0) + (sl['เกิน'] || 0);
+      if (!total) return 0;
+      return Math.round((sl[key] || 0) / total * 201);
+    },
+
+    /* ==================== AUTH ==================== */
+    async checkAuth() {
+      try {
+        const res = await this.api('GET', 'api/auth.php?action=me');
+        if (res.success) {
+          this.currentUser = res.data;
+          await this.postLogin();
+        }
+      } catch {}
+      this.authChecked = true;
+    },
+
+    async doLogin() {
+      this.loginForm.loading = true;
+      this.loginForm.error   = '';
+      try {
+        const res = await this.api('POST', 'api/auth.php?action=login', {
+          username: this.loginForm.username,
+          password: this.loginForm.password,
+        });
+        if (res.success) {
+          this.currentUser = res.data;
+          this.loginForm.username = '';
+          this.loginForm.password = '';
+          await this.postLogin();
+        } else {
+          this.loginForm.error = res.message;
+        }
+      } catch {
+        this.loginForm.error = 'เกิดข้อผิดพลาด กรุณาลองใหม่';
+      }
+      this.loginForm.loading = false;
+    },
+
+    async postLogin() {
+      await this.loadDashboard();
+      if (this.isSecretary) {
+        this.loadSales();
+      }
+    },
+
+    async doLogout() {
+      await this.api('POST', 'api/auth.php?action=logout');
+      this.currentUser  = null;
+      this.currentView  = 'dashboard';
+      this.dashboardData = null;
+      this.assignments  = [];
+      if (this.dt) { this.dt.destroy(); this.dt = null; }
+    },
+
+    /* ==================== NAV ==================== */
+    navigate(view) {
+      this.sidebarOpen = false;
+      if (this.currentView === 'announcements' && view !== 'announcements') {
+        this.destroyDatatable();
+      }
+      this.currentView = view;
+      this.$nextTick(() => {
+        if      (view === 'dashboard')     this.loadDashboard();
+        else if (view === 'announcements') this.initDatatable();
+        else if (view === 'assignments')   { this.loadAssignments(); this.loadSales(); }
+        else if (view === 'my-projects')   this.loadMyProjects();
+        else if (view === 'users')         this.loadUsers();
+        else if (view === 'pipeline')        { this.loadPipeline(); if (this.isSecretary) this.loadSales(); }
+        else if (view === 'sales-pipeline') { this.loadSpKanban(); if (this.isSecretary) this.loadSales(); else this.loadSpEbidding(); }
+      });
+    },
+
+    /* ==================== DASHBOARD ==================== */
+    async loadDashboard() {
+      try {
+        const res = await this.api('GET', 'api/dashboard.php');
+        if (res.success) this.dashboardData = res.data;
+      } catch {}
+    },
+
+    /* ==================== DATATABLES ==================== */
+    initDatatable() {
+      if (this.dt) this.destroyDatatable();
+      const self = this;
+
+      this.dt = $('#announcements-table').DataTable({
+        processing: true,
+        serverSide: true,
+        ajax: {
+          url: 'api/announcements.php?action=datatables',
+          type: 'GET',
+          data(d) {
+            d.date          = self.annDate;
+            d.filter_status = self.annFilterStatus;
+            d.can_bid       = self.annCanBid;
+            return d;
+          },
+        },
+        columns: [
+          { data: 'project_no', title: 'เลขที่โครงการ',
+            render: d => `<span style="font-family:monospace;font-size:.8rem">${d}</span>` },
+          { data: 'project_name', title: 'ชื่อโครงการ',
+            render: d => `<div style="max-width:260px;white-space:normal;font-size:.85rem;line-height:1.4">${d}</div>` },
+          { data: 'unit_name', title: 'หน่วยงาน',
+            render: d => `<div style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem;color:#64748b" title="${d??''}">${d??'-'}</div>` },
+          { data: 'close_date', title: 'วันปิดรับ',
+            render: d => `<span style="font-size:.85rem;font-weight:600;color:#dc2626">${d??'-'}</span>` },
+          { data: 'price_median', title: 'ราคากลาง (บาท)',
+            render: d => d ? `<span style="font-weight:600;color:#16a34a">${Number(d).toLocaleString('th-TH')}</span>` : '-' },
+          { data: 'can_bid', title: 'เข้าประมูล',
+            render(d) {
+              const cls = d==='ได้' ? 'background:#dcfce7;color:#166534' : d==='ไม่ได้' ? 'background:#fee2e2;color:#991b1b' : 'background:#fef9c3;color:#854d0e';
+              return `<span style="display:inline-block;padding:.15rem .6rem;border-radius:999px;font-size:.75rem;font-weight:600;${cls}">${d}</span>`;
+            }
+          },
+          { data: 'assigned_to_names', title: 'มอบหมายให้',
+            render: d => d ? `<span style="font-size:.8rem;color:#6d28d9">${d}</span>` : '<span style="color:#94a3b8;font-size:.8rem">-</span>' },
+          { data: null, title: '', orderable: false,
+            render(d, t, row) {
+              let btns = `<button class="btn-dt-detail" data-id="${row.id}" style="padding:.2rem .55rem;border:1px solid #e2e8f0;border-radius:5px;font-size:.75rem;cursor:pointer;background:#f8fafc;color:#475569;margin-right:3px">ดู</button>`;
+              if (window.appVue?.isSecretary) {
+                btns += `<button class="btn-dt-assign" data-id="${row.id}" style="padding:.2rem .55rem;border:none;border-radius:5px;font-size:.75rem;cursor:pointer;background:#2563eb;color:#fff">มอบหมาย</button>`;
+              }
+              return btns;
+            }
+          },
+        ],
+        language: {
+          search: 'ค้นหา:', lengthMenu: 'แสดง _MENU_ รายการ',
+          info: 'แสดง _START_–_END_ จาก _TOTAL_ รายการ',
+          infoEmpty: 'ไม่มีข้อมูล', infoFiltered: '(กรองจาก _MAX_)',
+          paginate: { first:'แรก', last:'สุดท้าย', next:'ถัดไป', previous:'ก่อนหน้า' },
+          zeroRecords: 'ไม่พบข้อมูล', emptyTable: 'ไม่มีข้อมูลในตาราง',
+          processing: 'กำลังโหลด...',
+        },
+        pageLength: 25,
+        order: [[5, 'asc'], [4, 'desc']],
+        scrollX: true,
+        autoWidth: false,
+      });
+
+      $('#announcements-table').on('click', '.btn-dt-assign', function() {
+        const id = $(this).data('id');
+        window.appVue.openAssignModal(id);
+      });
+      $('#announcements-table').on('click', '.btn-dt-detail', function() {
+        const id = $(this).data('id');
+        window.appVue.openAnnouncementDetail(id);
+      });
+    },
+
+    destroyDatatable() {
+      if (this.dt) { this.dt.destroy(); this.dt = null; }
+      // Remove event listeners
+      $('#announcements-table').off('click', '.btn-dt-assign');
+      $('#announcements-table').off('click', '.btn-dt-detail');
+    },
+
+    reloadDatatable() {
+      if (this.dt) this.dt.ajax.reload(null, false);
+      else this.$nextTick(() => this.initDatatable());
+    },
+
+    /* ==================== ASSIGNMENTS ==================== */
+    async loadAssignments() {
+      this.loading = true;
+      const q = new URLSearchParams({ action: 'list' });
+      if (this.assignFilter.status)      q.set('status', this.assignFilter.status);
+      if (this.assignFilter.assigned_to) q.set('assigned_to', this.assignFilter.assigned_to);
+      const res = await this.api('GET', `api/assignments.php?${q}`);
+      if (res.success) this.assignments = res.data;
+      this.loading = false;
+    },
+
+    async loadMyProjects() {
+      this.loading = true;
+      const res = await this.api('GET', 'api/assignments.php?action=list');
+      if (res.success) this.assignments = res.data;
+      this.loading = false;
+    },
+
+    filterMyProjects() { /* computed handles this */ },
+
+    /* ==================== USERS ==================== */
+    async loadUsers() {
+      const res = await this.api('GET', 'api/users.php?action=list');
+      if (res.success) this.allUsers = res.data;
+    },
+
+    async loadSales() {
+      const res = await this.api('GET', 'api/users.php?action=sales');
+      if (res.success) this.salesUsers = res.data;
+    },
+
+    /* ==================== MODALS ==================== */
+    openAssignModal(announcementId) {
+      const prevData = this.modal.type === 'ann-detail' ? this.modal.data : null;
+      this.assignForm = { announcement_id: announcementId, assigned_to: null, priority: 'ปกติ', secretary_notes: '' };
+      if (!this.salesUsers.length) this.loadSales();
+      this.modal = { type: 'assign', data: { id: announcementId, prev: prevData } };
+    },
+
+    async openAnnouncementDetail(id) {
+      const res = await this.api('GET', `api/announcements.php?action=detail&id=${id}`);
+      if (res.success) {
+        this.modal = { type: 'ann-detail', data: res.data };
+        if (['admin','secretary'].includes(this.currentUser?.role)) {
+          this.api('POST', 'api/announcements.php?action=log_view', { announcement_id: id });
+        }
+      }
+    },
+
+    async openAssignmentDetail(id) {
+      const res = await this.api('GET', `api/assignments.php?action=detail&id=${id}`);
+      if (res.success) this.modal = { type: 'assign-detail', data: res.data };
+    },
+
+    openStatusModal(assignment) {
+      this.statusForm = {
+        id:          assignment.id,
+        status:      assignment.status,
+        sale_notes:  assignment.sale_notes  || '',
+        bid_amount:  assignment.bid_amount  || null,
+        note:        '',
+      };
+      this.modal = { type: 'status', data: assignment };
+    },
+
+    openUserModal(user) {
+      this.userForm = user
+        ? { ...user, password: '' }
+        : { id: null, username: '', password: '', full_name: '', role: 'sale', line_user_id: '', phone: '', avatar_color: '#3B82F6', is_active: 1 };
+      this.modal = { type: 'user', data: user };
+    },
+
+    closeModal() {
+      this.modal = { type: null, data: null };
+    },
+
+    /* ==================== SUBMIT ==================== */
+    async submitAssign() {
+      if (!this.assignForm.assigned_to) { this.showToast('กรุณาเลือก Sales', 'error'); return; }
+      const res = await this.api('POST', 'api/assignments.php?action=create', this.assignForm);
+      if (res.success) {
+        const notif = res.data?.line_notified ? ' · ส่ง LINE แล้ว ✓' : '';
+        this.showToast(res.message + notif, 'success');
+        this.closeModal();
+        if (this.currentView === 'announcements') this.reloadDatatable();
+        else this.loadDashboard();
+      } else {
+        this.showToast(res.message, 'error');
+      }
+    },
+
+    async submitStatusUpdate() {
+      const res = await this.api('POST', 'api/assignments.php?action=update', this.statusForm);
+      if (res.success) {
+        this.showToast('อัพเดตสำเร็จ', 'success');
+        this.closeModal();
+        if (this.currentView === 'assignments') this.loadAssignments();
+        else this.loadMyProjects();
+      } else {
+        this.showToast(res.message, 'error');
+      }
+    },
+
+    async submitUser() {
+      const action = this.userForm.id ? 'update' : 'create';
+      const res = await this.api('POST', `api/users.php?action=${action}`, this.userForm);
+      if (res.success) { this.showToast(res.message, 'success'); this.closeModal(); this.loadUsers(); }
+      else this.showToast(res.message, 'error');
+    },
+
+    loadJsonFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      this.importFileName = file.name;
+      const reader = new FileReader();
+      reader.onload = ev => { this.importJson = ev.target.result; };
+      reader.readAsText(file, 'UTF-8');
+      e.target.value = '';
+    },
+
+    async submitImport() {
+      let items;
+      try { items = JSON.parse(this.importJson); } catch { this.showToast('JSON ไม่ถูกต้อง กรุณาตรวจสอบรูปแบบ', 'error'); return; }
+      if (!Array.isArray(items)) items = [items];
+      const res = await this.api('POST', 'api/announcements.php?action=import', { items });
+      if (res.success) {
+        this.showToast(res.message, 'success');
+        this.closeModal();
+        this.importJson = '';
+        if (this.currentView === 'announcements') this.reloadDatatable();
+        else if (this.currentView === 'import') {}
+        this.loadDashboard();
+      } else {
+        this.showToast(res.message, 'error');
+      }
+    },
+
+    /* ==================== PIPELINE ==================== */
+    async loadPipeline() {
+      this.pipelineLoading = true;
+      const q = new URLSearchParams({ action: 'kanban' });
+      if (this.pipelineFilter.assigned_to) q.set('assigned_to', this.pipelineFilter.assigned_to);
+      try {
+        const res = await this.api('GET', `api/assignments.php?${q}`);
+        if (res.success) {
+          this.pipelineKanban    = res.data.kanban;
+          this.pipelineStats     = res.data.stats;
+          this.pipelineSaleStats = res.data.per_sale || [];
+        }
+      } catch {}
+      this.pipelineLoading = false;
+    },
+
+    pipelineStageValue(stageKey) {
+      const cards = this.pipelineKanban[stageKey] || [];
+      const total = cards.reduce((s, c) => s + parseFloat(c.price_median || 0), 0);
+      if (!total) return '';
+      if (total >= 1000000) return '฿' + (total / 1000000).toFixed(1) + ' ล.';
+      if (total >= 1000) return '฿' + Math.round(total / 1000) + ' K';
+      return '฿' + total.toLocaleString('th-TH');
+    },
+
+    pipelineStageIndex(status) {
+      const keys = ['รอดำเนินการ', 'กำลังดำเนินการ', 'ยื่นข้อเสนอแล้ว'];
+      return keys.indexOf(status);
+    },
+
+    pipelineNextStage(status) {
+      const keys = ['รอดำเนินการ', 'กำลังดำเนินการ', 'ยื่นข้อเสนอแล้ว'];
+      const idx = keys.indexOf(status);
+      return idx >= 0 && idx < keys.length - 1 ? keys[idx + 1] : null;
+    },
+
+    pipelinePrevStage(status) {
+      const keys = ['รอดำเนินการ', 'กำลังดำเนินการ', 'ยื่นข้อเสนอแล้ว'];
+      const idx = keys.indexOf(status);
+      return idx > 0 ? keys[idx - 1] : null;
+    },
+
+    pipelineStageName(status) {
+      const map = {
+        'รอดำเนินการ':    'รอคัดกรอง',
+        'กำลังดำเนินการ': 'จัดเตรียมสเปก',
+        'ยื่นข้อเสนอแล้ว':'ยื่นแล้ว',
+        'ชนะ':            'ชนะ 🏆',
+        'แพ้':            'แพ้ ❌',
+        'ยกเลิก':         'ยกเลิก',
+      };
+      return map[status] || status;
+    },
+
+    async quickMoveStage(card, newStatus) {
+      if (!newStatus) return;
+      const res = await this.api('POST', 'api/assignments.php?action=update', { id: card.id, status: newStatus });
+      if (res.success) {
+        this.showToast('ย้าย stage สำเร็จ', 'success');
+        this.loadPipeline();
+      } else {
+        this.showToast(res.message, 'error');
+      }
+    },
+
+    openWinLossModal(card, status) {
+      this.winLossForm = { id: card.id, status, reason: '', note: '', bid_amount: card.bid_amount || null };
+      this.modal = { type: 'win-loss', data: card };
+    },
+
+    async submitWinLoss() {
+      if (!this.winLossForm.reason) { this.showToast('กรุณาเลือกเหตุผล', 'error'); return; }
+      const payload = {
+        id: this.winLossForm.id,
+        status: this.winLossForm.status,
+        win_loss_reason: this.winLossForm.reason,
+        win_loss_note:   this.winLossForm.note,
+      };
+      if (this.winLossForm.bid_amount) payload.bid_amount = this.winLossForm.bid_amount;
+      const res = await this.api('POST', 'api/assignments.php?action=update', payload);
+      if (res.success) {
+        this.showToast('บันทึกสำเร็จ', 'success');
+        this.closeModal();
+        this.loadPipeline();
+      } else {
+        this.showToast(res.message, 'error');
+      }
+    },
+
+    formatNumber(v) {
+      if (!v) return '0';
+      return Number(v).toLocaleString('th-TH');
+    },
+
+    /* ==================== SALES PIPELINE (pipeline_items) ==================== */
+    async loadSpEbidding() {
+      this.spEbiddingLoading = true;
+      try {
+        const res = await this.api('GET', 'api/assignments.php?action=kanban');
+        if (res.success) this.spEbiddingKanban = res.kanban || {};
+      } catch(e) { console.error(e); }
+      finally { this.spEbiddingLoading = false; }
+    },
+
+    async loadSpKanban() {
+      this.spLoading = true;
+      try {
+        let url = 'api/pipeline_items.php?action=kanban';
+        if (this.spFilter.assigned_to) url += '&assigned_to=' + this.spFilter.assigned_to;
+        if (this.spFilter.source_type)  url += '&source_type='  + this.spFilter.source_type;
+        const res = await this.api('GET', url);
+        if (res.success) {
+          this.spKanban    = res.kanban    || {};
+          this.spStats     = res.stats     || null;
+          this.spSaleStats = res.per_sale  || [];
+        }
+      } catch(e) { this.showToast('โหลดข้อมูลไม่ได้', 'error'); }
+      this.spLoading = false;
+    },
+
+    spColValue(stageKey) {
+      const items = this.spKanban[stageKey] || [];
+      const total = items.reduce((s, c) => s + (Number(c.value) || 0), 0);
+      return total > 0 ? '฿' + this.formatNumber(total) : '';
+    },
+
+    spNextStage(stage) {
+      const order = ['Interest','Send PI','Negotiating','Deal Signed','Delivered'];
+      const i = order.indexOf(stage);
+      return i >= 0 && i < order.length - 1 ? order[i + 1] : null;
+    },
+
+    spNextLabel(stage) {
+      const map = {
+        'Interest':    'ส่ง PI / ใบเสนอราคา',
+        'Send PI':     'เข้าสู่การต่อรอง',
+        'Deal Signed': 'ส่งมอบสินค้าแล้ว',
+      };
+      return map[stage] || 'ขั้นตอนต่อไป';
+    },
+
+    confirmSpMove(card, toStage) {
+      if (!toStage) return;
+      const stageInfo = this.spStages.find(s => s.key === toStage);
+      this.spConfirm = {
+        icon:   stageInfo?.icon || '▶',
+        title:  'เลื่อนขั้นตอน',
+        sub:    `"${card.title}"\nจะถูกเลื่อนไปที่ → ${stageInfo?.thLabel || toStage}`,
+        ok:     'ยืนยัน เลื่อนขั้นตอน',
+        danger: false,
+        action: async () => {
+          const res = await this.api('PUT', 'api/pipeline_items.php?id=' + card.id, { stage: toStage });
+          if (res.success) { this.showToast('เลื่อนขั้นตอนสำเร็จ ✅', 'success'); this.loadSpKanban(); }
+          else this.showToast(res.message || 'เกิดข้อผิดพลาด', 'error');
+        },
+      };
+      this.modal = { type: 'sp-confirm', data: card };
+    },
+
+    async execSpConfirm() {
+      if (this.spConfirm.action) await this.spConfirm.action();
+      this.closeModal();
+    },
+
+    openSpWinLoss(card, stage) {
+      this.spWinLossForm = { id: card.id, stage, title: card.title, reason: '', note: '', value: card.value || '' };
+      this.modal = { type: 'sp-win-loss', data: card };
+    },
+
+    async submitSpWinLoss() {
+      if (!this.spWinLossForm.reason) { this.showToast('กรุณาเลือกเหตุผล', 'error'); return; }
+      const payload = {
+        stage:           this.spWinLossForm.stage,
+        win_loss_reason: this.spWinLossForm.reason,
+        win_loss_note:   this.spWinLossForm.note,
+      };
+      if (this.spWinLossForm.value) payload.value = this.spWinLossForm.value;
+      const res = await this.api('PUT', 'api/pipeline_items.php?id=' + this.spWinLossForm.id, payload);
+      if (res.success) {
+        this.showToast('บันทึกสำเร็จ ✅', 'success');
+        this.closeModal();
+        this.loadSpKanban();
+      } else this.showToast(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    openSpForm(card) {
+      if (card) {
+        this.spForm = {
+          id: card.id, source_type: card.source_type || 'self_prospect',
+          title: card.title, client_name: card.client_name || '',
+          assigned_to: card.sale_id || '',
+          stage: card.stage, segment: card.segment || '', priority: card.priority || 'Medium',
+          product_category: card.product_category || '', brand: card.brand || '',
+          fee_structure: card.fee_structure || '', specialization: card.specialization || '',
+          value: card.value || '', expected_close: card.expected_close || '',
+          next_action: card.next_action || '', notes: card.notes || '',
+        };
+      } else {
+        this.spForm = { id:null, source_type:'self_sourced', title:'', client_name:'', assigned_to:'', stage:'Interest', segment:'', priority:'Medium', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', expected_close:'', next_action:'', notes:'' };
+      }
+      this.modal = { type: 'sp-form', data: card };
+    },
+
+    async submitSpForm() {
+      if (!this.spForm.title.trim()) { this.showToast('กรุณาระบุชื่อโครงการ/รายการ', 'error'); return; }
+      const payload = { ...this.spForm };
+      if (!payload.assigned_to) payload.assigned_to = this.currentUser.id;
+      let res;
+      if (this.spForm.id) {
+        res = await this.api('PUT', 'api/pipeline_items.php?id=' + this.spForm.id, payload);
+      } else {
+        res = await this.api('POST', 'api/pipeline_items.php', payload);
+      }
+      if (res.success) {
+        this.showToast(this.spForm.id ? 'แก้ไขสำเร็จ ✅' : 'เพิ่มงานสำเร็จ ✅', 'success');
+        this.closeModal();
+        this.loadSpKanban();
+      } else this.showToast(res.message || 'เกิดข้อผิดพลาด', 'error');
+    },
+
+    async deleteSpItem(card) {
+      this.spConfirm = {
+        icon: '🗑️', title: 'ลบรายการนี้?',
+        sub: `"${card.title}" จะถูกลบออกจากระบบ ไม่สามารถกู้คืนได้`,
+        ok: 'ลบรายการ', danger: true,
+        action: async () => {
+          const res = await this.api('DELETE', 'api/pipeline_items.php?id=' + card.id);
+          if (res.success) { this.showToast('ลบสำเร็จ', 'success'); this.loadSpKanban(); }
+          else this.showToast(res.message || 'เกิดข้อผิดพลาด', 'error');
+        },
+      };
+      this.modal = { type: 'sp-confirm', data: card };
+    },
+
+    spSourceStyle(type) {
+      const m = {
+        'ebidding':       'background:#dbeafe;color:#1d4ed8',
+        'purchased_data': 'background:#fed7aa;color:#c2410c',
+        'self_prospect':  'background:#dcfce7;color:#15803d',
+      };
+      return m[type] || 'background:#f1f5f9;color:#475569';
+    },
+
+    spPriorityStyle(p) {
+      if (p === 'High')   return 'background:#fee2e2;color:#b91c1c';
+      if (p === 'Medium') return 'background:#fef3c7;color:#b45309';
+      return 'background:#f0fdf4;color:#166534';
+    },
+
+    spStageStyle(stage) {
+      const m = {
+        'Interest':    'background:#f1f5f9;color:#475569',
+        'Send PI':     'background:#cffafe;color:#0e7490',
+        'Negotiating': 'background:#ede9fe;color:#6d28d9',
+        'Deal Signed': 'background:#dcfce7;color:#15803d',
+        'Delivered':   'background:#d1fae5;color:#065f46',
+        'Lost':        'background:#fee2e2;color:#b91c1c',
+      };
+      return m[stage] || 'background:#f1f5f9;color:#475569';
+    },
+
+    /* ==================== HELPERS ==================== */
+    async api(method, url, body = null) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      if (res.status === 401) { this.currentUser = null; return { success: false, message: 'Session หมดอายุ' }; }
+      return res.json();
+    },
+
+    showToast(msg, type = 'info') {
+      this.toast = { msg, type };
+      setTimeout(() => { this.toast = null; }, 4000);
+    },
+
+    formatPrice(v) {
+      if (!v) return '-';
+      return Number(v).toLocaleString('th-TH') + ' บาท';
+    },
+
+    formatDateTime(v) {
+      if (!v) return '-';
+      const d = new Date(v.replace(' ', 'T'));
+      return d.toLocaleString('th-TH', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    },
+
+    daysToClose(closeDate) {
+      if (!closeDate) return null;
+      const today = new Date(); today.setHours(0,0,0,0);
+      const close = new Date(closeDate); close.setHours(0,0,0,0);
+      return Math.ceil((close - today) / 86400000);
+    },
+
+    countdownColor(days) {
+      if (days === null) return '#94a3b8';
+      if (days < 0)  return '#dc2626';
+      if (days === 0) return '#dc2626';
+      if (days <= 2)  return '#ea580c';
+      if (days <= 5)  return '#ca8a04';
+      return '#16a34a';
+    },
+
+    countdownText(days) {
+      if (days === null) return '';
+      if (days < 0)  return `เกินกำหนด ${Math.abs(days)} วัน`;
+      if (days === 0) return '⚠ ปิดรับวันนี้!';
+      if (days === 1) return '⚠ พรุ่งนี้ปิดรับ';
+      return `เหลือ ${days} วัน`;
+    },
+
+    countdownBarWidth(closeDate, assignedAt) {
+      if (!closeDate || !assignedAt) return 50;
+      const start = new Date(assignedAt.replace(' ','T'));
+      const end   = new Date(closeDate); end.setHours(17,0,0,0);
+      const now   = new Date();
+      const total = end - start;
+      if (total <= 0) return 100;
+      const pct   = Math.round(((now - start) / total) * 100);
+      return Math.min(Math.max(pct, 2), 100);
+    },
+
+    slaClass(s) {
+      return s === 'เกิน' ? 'text-red-600 font-bold' : s === 'ใกล้ถึง' ? 'text-amber-600 font-semibold' : 'text-green-600';
+    },
+
+    statusBadge(s) {
+      const m = {
+        'รอดำเนินการ':'bg-gray-100 text-gray-700',
+        'กำลังดำเนินการ':'bg-blue-100 text-blue-700',
+        'ยื่นข้อเสนอแล้ว':'bg-purple-100 text-purple-700',
+        'ชนะ':'bg-green-100 text-green-700',
+        'แพ้':'bg-red-100 text-red-700',
+        'ยกเลิก':'bg-gray-200 text-gray-500',
+      };
+      return m[s] || 'bg-gray-100 text-gray-600';
+    },
+
+    priorityBadge(p) {
+      return p==='เร่งด่วน' ? 'bg-red-100 text-red-700' : p==='ปกติ' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600';
+    },
+
+    canBidBadge(v) {
+      return v==='ได้' ? 'bg-green-100 text-green-700' : v==='ไม่ได้' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700';
+    },
+
+    avatarInitials(name) {
+      if (!name) return '?';
+      const parts = name.trim().split(' ');
+      return parts.length >= 2 ? parts[0][0] + parts[1][0] : name.substring(0, 2);
+    },
+  },
+
+  mounted() {
+    // Expose to global for DataTables callbacks
+    window.appVue = this;
+    this.checkAuth();
+  },
+});
+
+app.mount('#app');
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
+
+

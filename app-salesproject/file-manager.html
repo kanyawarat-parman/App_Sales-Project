@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>จัดการไฟล์</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="file-manager" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+          จัดการไฟล์
+        </h1>
+        <span class="text-sm text-slate-500">ไฟล์แนบของดีลทั้งระบบ</span>
+      </header>
+
+      <!-- หน้าจัดการไฟล์กลาง (Files Home + Recycle Bin แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-20)
+           admin + หัวหน้า: ค้นหา / เปิด / ลบ / กู้คืน — ลบถาวร admin เท่านั้น / ตารางแบบ server-side เพราะไฟล์จะเยอะ -->
+      <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6 space-y-4">
+
+        <!-- แท็บ ใช้งานอยู่ / ไฟล์ที่ลบแล้ว -->
+        <div class="flex gap-2 flex-wrap">
+          <button type="button" @click="switchTab('active')"
+            class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[.95rem] border-2 cursor-pointer min-h-[44px]"
+            :class="tab === 'active' ? 'border-teal-600 bg-teal-50 text-teal-800 font-bold' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
+            ไฟล์ที่ใช้งานอยู่
+            <span class="px-2 rounded-full text-xs font-bold bg-white ring-1 ring-slate-200">{{ counts.active }}</span>
+          </button>
+          <button type="button" @click="switchTab('deleted')"
+            class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[.95rem] border-2 cursor-pointer min-h-[44px]"
+            :class="tab === 'deleted' ? 'border-red-500 bg-red-50 text-red-800 font-bold' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
+            ไฟล์ที่ลบแล้ว
+            <span class="px-2 rounded-full text-xs font-bold bg-white ring-1 ring-slate-200">{{ counts.deleted }}</span>
+          </button>
+        </div>
+
+        <p v-if="tab === 'deleted'" class="text-sm text-slate-500">
+          ไฟล์ที่ลบจากดีลจะอยู่ที่นี่จนกว่าผู้ดูแลระบบจะลบถาวร — กด "กู้คืน" แล้วไฟล์กลับไปอยู่ในดีลเดิม
+        </p>
+
+        <!-- ค้นหา + ตัวกรอง -->
+        <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+          <div class="flex flex-wrap gap-3 items-end">
+            <div class="flex-1 min-w-[260px]">
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ค้นหา</label>
+              <input v-model="filters.q" @input="onSearchInput" type="search"
+                placeholder="ชื่อไฟล์, หมายเหตุ, รหัส PJ, ชื่อดีล, ลูกค้า"
+                class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ประเภทไฟล์</label>
+              <select v-model="filters.category" @change="reload" class="border border-slate-300 rounded-xl px-3 py-2.5 text-base bg-white min-w-[150px]">
+                <option value="">ทั้งหมด</option>
+                <option v-for="c in options.categories" :key="c.file_category_id" :value="c.file_category_id">{{ c.file_category_name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ชนิดไฟล์</label>
+              <select v-model="filters.kind" @change="reload" class="border border-slate-300 rounded-xl px-3 py-2.5 text-base bg-white min-w-[120px]">
+                <option value="">ทั้งหมด</option>
+                <option value="pdf">PDF</option>
+                <option value="image">รูป</option>
+                <option value="excel">Excel</option>
+                <option value="word">Word</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Sale เจ้าของดีล</label>
+              <select v-model="filters.sale_id" @change="reload" class="border border-slate-300 rounded-xl px-3 py-2.5 text-base bg-white min-w-[150px]">
+                <option value="">ทั้งหมด</option>
+                <option v-for="u in options.sales" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ผู้แนบ</label>
+              <select v-model="filters.uploader_id" @change="reload" class="border border-slate-300 rounded-xl px-3 py-2.5 text-base bg-white min-w-[150px]">
+                <option value="">ทั้งหมด</option>
+                <option v-for="u in options.uploaders" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">แนบตั้งแต่วันที่</label>
+              <input v-model="filters.date_from" @change="reload" type="date" class="border border-slate-300 rounded-xl px-3 py-2 text-base bg-white">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ถึงวันที่</label>
+              <input v-model="filters.date_to" @change="reload" type="date" class="border border-slate-300 rounded-xl px-3 py-2 text-base bg-white">
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-between items-center">
+            <button v-if="hasFilter" type="button" @click="clearFilters"
+              class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ล้างตัวกรอง</button>
+            <span v-else></span>
+            <button type="button" @click="exportFiles" :disabled="exporting"
+              class="px-4 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer disabled:opacity-50 min-h-[40px]">
+              {{ exporting ? 'กำลังเตรียมไฟล์…' : 'Export Excel' }}
+            </button>
+          </div>
+        </section>
+
+        <section class="bg-white rounded-2xl border border-slate-200 p-4">
+          <table id="files-table" class="display w-full" style="width:100%"></table>
+        </section>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+  </template>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=91"></script>
+<script>
+const { createApp } = Vue;
+
+// ข้อความจากผู้ใช้ทุกช่อง ต้อง escape ก่อนใส่ใน HTML ของตาราง (DataTables render เป็น HTML ดิบ)
+function escHtml(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// วันที่สั้นในตาราง เช่น "20 ต.ค. 69 14:32"
+function shortDateTime(str) {
+  if (!str) return '-';
+  const d = new Date(String(str).replace(' ', 'T'));
+  if (isNaN(d.getTime())) return str;
+  const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getDate()} ${months[d.getMonth()]} ${String(d.getFullYear() + 543).slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ชนิดไฟล์ (สี + ป้าย) — ชุดเดียวกับแท็บไฟล์ในดีล (AppDealFiles)
+function fileKind(mime) {
+  if (mime === 'application/pdf') return { label: 'PDF', style: 'background:#fef2f2;color:#b91c1c' };
+  if (String(mime).startsWith('image/')) return { label: 'รูป', style: 'background:#f0f9ff;color:#0369a1' };
+  if (/sheet|excel/.test(mime)) return { label: 'Excel', style: 'background:#ecfdf5;color:#047857' };
+  if (/word/.test(mime)) return { label: 'Word', style: 'background:#eff6ff;color:#1d4ed8' };
+  return { label: 'ไฟล์', style: 'background:#f1f5f9;color:#475569' };
+}
+
+function canPreview(mime) { return ['application/pdf', 'image/jpeg', 'image/png'].includes(mime); }
+function fileUrl(row, inline) { return 'api/deal_files.php?action=download&id=' + row.id + (inline ? '&inline=1' : ''); }
+
+const emptyFilters = () => ({ q: '', category: '', kind: '', sale_id: '', uploader_id: '', date_from: '', date_to: '' });
+
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      tab: 'active',
+      filters: emptyFilters(),
+      options: { categories: [], sales: [], uploaders: [] },
+      counts: { active: 0, deleted: 0 },
+      exporting: false,
+      searchTimer: null,
+    };
+  },
+  computed: {
+    isAdmin() { return this.currentUser?.role === 'admin'; },
+    hasFilter() { return Object.values(this.filters).some(v => v !== ''); },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      // admin + หัวหน้าเท่านั้น (API บังคับซ้ำ)
+      if (!['admin', 'manager'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    window.appVue = this;
+    this.loadOptions();
+    this.$nextTick(() => this.initDatatable());
+  },
+  beforeUnmount() { if (this.dt) { this.dt.destroy(); this.dt = null; } },
+  methods: {
+    ...SharedMethods,
+
+    async loadOptions() {
+      const res = await apiCall('GET', 'api/deal_files.php?action=filters');
+      if (res.success) this.options = res.data;
+    },
+
+    // ค่าตัวกรองที่ส่งไป API (ใช้ทั้งตารางและ Export)
+    filterParams() {
+      const p = { tab: this.tab };
+      Object.entries(this.filters).forEach(([k, v]) => { if (v !== '') p[k] = v; });
+      return p;
+    },
+
+    initDatatable() {
+      const self = this;
+      this.dt = $('#files-table').DataTable({
+        processing: true, serverSide: true, searching: false,
+        ajax: {
+          url: 'api/deal_files.php?action=datatables', type: 'GET',
+          data(d) { return Object.assign(d, self.filterParams()); },
+          dataSrc(json) {
+            if (json.counts) self.counts = json.counts;
+            return json.data || [];
+          },
+        },
+        columns: [
+          { data: null, title: '', orderable: false, width: '56px',
+            render(d, t, row) {
+              if (String(row.mime_type).startsWith('image/')) {
+                return `<a href="${fileUrl(row, true)}" target="_blank" rel="noopener"><img src="${fileUrl(row, true)}" alt="" loading="lazy" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0"></a>`;
+              }
+              const k = fileKind(row.mime_type);
+              return `<span style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:8px;font-size:.72rem;font-weight:700;${k.style}">${k.label}</span>`;
+            } },
+          { data: 'file_category_name', title: 'ประเภท',
+            render: d => `<span style="display:inline-block;padding:.15rem .55rem;border-radius:8px;font-size:.8rem;font-weight:700;background:#f0fdfa;color:#115e59;border:1px solid #5eead4;white-space:nowrap">${escHtml(d)}</span>` },
+          { data: 'original_name', title: 'ชื่อไฟล์ / หมายเหตุ',
+            render(d, t, row) {
+              const link = `<a href="${fileUrl(row, canPreview(row.mime_type))}" target="_blank" rel="noopener" style="color:#0f766e;font-weight:600;word-break:break-all">${escHtml(d)}</a>`;
+              const note = row.comment ? `<div style="font-size:.8rem;color:#475569;margin-top:2px;white-space:pre-line">${escHtml(row.comment)}</div>` : '';
+              return `<div style="min-width:220px;max-width:320px;white-space:normal;line-height:1.5">${link}${note}</div>`;
+            } },
+          { data: 'project_code', title: 'ดีล',
+            render(d, t, row) {
+              const code = d ? `<span style="font-family:monospace;font-size:.78rem;color:#7e22ce;background:#faf5ff;padding:0 .35rem;border-radius:4px;white-space:nowrap">${escHtml(d)}</span>` : '';
+              return `<div style="min-width:190px;max-width:260px;white-space:normal;line-height:1.5">${code}<div style="font-size:.82rem">${escHtml(row.deal_title)}</div></div>`;
+            } },
+          { data: 'customer_name', title: 'ลูกค้า',
+            render: d => `<div style="min-width:150px;max-width:220px;white-space:normal;font-size:.82rem;color:#475569">${escHtml(d || '-')}</div>` },
+          { data: 'sale_name', title: 'Sale', render: d => `<span style="font-size:.82rem;white-space:nowrap">${escHtml(d || '-')}</span>` },
+          { data: 'created_by_name', title: 'ผู้แนบ', render: d => `<span style="font-size:.82rem;white-space:nowrap">${escHtml(d || '-')}</span>` },
+          { data: 'created_at', title: 'แนบเมื่อ', render: d => `<span style="font-size:.82rem;white-space:nowrap">${shortDateTime(d)}</span>` },
+          { data: 'file_size', title: 'ขนาด', className: 'dt-right',
+            render: d => `<span style="font-size:.82rem;white-space:nowrap">${SharedMethods.formatFileSize(Number(d))}</span>` },
+          { data: 'deleted_at', title: 'ลบเมื่อ / โดย', visible: false,
+            render(d, t, row) {
+              return `<div style="font-size:.82rem;white-space:nowrap;color:#b91c1c">${shortDateTime(d)}<div style="color:#64748b">${escHtml(row.deleted_by_name || '-')}</div></div>`;
+            } },
+          { data: null, title: '', orderable: false,
+            render(d, t, row) {
+              const btn = 'display:inline-block;padding:.3rem .65rem;border-radius:8px;font-size:.8rem;cursor:pointer;margin:2px;text-decoration:none;white-space:nowrap;';
+              let html = `<a href="${fileUrl(row, false)}" style="${btn}border:1px solid #e2e8f0;background:#fff;color:#475569">ดาวน์โหลด</a>`;
+              if (self.tab === 'active') {
+                if (row.project_code) {
+                  html += `<a href="sales-pipeline.html?code=${encodeURIComponent(row.project_code)}&tab=files" style="${btn}border:1px solid #99f6e4;background:#f0fdfa;color:#0f766e">เปิดดีล</a>`;
+                }
+                html += `<button type="button" class="btn-fm-delete" data-id="${row.id}" style="${btn}border:1px solid #fecaca;background:#fff;color:#dc2626">ลบ</button>`;
+              } else {
+                html += `<button type="button" class="btn-fm-restore" data-id="${row.id}" style="${btn}border:none;background:#0f766e;color:#fff;font-weight:700">กู้คืน</button>`;
+                if (self.isAdmin) {
+                  html += `<button type="button" class="btn-fm-purge" data-id="${row.id}" style="${btn}border:1px solid #dc2626;background:#fff;color:#dc2626">ลบถาวร</button>`;
+                }
+              }
+              return `<div style="display:flex;flex-wrap:wrap;justify-content:flex-end">${html}</div>`;
+            } },
+        ],
+        language: {
+          lengthMenu: 'แสดง _MENU_ รายการ',
+          info: 'แสดง _START_–_END_ จาก _TOTAL_ ไฟล์',
+          infoEmpty: 'ไม่มีไฟล์', infoFiltered: '(จากทั้งหมด _MAX_ ไฟล์)',
+          paginate: { first: 'แรก', last: 'สุดท้าย', next: 'ถัดไป', previous: 'ก่อนหน้า' },
+          zeroRecords: 'ไม่พบไฟล์ตามที่ค้นหา', emptyTable: 'ยังไม่มีไฟล์', processing: 'กำลังโหลด...',
+        },
+        pageLength: 25, order: [[7, 'desc']], scrollX: true, autoWidth: false,
+      });
+      const rowOf = el => self.dt.row($(el).closest('tr')).data();
+      $('#files-table').on('click', '.btn-fm-delete', function () { self.removeFile(rowOf(this)); });
+      $('#files-table').on('click', '.btn-fm-restore', function () { self.restoreFile(rowOf(this)); });
+      $('#files-table').on('click', '.btn-fm-purge', function () { self.purgeFile(rowOf(this)); });
+    },
+
+    reload() { if (this.dt) this.dt.ajax.reload(); },
+
+    onSearchInput() {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = setTimeout(() => this.reload(), 400);
+    },
+
+    clearFilters() {
+      this.filters = emptyFilters();
+      this.reload();
+    },
+
+    // สลับแท็บ: แท็บไฟล์ที่ลบแล้วแสดงคอลัมน์ "ลบเมื่อ / โดย" และเรียงตามเวลาลบล่าสุด
+    switchTab(tab) {
+      if (this.tab === tab) return;
+      this.tab = tab;
+      const deleted = tab === 'deleted';
+      this.dt.column(9).visible(deleted, false);
+      this.dt.order(deleted ? [[9, 'desc']] : [[7, 'desc']]);
+      this.dt.columns.adjust();
+      this.dt.ajax.reload();
+    },
+
+    async removeFile(row) {
+      if (!row) return;
+      if (!await this.showConfirm('ลบไฟล์นี้?', row.original_name + ' — ย้ายไปไฟล์ที่ลบแล้ว กู้คืนได้ภายหลัง', 'ลบไฟล์')) return;
+      const res = await apiCall('POST', 'api/deal_files.php?action=delete', { id: row.id });
+      if (!res.success) return this.showAlert(res.message || 'ลบไม่สำเร็จ', 'error');
+      this.dt.ajax.reload(null, false);
+    },
+
+    async restoreFile(row) {
+      if (!row) return;
+      if (!await this.showConfirm('กู้คืนไฟล์นี้?', row.original_name + ' — กลับไปอยู่ในดีล ' + (row.project_code || ''), 'กู้คืน')) return;
+      const res = await apiCall('POST', 'api/deal_files.php?action=restore', { id: row.id });
+      if (!res.success) return this.showAlert(res.message || 'กู้คืนไม่สำเร็จ', 'error');
+      this.dt.ajax.reload(null, false);
+    },
+
+    async purgeFile(row) {
+      if (!row) return;
+      if (!await this.showConfirm('ลบถาวร?', row.original_name + ' — ลบไฟล์จริงออกจากเซิร์ฟเวอร์ กู้คืนไม่ได้อีก', 'ลบถาวร')) return;
+      const res = await apiCall('POST', 'api/deal_files.php?action=purge', { id: row.id });
+      if (!res.success) return this.showAlert(res.message || 'ลบถาวรไม่สำเร็จ', 'error');
+      this.dt.ajax.reload(null, false);
+    },
+
+    // Export ทุกแถวตามตัวกรองปัจจุบัน (ไม่แบ่งหน้า)
+    async exportFiles() {
+      this.exporting = true;
+      const order = this.dt.order()[0] || [7, 'desc'];
+      const params = new URLSearchParams({ ...this.filterParams(), export: '1', 'order[0][column]': order[0], 'order[0][dir]': order[1] });
+      const res = await apiCall('GET', 'api/deal_files.php?action=datatables&' + params.toString());
+      this.exporting = false;
+      const rows = res.data || [];
+      if (!rows.length) return this.showAlert('ไม่มีไฟล์ตามตัวกรองนี้', 'error');
+      const deleted = this.tab === 'deleted';
+      const headers = ['ประเภท', 'ชื่อไฟล์', 'หมายเหตุ', 'ชนิด', 'รหัสดีล', 'ชื่อดีล', 'ลูกค้า', 'Sale', 'ผู้แนบ', 'แนบเมื่อ', 'ขนาด'];
+      if (deleted) headers.push('ลบเมื่อ', 'ลบโดย');
+      const data = rows.map(r => {
+        const line = [r.file_category_name, r.original_name, r.comment || '', fileKind(r.mime_type).label, r.project_code || '', r.deal_title || '',
+          r.customer_name || '', r.sale_name || '', r.created_by_name || '', formatDateTimeThai(r.created_at), this.formatFileSize(Number(r.file_size))];
+        if (deleted) line.push(formatDateTimeThai(r.deleted_at), r.deleted_by_name || '');
+        return line;
+      });
+      this.exportExcel(deleted ? 'ไฟล์ที่ลบแล้ว' : 'ไฟล์แนบดีล', headers, data);
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

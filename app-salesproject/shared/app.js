@@ -77,6 +77,7 @@ const PAGE_LABELS = {
   'delivery-forecast.html': 'คาดการณ์ส่งมอบ',
   'users.html': 'ผู้ใช้งาน',
   'notification-settings.html': 'ตั้งค่าการแจ้งเตือน',
+  'file-manager.html': 'จัดการไฟล์',
   'import.html': 'นำเข้าข้อมูล',
   'holidays.html': 'วันหยุด',
   'announcements.html': 'ประกาศ',
@@ -607,8 +608,10 @@ const AppNav = {
         // แพ้ชนะ ปิดดีล และคู่แข่ง (เดิม "วิเคราะห์ผลแพ้/ชนะ" → "วิเคราะห์ผลปิดงาน" → ชื่อนี้ ไม่ซ้ำคำกับหัวหมวด "วิเคราะห์" — ยืนยันจากผู้ใช้ 2026-10-10 — เปลี่ยน 2026-10-10 ใช้ได้ทั้งงานประมูลและขายตรง) + คู่แข่ง
         // ทุก role เห็น แต่ sale เห็นเฉพาะงานของตัวเอง (API บังคับ) ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-25)
         g.push({ href:'win-loss-analysis.html', page:'win-loss-analysis', label:'แพ้ชนะ ปิดดีล และคู่แข่ง', icon:'win_loss_analysis' });
-        if (this.isAdmin) {
+        if (this.isAdmin || this.isManager) {
           g.push({ type:'section', label:'ตั้งค่าระบบ' });
+        }
+        if (this.isAdmin) {
           g.push({ href:'kpi-settings.html', page:'kpi-settings', label:'ตั้งเกณฑ์วัดผล KPI', icon:'kpi' });
           // รายชื่อคู่แข่ง (master) — admin เท่านั้นเป็นคนเพิ่ม/แก้ไข/ซ่อน ตามมาตรฐาน CRM, sale เลือกจากรายการในฟอร์มดีลอย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-24)
           g.push({ href:'competitors.html', page:'competitors', label:'คู่แข่ง', icon:'competitors' });
@@ -617,6 +620,12 @@ const AppNav = {
           g.push({ href:'users.html', page:'users', label:'ผู้ใช้งาน', icon:'users' });
           // ตั้งค่าการแจ้งเตือนรายเรื่อง (อีเมล/LINE) — admin เท่านั้น วางต่อจากผู้ใช้งาน เพราะใช้คู่กับการตั้งค่ารายคน (ยืนยันจากผู้ใช้ 2026-10-08)
           g.push({ href:'notification-settings.html', page:'notification-settings', label:'ตั้งค่าการแจ้งเตือน', icon:'bell' });
+        }
+        // จัดการไฟล์แนบของดีลทั้งระบบ — ค้นหา / ไฟล์ที่ลบแล้ว กู้คืน (admin + หัวหน้า), ลบถาวร (admin) — ยืนยันจากผู้ใช้ 2026-10-20
+        if (this.isAdmin || this.isManager) {
+          g.push({ href:'file-manager.html', page:'file-manager', label:'จัดการไฟล์', icon:'folder' });
+        }
+        if (this.isAdmin) {
           g.push({ href:'import.html', page:'import', label:'นำเข้าข้อมูล', icon:'import' });
         }
       }
@@ -737,6 +746,8 @@ const AppNav = {
         quote_request:  '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h7"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="13" y2="13"/><polyline points="17 15 21 18 17 21"/><line x1="21" y1="18" x2="14" y2="18"/>',
         // คู่มือการใช้งาน — หนังสือเปิด (2026-10-16)
         manual:         '<path d="M2 4h6a4 4 0 014 4v13a3 3 0 00-3-3H2z"/><path d="M22 4h-6a4 4 0 00-4 4v13a3 3 0 013-3h7z"/>',
+        // จัดการไฟล์ — โฟลเดอร์ (2026-10-20)
+        folder:         '<path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>',
         master_data:    '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
       };
       return icons[name] || '';
@@ -1454,7 +1465,7 @@ const AppDealFiles = {
       await this.load();
     },
     async remove(f) {
-      if (!await this.$root.showConfirm('ลบไฟล์นี้?', f.original_name + ' — ลบแล้วกู้คืนไม่ได้', 'ลบไฟล์')) return;
+      if (!await this.$root.showConfirm('ลบไฟล์นี้?', f.original_name + ' — ย้ายไปไฟล์ที่ลบแล้ว (หัวหน้า/ผู้ดูแลระบบกู้คืนได้)', 'ลบไฟล์')) return;
       const res = await apiCall('POST', 'api/deal_files.php?action=delete', { id: f.id });
       if (!res.success) return this.$root.showAlert(res.message || 'ลบไม่สำเร็จ', 'error');
       await this.load();
