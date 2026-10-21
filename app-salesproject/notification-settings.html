@@ -79,10 +79,24 @@
                   </thead>
                   <tbody>
                     <tr v-for="t in g.items" :key="t.notification_type_id" class="border-t border-slate-100"
-                      :class="isChanged(t) ? 'bg-amber-50/60' : ''">
+                      :class="isChanged(t) || (t.notification_type_id === 'deal_created' && dealCreatedChanged) ? 'bg-amber-50/60' : ''">
                       <td class="px-5 py-3 align-top">
                         <div class="font-semibold text-slate-700">{{ t.notification_type_name }}</div>
                         <div class="text-xs text-slate-500 mt-0.5 leading-relaxed">{{ t.notification_type_description }}</div>
+                        <!-- ดีลขายตรงใหม่: แบบ ก ทุกดีล / แบบ ข เฉพาะมูลค่าถึงเกณฑ์ (Big Deal Alert) — ยืนยันจากผู้ใช้ 2026-10-21 -->
+                        <div v-if="t.notification_type_id === 'deal_created'" class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                          <span class="font-semibold text-slate-600">แจ้งเมื่อ:</span>
+                          <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" value="all" v-model="dealCreated.mode" class="w-4 h-4 accent-teal-600"> ทุกดีลใหม่
+                          </label>
+                          <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" value="value" v-model="dealCreated.mode" class="w-4 h-4 accent-teal-600"> เฉพาะมูลค่าตั้งแต่
+                          </label>
+                          <span class="inline-flex items-center gap-1.5">
+                            <input type="number" min="1" step="1000" v-model.number="dealCreated.min_value" :disabled="dealCreated.mode !== 'value'"
+                              class="w-32 border border-slate-300 rounded-lg px-2 py-1 text-sm text-right disabled:bg-slate-50 disabled:text-slate-400"> บาท
+                          </span>
+                        </div>
                       </td>
                       <!-- กระดิ่ง: ขึ้นเสมอ ปิดไม่ได้ -->
                       <td class="px-3 py-3 text-center align-middle">
@@ -274,7 +288,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=85"></script>
+<script src="shared/app.js?v=100"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -289,7 +303,9 @@ createApp({
       types: [],        // แถวที่แสดง (แก้ได้)
       original: {},     // ค่าที่บันทึกไว้ ใช้เทียบว่าเปลี่ยนอะไรบ้าง — key = notification_type_id
       receivers: null,
-      publicViewReady: false,   // รัน sql/add_notification_public_view.sql แล้ว → แสดงคอลัมน์ "ดูโดยไม่ต้อง login" (2026-10-10)
+      publicViewReady: false,
+      dealCreated: { mode: 'all', min_value: 500000 },        // ดีลขายตรงใหม่ แบบ ก / ข (app_config — 2026-10-21)
+      dealCreatedOriginal: { mode: 'all', min_value: 500000 },   // รัน sql/add_notification_public_view.sql แล้ว → แสดงคอลัมน์ "ดูโดยไม่ต้อง login" (2026-10-10)
       publicViewDays: 7,
       helpOpen: false,  // modal วิธีใช้หน้านี้ (2026-10-10)  // จำนวนผู้รับต่อกลุ่ม { sale: {label, users, email, line}, ... } (แยกตาม role 2026-10-10)
       // แท็บประวัติการส่ง (2026-10-08)
@@ -302,7 +318,11 @@ createApp({
     };
   },
   computed: {
-    changedCount() { return this.types.filter(t => this.isChanged(t)).length; },
+    changedCount() { return this.types.filter(t => this.isChanged(t)).length + (this.dealCreatedChanged ? 1 : 0); },
+    dealCreatedChanged() {
+      const a = this.dealCreated, o = this.dealCreatedOriginal;
+      return a.mode !== o.mode || (a.mode === 'value' && Number(a.min_value) !== Number(o.min_value));
+    },
     // ชื่อกลุ่มผู้รับ เรียงตามลำดับจาก API (sale → ธุรการขาย → หัวหน้า)
     roleLabels() {
       return Object.fromEntries(Object.entries(this.receivers || {}).map(([role, r]) => [role, r.label]));
@@ -384,6 +404,10 @@ createApp({
       this.receivers = res.data.receivers;
       this.publicViewReady = !!res.data.public_view_ready;
       this.publicViewDays = res.data.public_view_days || 7;
+      if (res.data.deal_created) {
+        this.dealCreated = { mode: res.data.deal_created.mode, min_value: Number(res.data.deal_created.min_value) };
+        this.dealCreatedOriginal = { ...this.dealCreated };
+      }
       this.types = res.data.types.map(t => ({ ...t, send_email: Number(t.send_email) === 1, send_line: Number(t.send_line) === 1, public_view: Number(t.public_view) === 1 }));
       this.original = Object.fromEntries(this.types.map(t => [t.notification_type_id, { send_email: t.send_email, send_line: t.send_line, public_view: t.public_view }]));
     },
@@ -395,6 +419,7 @@ createApp({
 
     resetChanges() {
       this.types.forEach(t => { Object.assign(t, this.original[t.notification_type_id]); });
+      this.dealCreated = { ...this.dealCreatedOriginal };
     },
 
     // สรุปสิ่งที่เปลี่ยนให้ดูก่อนยืนยัน เช่น "ข้อความเร่งงานจากธุรการ: LINE ไม่ส่ง → ส่ง"
@@ -408,11 +433,17 @@ createApp({
         if (o.public_view !== t.public_view) parts.push(`ดูโดยไม่ต้อง login ${o.public_view ? 'เปิด' : 'ปิด'} → ${t.public_view ? 'เปิด' : 'ปิด'}`);
         return `• ${t.notification_type_name}: ${parts.join(', ')}`;
       });
+      const dcText = d => d.mode === 'value' ? `เฉพาะมูลค่าตั้งแต่ ${Number(d.min_value).toLocaleString('th-TH')} บาท` : 'ทุกดีลใหม่';
+      if (this.dealCreatedChanged) {
+        if (this.dealCreated.mode === 'value' && !(Number(this.dealCreated.min_value) > 0)) { await this.showAlert('กรุณาระบุมูลค่าขั้นต่ำของดีลใหม่ที่ต้องแจ้งหัวหน้า', 'error'); return; }
+        lines.push(`• ดีลขายตรงใหม่ แจ้งเมื่อ: ${dcText(this.dealCreatedOriginal)} → ${dcText(this.dealCreated)}`);
+      }
       const ok = await this.showConfirm('บันทึกการตั้งค่าการแจ้งเตือน?', lines.join('\n') + '\n\nมีผลกับการแจ้งเตือนครั้งถัดไปทันที', 'บันทึก');
       if (!ok) return;
       this.saving = true;
       const res = await apiCall('POST', 'api/notification_types.php?action=save', {
         items: changed.map(t => ({ notification_type_id: t.notification_type_id, send_email: t.send_email ? 1 : 0, send_line: t.send_line ? 1 : 0, public_view: t.public_view ? 1 : 0 })),
+        ...(this.dealCreatedChanged ? { deal_created: { mode: this.dealCreated.mode, min_value: Number(this.dealCreated.min_value) || 0 } } : {}),
       });
       this.saving = false;
       if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }

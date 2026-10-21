@@ -141,8 +141,12 @@ function cancelQuoteRequest(PDO $db, array $user): void {
     $reason = trim($body['cancel_reason'] ?? '');
     if ($reason === '') jsonResponse(false, null, 'กรุณาระบุเหตุผลที่ยกเลิก', 400);
 
-    $db->prepare("UPDATE quote_requests SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW(), cancel_reason = ?, updated_by = ?
-                  WHERE quote_request_id = ? AND status IN ('pending','accepted')")
-       ->execute([$user['id'], mb_substr($reason, 0, 255), $user['id'], $req['quote_request_id']]);
-    jsonResponse(true, null, "ยกเลิกคำขอ {$req['quote_request_code']} แล้ว");
+    // ยกเลิก + ประวัติดีล / ธุรการ/admin ยกเลิกให้ = แจ้ง Sale เจ้าของดีล (2026-10-21)
+    $msg = "ยกเลิกคำขอ {$req['quote_request_code']} แล้ว";
+    if (cancelQuoteRequestBy($db, $req, (int)$user['id'], $user['full_name'] ?? $user['username'], $reason)) {
+        respondThenContinue(null, $msg);
+        notifyQuoteCancelled($db, (int)$req['quote_request_id']);
+        exit;
+    }
+    jsonResponse(true, null, $msg);
 }

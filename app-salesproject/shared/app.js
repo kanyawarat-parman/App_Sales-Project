@@ -60,6 +60,8 @@ const PAGE_LABELS = {
   'my-assignments.html': 'งานที่ได้รับ',
   'sales-pipeline.html': 'งานขายตรง (Sales Hunt)',
   'quote-requests.html': 'คำขอใบเสนอราคา',
+  'accounts.html': 'หน่วยงาน/ลูกค้า',
+  'notify-view.html': 'ดูงานจากลิงก์แจ้งเตือน',
   'company-calendar.html': 'ปฏิทินคัดกรองประกาศ',
   'bid_decision.html': 'ประกาศวันนี้',
   'assignments.html': 'จัดการงานประมูล',
@@ -680,7 +682,7 @@ const AppNav = {
       // กดแล้วเปิดรายละเอียดงานนั้นทันที (?code= — 2026-10-10) / ไม่มีรหัสงาน = หน้ารายการตามเดิม
       const codeQs = n.project_code ? '?code=' + encodeURIComponent(n.project_code) : '';
       if (n.ref_type === 'bid_won' || n.ref_type === 'bid_lost') window.location.href = 'bid-pipeline.html' + codeQs;
-      if (n.ref_type === 'deal_won' || n.ref_type === 'deal_lost') window.location.href = 'sales-pipeline.html' + codeQs;
+      if (n.ref_type === 'deal_won' || n.ref_type === 'deal_lost' || n.ref_type === 'deal_created') window.location.href = 'sales-pipeline.html' + codeQs;
       // Sale ยกเลิก / ไม่เข้าประมูล → ธุรการเปิดงานนั้นในหน้าจัดการงานประมูล (2026-10-10)
       if (n.ref_type === 'bid_cancelled_by_sale') window.location.href = 'assignments.html' + codeQs;
       // ได้รับมอบหมายดูแลลูกค้า → เปิดรายละเอียดลูกค้ารายนั้น (2026-10-09)
@@ -1568,7 +1570,46 @@ const AppDealFiles = {
 </section>`,
 };
 
+/* ── เหตุผลยกเลิกคำขอใบเสนอราคา (Picklist + "อื่นๆ" แบบ Salesforce / ServiceNow — ยืนยันจากผู้ใช้ 2026-10-21) ──
+   เลือกจากรายการ คลิกเดียว / "อื่นๆ" เท่านั้นที่ต้องพิมพ์ — v-model = ข้อความที่บันทึกลง quote_requests.cancel_reason ('' = ยังเลือกไม่ครบ)
+   รายการเดียวกับหน้าต่างยกเลิกในระบบใบเสนอราคา (quotation.html — QUOTE_CANCEL_REASONS) แก้ที่ไหนต้องแก้อีกที่ด้วย */
+const QUOTE_CANCEL_REASONS = [
+  'Sale ขอยกเลิก',
+  'Sale แจ้งว่าลูกค้าไม่เอาแล้ว',
+  'ลูกค้าเลื่อน / ยังไม่ต้องการใบตอนนี้',
+  'ขอซ้ำ — มีคำขออื่นของงานนี้อยู่แล้ว',
+  'ข้อมูลไม่ครบ — ให้ Sale ขอใหม่',
+  'ขอผิดงาน / ผิดแบบ (ใบใหม่ ↔ แก้ไขใบเดิม)',
+];
+const AppQuoteCancelReason = {
+  props: { modelValue: { type: String, default: '' } },
+  emits: ['update:modelValue'],
+  data() { return { reasons: QUOTE_CANCEL_REASONS, choice: '', other: '' }; },
+  methods: {
+    pick(c) { this.choice = c; this.emitValue(); },
+    emitValue() {
+      const v = this.choice === 'other' ? (this.other.trim() ? 'อื่นๆ: ' + this.other.trim() : '') : this.choice;
+      this.$emit('update:modelValue', v);
+    },
+  },
+  template: `
+<div class="w-full">
+  <div class="text-sm font-semibold text-slate-700 mb-1.5">เหตุผลที่ยกเลิก <span class="text-red-500">*</span></div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+    <button v-for="r in reasons" :key="r" type="button" @click="pick(r)"
+      class="text-left px-3 py-2 rounded-xl border-2 text-sm cursor-pointer"
+      :class="choice === r ? 'border-red-500 bg-red-50 text-red-800 font-semibold' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'">{{ r }}</button>
+    <button type="button" @click="pick('other')"
+      class="text-left px-3 py-2 rounded-xl border-2 text-sm cursor-pointer"
+      :class="choice === 'other' ? 'border-red-500 bg-red-50 text-red-800 font-semibold' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'">อื่นๆ (พิมพ์เหตุผล)</button>
+  </div>
+  <input v-if="choice === 'other'" v-model="other" @input="emitValue" placeholder="พิมพ์เหตุผลที่ยกเลิก"
+    class="mt-2 w-full border border-slate-300 rounded-xl px-3 py-2 text-base sm:text-sm bg-white outline-none focus:border-red-400">
+</div>`,
+};
+
 const AppQuoteRequests = {
+  components: { AppQuoteCancelReason },
   props: ['projectCode'],
   emits: ['changed', 'summary'],
   data() {
@@ -1638,7 +1679,7 @@ const AppQuoteRequests = {
     },
     startCancel(r) { this.cancelCode = r.quote_request_code; this.cancelReason = ''; },
     async confirmCancel() {
-      if (!this.cancelReason.trim()) return this.$root.showAlert('กรุณาระบุเหตุผลที่ยกเลิก', 'error');
+      if (!this.cancelReason.trim()) return this.$root.showAlert('กรุณาเลือกเหตุผลที่ยกเลิก (เลือก "อื่นๆ" ต้องพิมพ์เหตุผล)', 'error');
       const res = await apiCall('POST', 'api/quote_requests.php?action=cancel', { quote_request_code: this.cancelCode, cancel_reason: this.cancelReason });
       if (!res.success) return this.$root.showAlert(res.message || 'ยกเลิกไม่สำเร็จ', 'error');
       this.cancelCode = '';
@@ -1687,13 +1728,13 @@ const AppQuoteRequests = {
         </select>
       </div>
       <div v-if="form.issue_by==='salesadmin'">
-        <label class="block text-sm font-semibold text-slate-700 mb-1">วันที่ต้องการ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">วันที่ต้องการ</label>
         <input type="date" v-model="form.needed_by_date" :min="todayIso()"
           class="w-full sm:max-w-xs border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
         <div v-if="form.needed_by_date" class="text-sm text-slate-600 mt-1">{{ formatDateThai(form.needed_by_date) }}</div>
       </div>
       <div>
-        <label class="block text-sm font-semibold text-slate-700 mb-1">รายละเอียด <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">รายละเอียด</label>
         <textarea v-model="form.request_note" rows="3" placeholder="เช่น เก้าอี้รุ่น … 50 ตัว, ส่วนลด, เงื่อนไขการชำระเงิน"
           class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
       </div>
@@ -1731,10 +1772,12 @@ const AppQuoteRequests = {
       <template v-if="r.can_cancel">
         <button v-if="cancelCode !== r.quote_request_code" type="button" @click="startCancel(r)"
           class="mt-2 text-sm font-semibold text-red-600 underline bg-transparent border-0 p-0 cursor-pointer">ยกเลิกคำขอนี้</button>
-        <div v-else class="mt-2 flex flex-wrap gap-2 items-center">
-          <input v-model="cancelReason" placeholder="เหตุผลที่ยกเลิก" class="flex-1 min-w-[200px] border border-slate-300 rounded-xl px-3 py-2 text-base sm:text-sm bg-white">
-          <button type="button" @click="cancelCode=''" class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ไม่ยกเลิก</button>
-          <button type="button" @click="confirmCancel" class="px-3 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 border-0 cursor-pointer">ยืนยันยกเลิก</button>
+        <div v-else class="mt-2 rounded-xl border border-red-200 bg-red-50/40 p-3 space-y-3">
+          <app-quote-cancel-reason v-model="cancelReason"></app-quote-cancel-reason>
+          <div class="flex justify-end gap-2">
+            <button type="button" @click="cancelCode=''" class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ไม่ยกเลิก</button>
+            <button type="button" @click="confirmCancel" class="px-3 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 border-0 cursor-pointer">ยืนยันยกเลิก</button>
+          </div>
         </div>
       </template>
     </div>

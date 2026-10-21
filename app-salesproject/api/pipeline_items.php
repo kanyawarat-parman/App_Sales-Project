@@ -556,6 +556,8 @@ function createItem(PDO $db, array $user, array $body): void {
 
     // สร้างดีลที่ขั้นปิดดีลได้เลย → แจ้งหัวหน้า (2026-10-08)
     if (in_array($body['stage'] ?? 'Interest', ['Deal Signed', 'Delivered'], true)) notifyDealWon($db, 'direct', (int)$id, $user);
+    // ดีลขายตรงใหม่ → แจ้งหัวหน้า ตามแบบที่ admin ตั้ง (ทุกดีล / มูลค่าถึงเกณฑ์) (2026-10-21)
+    notifyDealCreated($db, (int)$id, $user, 'create');
 
     echo json_encode(['success' => true, 'id' => $id, 'message' => 'เพิ่มรายการสำเร็จ'], JSON_UNESCAPED_UNICODE);
 }
@@ -876,6 +878,8 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (isset($body['stage']) && $body['stage'] !== $row['stage']) {
         markImportReviewed($db, $user, $id, $row['source_type'] === 'ebidding' ? (int)$row['announcement_id'] : null);
     }
+    // แก้มูลค่าดีล → แบบ ข (มูลค่าถึงเกณฑ์) แจ้งหัวหน้าเมื่อเพิ่งถึงเกณฑ์ / แบบ ก ไม่แจ้งตอนแก้ (ฟังก์ชันตรวจเอง, ครั้งเดียวต่อดีล — 2026-10-21)
+    if (array_key_exists('value', $body)) notifyDealCreated($db, $id, $user, 'value');
     echo json_encode(['success' => true, 'message' => 'อัปเดตสำเร็จ'], JSON_UNESCAPED_UNICODE);
 }
 

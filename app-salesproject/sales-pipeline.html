@@ -1017,8 +1017,9 @@
                       class="w-5 h-5 rounded-full border-0 bg-transparent cursor-pointer leading-none"
                       :class="Number(c.is_special) ? 'text-slate-600 hover:bg-slate-300' : 'text-orange-700 hover:bg-orange-200'">×</button>
                   </span>
-                  <input v-model="spCompetitorQuery" @focus="spCompetitorDropdownOpen = true" @input="spCompetitorDropdownOpen = true"
-                    @blur="spCompetitorDropdownOpen = false" @keydown.enter.prevent="pickFirstSpCompetitor"
+                  <!-- เลือกแล้วปิดรายการทันที (เดิมเปิดค้างบังช่องมูลค่า เลื่อนหน้าต่างไม่ได้ — แก้ 2026-10-21) / คลิกช่องอีกครั้งเพื่อเพิ่มรายต่อไป / Esc ปิด -->
+                  <input v-model="spCompetitorQuery" @focus="spCompetitorDropdownOpen = true" @click="spCompetitorDropdownOpen = true" @input="spCompetitorDropdownOpen = true"
+                    @blur="spCompetitorDropdownOpen = false" @keydown.enter.prevent="pickFirstSpCompetitor" @keydown.esc="spCompetitorDropdownOpen = false"
                     class="flex-1 min-w-[140px] border-0 outline-none bg-transparent px-1.5 py-1 text-base sm:text-sm"
                     :placeholder="spSelectedCompetitors.length ? 'เพิ่มคู่แข่งอีก...' : 'พิมพ์ชื่อคู่แข่ง เช่น Practika'">
                 </div>
@@ -1669,7 +1670,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=95"></script>
+<script src="shared/app.js?v=100"></script>
 <script>
 const { createApp } = Vue;
 
@@ -2878,6 +2879,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         this.spForm.competitor_ids = this.spForm.competitor_ids.filter(x => !isSpecial(x)).concat(id);
       }
       this.spCompetitorQuery = '';
+      this.spCompetitorDropdownOpen = false;
     },
     removeSpCompetitor(id) {
       this.spForm.competitor_ids = this.spForm.competitor_ids.filter(x => x !== Number(id));

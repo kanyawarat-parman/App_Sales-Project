@@ -276,12 +276,137 @@
                 </table>
               </div>
             </div>
+
+            <!-- ── แผนที่การเข้าใช้ (Activity Heatmap — ยืนยันจากผู้ใช้ 2026-10-21) ── -->
+            <div v-if="tab === 'heatmap'">
+              <div class="px-5 py-3 border-b border-slate-100 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-slate-500 mr-1">คน:</span>
+                  <button v-for="r in hmRoles" :key="r.key" type="button" @click="hmRole = r.key"
+                    class="px-3 py-1.5 rounded-full font-semibold border-0 cursor-pointer"
+                    :class="hmRole === r.key ? 'bg-teal-700 text-white' : 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50'">{{ r.label }}</button>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-slate-500 mr-1">แสดงแบบ:</span>
+                  <button v-for="v in hmViews" :key="v.key" type="button" @click="hmView = v.key"
+                    class="px-3 py-1.5 rounded-full font-semibold border-0 cursor-pointer"
+                    :class="hmView === v.key ? 'bg-teal-700 text-white' : 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50'">{{ v.label }}</button>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-slate-500 mr-1">นับ:</span>
+                  <button v-for="m in hmMetrics" :key="m.key" type="button" @click="hmMetric = m.key"
+                    class="px-3 py-1.5 rounded-full font-semibold border-0 cursor-pointer"
+                    :class="hmMetric === m.key ? 'bg-teal-700 text-white' : 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50'">{{ m.label }}</button>
+                </div>
+              </div>
+              <div class="px-5 pt-3 text-sm text-slate-500">
+                <template v-if="hmView === 'day'">รายวัน {{ days }} วันล่าสุด — ตัวเลข = {{ hmMetricLabel }} ของวันนั้น · ช่องจาง = เสาร์-อาทิตย์ · กดที่ช่องเพื่อดูว่าเปิดหน้าไหน</template>
+                <template v-else>รายชั่วโมง รวม {{ days }} วันล่าสุด — ดูว่าแต่ละคนใช้ระบบช่วงไหนของวัน (ตัวเลข = {{ hmMetricLabel }}) · กดที่ช่องเพื่อดูว่าเปิดหน้าไหน</template>
+              </div>
+              <div v-if="!hmRows.length" class="px-5 py-10 text-center text-slate-400">ไม่มีผู้ใช้ใน role นี้</div>
+              <div v-else class="overflow-x-auto px-5 py-3">
+                <table class="border-separate text-sm" style="border-spacing:3px">
+                  <thead>
+                    <tr class="text-[.75rem] text-slate-500">
+                      <th class="text-left font-semibold pr-3 sticky left-0 bg-white">ชื่อ</th>
+                      <template v-if="hmView === 'day'">
+                        <th v-for="d in data.heatmap.dates" :key="d" class="font-semibold text-center px-0.5 min-w-[38px] leading-tight" :class="hmIsWeekend(d) ? 'text-slate-300' : ''">
+                          {{ hmDayName(d) }}<br>{{ Number(d.substring(8, 10)) }}
+                        </th>
+                      </template>
+                      <template v-else>
+                        <th v-for="h in data.heatmap.hours" :key="h" class="font-semibold text-center px-0.5 min-w-[38px]">{{ hmHourLabel(h) }}</th>
+                      </template>
+                      <th class="font-semibold text-center pl-3">รวม</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="u in hmRows" :key="u.id">
+                      <td class="pr-3 py-1 font-semibold text-slate-700 whitespace-nowrap sticky left-0 bg-white">{{ u.full_name }}</td>
+                      <template v-if="hmView === 'day'">
+                        <td v-for="d in data.heatmap.dates" :key="d" class="h-8 rounded-md text-center text-xs font-semibold"
+                          :class="[hmCellClass(hmDayValue(u, d)), hmIsWeekend(d) ? 'opacity-60' : '', u.days[d] ? 'cursor-pointer hover:ring-2 hover:ring-teal-600' : 'cursor-default']"
+                          :title="hmDayTitle(u, d)" @click="u.days[d] && openHmDetail(u, 'date', d)">{{ hmDayValue(u, d) || '–' }}</td>
+                      </template>
+                      <template v-else>
+                        <td v-for="h in data.heatmap.hours" :key="h" class="h-8 rounded-md text-center text-xs font-semibold"
+                          :class="[hmCellClass(hmHourValue(u, h)), u.hours[h] ? 'cursor-pointer hover:ring-2 hover:ring-teal-600' : 'cursor-default']"
+                          :title="hmHourTitle(u, h)" @click="u.hours[h] && openHmDetail(u, 'hour', h)">{{ hmHourValue(u, h) || '' }}</td>
+                      </template>
+                      <td class="pl-3 text-center font-bold text-slate-700">{{ hmTotal(u) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="flex items-center gap-1 text-xs text-slate-500 mt-3 flex-wrap">
+                  น้อย <span v-for="cls in hmLevelClasses" :key="cls" class="inline-block w-5 h-3.5 rounded" :class="cls"></span> มาก
+                  <span class="ml-2">· "–" = วันนั้นไม่ได้เข้า · สีเทียบกับค่าสูงสุดในตารางนี้</span>
+                </div>
+              </div>
+            </div>
           </div>
         </template>
       </main>
     </div>
 
     <app-modal ref="appModal"></app-modal>
+
+    <!-- รายละเอียดช่องในแผนที่การเข้าใช้: หน้าที่เปิด + ลำดับเวลา (Drill-down — ยืนยันจากผู้ใช้ 2026-10-21) -->
+    <div v-if="hmDetail" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="hmDetail = null">
+      <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+          <div class="min-w-0">
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ hmDetail.user.full_name }}</h3>
+            <div class="text-sm text-slate-500 mt-1">{{ hmDetailSubtitle }}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="hmDetail = null">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4">
+          <div v-if="!hmDetail.data" class="flex justify-center py-8"><div class="spinner w-8 h-8"></div></div>
+          <!-- นับ = ครั้งที่เข้าระบบ → ประวัติการเข้าระบบ (Login History) 1 แถว = 1 ครั้ง (2026-10-21) -->
+          <template v-else-if="hmDetail.show === 'login'">
+            <div class="text-sm text-slate-500">เข้าระบบ</div>
+            <div class="text-3xl font-bold text-slate-800 mb-3">{{ hmDetail.data.sessions.length }} <span class="text-base font-semibold text-slate-400">ครั้ง</span></div>
+            <div v-if="!hmDetail.data.sessions.length" class="text-sm text-slate-500 bg-slate-50 rounded-xl px-3.5 py-2.5">
+              ช่วงนี้ไม่ได้เข้าระบบใหม่ — ใช้งานต่อจากการเข้าระบบครั้งก่อน (ระบบจำการเข้าระบบไว้ 8 ชั่วโมง)
+            </div>
+            <div v-for="(ss, i) in hmDetail.data.sessions" :key="i" class="py-2.5 border-b border-slate-100 last:border-0">
+              <div class="text-sm font-semibold text-slate-800">
+                {{ hmDayName(ss.date) }} {{ shortDateThai(ss.date) }} · {{ ss.time }} น.
+                <span class="ml-1 font-normal text-slate-500">{{ hmDeviceLabel(ss.device_type) }}{{ ss.browser ? ' · ' + ss.browser : '' }}</span>
+              </div>
+              <div class="text-sm text-slate-500 mt-0.5">
+                ใช้ถึง {{ ss.end_time }} น.<span v-if="ss.end_date !== ss.date"> ({{ shortDateThai(ss.end_date) }})</span>
+                ({{ hmMinutesText(ss.minutes) }}{{ ss.logged_out ? ' · กดออกจากระบบ' : '' }}) · เปิด {{ ss.pages }} หน้า
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 mt-3">"ใช้ถึง" = เวลาที่กดออกจากระบบ หรือเวลากิจกรรมสุดท้ายก่อนเข้าระบบครั้งถัดไป (คนส่วนใหญ่ไม่กดออก จึงเป็นเวลาประมาณ)</div>
+            <button type="button" @click="hmDetail.show = 'pv'" class="mt-4 text-sm font-semibold text-teal-700 hover:underline bg-transparent border-0 p-0 cursor-pointer">ดูหน้าที่เปิด ({{ hmDetailPv }} หน้า) →</button>
+          </template>
+          <template v-else>
+            <div class="text-sm text-slate-500">หน้าที่เปิด</div>
+            <div class="text-3xl font-bold text-slate-800 mb-3">{{ hmDetailPv }} <span class="text-base font-semibold text-slate-400">หน้า</span></div>
+            <div v-if="hmDetail.mode === 'date'" class="text-sm font-bold text-slate-500 mb-2">ก. แยกตามหน้า</div>
+            <div v-if="!hmDetail.data.pages.length" class="text-sm text-slate-400">ไม่ได้เปิดหน้าใด (มีแค่เข้า/ออกจากระบบ)</div>
+            <div v-for="pg in hmDetail.data.pages" :key="pg.page" class="grid grid-cols-[170px_1fr_36px] gap-3 items-center py-1 text-sm">
+              <span class="text-slate-700 truncate" :title="pg.page">{{ pageLabel(pg.page) }}</span>
+              <span class="h-3 rounded bg-teal-500" :style="{ width: Math.max(4, Math.round(pg.n * 100 / hmDetail.data.pages[0].n)) + '%' }"></span>
+              <span class="text-right font-semibold text-slate-700">{{ pg.n }}</span>
+            </div>
+            <template v-if="hmDetail.mode === 'date'">
+              <div class="text-sm font-bold text-slate-500 mt-5 mb-2">ข. ลำดับเวลา <span class="font-normal">(เปิดหน้าเดิมติดกันรวมเป็นบรรทัดเดียว)</span></div>
+              <div v-for="(t, i) in hmDetail.data.timeline" :key="i" class="flex items-center gap-3 py-1 text-sm border-b border-slate-50 last:border-0">
+                <span class="w-12 shrink-0 text-slate-400 tabular-nums">{{ t.time }}</span>
+                <span v-if="t.event_type === 'login'" class="px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700">เข้าระบบ</span>
+                <span v-else-if="t.event_type === 'logout'" class="px-2 py-0.5 rounded-md text-xs font-bold bg-slate-100 text-slate-500">ออกจากระบบ</span>
+                <span v-else class="text-slate-700">{{ pageLabel(t.page) }} <span v-if="t.n > 1" class="text-slate-400">×{{ t.n }}</span></span>
+                <span v-if="t.event_type === 'login' && t.device_type" class="text-xs text-slate-400">{{ hmDeviceLabel(t.device_type) }}</span>
+              </div>
+            </template>
+            <button type="button" @click="hmDetail.show = 'login'" class="mt-4 text-sm font-semibold text-teal-700 hover:underline bg-transparent border-0 p-0 cursor-pointer">ดูประวัติการเข้าระบบ ({{ hmDetail.data.sessions.length }} ครั้ง) →</button>
+          </template>
+        </div>
+      </div>
+    </div>
 
     <!-- รายการงานค้าง / ข้อมูลย้อนหลังที่ยังไม่ตรวจ ของ sale 1 คน -->
     <!-- หน้าต่าง "ตัวเลขในแท็บนี้มาจากไหน" — คำอธิบายทุกคอลัมน์ของแท็บที่เปิดอยู่ (ยืนยันจากผู้ใช้ 2026-10-02) -->
@@ -344,7 +469,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=85"></script>
+<script src="shared/app.js?v=100"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -370,10 +495,19 @@ createApp({
                   { title: 'งานที่ทำ (ในช่วงที่เลือก)', keys: ['report_views', 'targets_set'] }],
         import: [{ title: '', keys: ['imp_direct', 'imp_bid', 'imp_progress', 'imp_pending', 'imp_done'] }],
         trend: [{ title: '', keys: ['tr_sale', 'tr_admin', 'tr_mgr', 'tr_updates', 'tr_reviews'] }],
+        heatmap: [{ title: '', keys: ['hm_pv', 'hm_login', 'hm_day', 'hm_hour', 'hm_color'] }],
       },
+      // แผนที่การเข้าใช้ (Activity Heatmap — 2026-10-21): role / รายวัน-รายชั่วโมง / ตัวที่นับ
+      hmRole: 'sale', hmView: 'day', hmMetric: 'pv',
+      hmDetail: null,   // { user, mode: 'date' | 'hour', key, data: { pages, timeline } } — กดช่องในแผนที่
+      hmRoles: [{ key: 'sale', label: 'Sale' }, { key: 'salesadmin', label: 'ธุรการขาย' }, { key: 'manager', label: 'Manager' }],
+      hmViews: [{ key: 'day', label: 'รายวัน' }, { key: 'hour', label: 'รายชั่วโมง' }],
+      hmMetrics: [{ key: 'pv', label: 'หน้าที่เปิด' }, { key: 'login', label: 'ครั้งที่เข้าระบบ' }],
+      hmLevelClasses: ['bg-slate-50 text-slate-300', 'bg-teal-50 text-teal-800', 'bg-teal-100 text-teal-800', 'bg-teal-300 text-teal-900', 'bg-teal-500 text-white', 'bg-teal-700 text-white'],
       roleTabs: [
         { key: 'sale', label: 'Sale' }, { key: 'salesadmin', label: 'ธุรการขาย' }, { key: 'manager', label: 'Manager' },
         { key: 'import', label: 'ตรวจข้อมูลย้อนหลัง' }, { key: 'trend', label: 'แนวโน้มรายสัปดาห์' },
+        { key: 'heatmap', label: 'แผนที่การเข้าใช้ (Heatmaps)' },
       ],
       salesadminBacklogItems: [
         { key: 'ann_pending', label: 'ประกาศรอตัดสินใจ', where: 'หน้า ประกาศวันนี้' },
@@ -426,7 +560,35 @@ createApp({
         tr_mgr:            ['Manager เข้าใช้', 'จำนวน Manager ที่เปิดระบบอย่างน้อย 1 ครั้งในสัปดาห์นั้น'],
         tr_updates:        ['อัปเดตสถานะงาน', 'จำนวนครั้งที่ Sale / ธุรการ เปลี่ยนสถานะดีลขายตรงและงานประมูลในสัปดาห์นั้น (ระบบหรือ admin แก้ไม่นับ)'],
         tr_reviews:        ['ตรวจข้อมูลย้อนหลัง', 'จำนวนงานนำเข้าที่ถูกตรวจในสัปดาห์นั้น (ทั้งทีม)'],
+        hm_pv:             ['หน้าที่เปิด', 'จำนวนครั้งที่เปิดหน้าในระบบ (ทุกหน้า) — ยิ่งมากยิ่งใช้ระบบมาก'],
+        hm_login:          ['ครั้งที่เข้าระบบ', 'จำนวนครั้งที่เข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน — ค้าง login ไว้ (ไม่เกิน 8 ชม.) จะไม่นับซ้ำ'],
+        hm_day:            ['รายวัน', 'ตัวเลขของแต่ละวันในช่วงที่เลือก (7 / 30 วัน) — ชี้ที่ช่องดูสรุป / กดที่ช่องดูว่าเปิดหน้าไหนบ้าง และลำดับเวลาที่เปิด'],
+        hm_hour:           ['รายชั่วโมง', 'รวมทุกวันในช่วงที่เลือก แยกตามชั่วโมง — ก่อน 8 โมงรวมไว้ที่ ≤7 / ตั้งแต่ 6 โมงเย็นรวมไว้ที่ 18+ · กดที่ช่องดูว่าเปิดหน้าไหนบ้าง'],
+        hm_color:          ['สี', 'ยิ่งเข้มยิ่งมาก — เทียบกับค่าสูงสุดในตารางที่แสดงอยู่ (เปลี่ยน role / แบบ / ตัวที่นับ สีจะคำนวณใหม่)'],
       };
+    },
+    // แผนที่การเข้าใช้ — ผู้ใช้ของ role ที่เลือก / ค่าสูงสุดในตาราง (ใช้แบ่งระดับสี)
+    hmRows() { return (this.data?.heatmap?.users || []).filter(u => u.role === this.hmRole); },
+    hmMetricLabel() { return this.hmMetric === 'pv' ? 'หน้าที่เปิด' : 'ครั้งที่เข้าระบบ'; },
+    // หัวหน้าต่างรายละเอียด: บอกแค่ช่วงเวลา — ตัวเลขแสดงในเนื้อหาตามเรื่องที่ดู (หน้าที่เปิด / เข้าระบบ) ไม่ใส่ 2 ตัวรวมกัน (ผู้ใช้สับสน 2026-10-21)
+    hmDetailSubtitle() {
+      const x = this.hmDetail;
+      if (!x) return '';
+      if (x.mode === 'date') {
+        const v = x.user.days[x.key] || {};
+        return `${this.formatDateThai(x.key)} · ใช้งาน ${v.first}–${v.last} น. · มือถือ ${v.mobile_pct || 0}%`;
+      }
+      const label = x.key === 7 ? 'ก่อน 8:00' : x.key === 18 ? 'ตั้งแต่ 18:00' : `${x.key}:00–${x.key}:59`;
+      return `${label} รวม ${this.days} วันล่าสุด`;
+    },
+    hmDetailPv() { return (this.hmDetail?.data?.pages || []).reduce((sum, p) => sum + p.n, 0); },
+    hmMax() {
+      let max = 0;
+      this.hmRows.forEach(u => {
+        if (this.hmView === 'day') this.data.heatmap.dates.forEach(d => { max = Math.max(max, this.hmDayValue(u, d)); });
+        else this.data.heatmap.hours.forEach(h => { max = Math.max(max, this.hmHourValue(u, h)); });
+      });
+      return max;
     },
     // ยอดรวมทั้งทีม Sale (แท็บ Sale + Export)
     saleTotals() {
@@ -518,7 +680,55 @@ createApp({
       return `${priced} / ${total} (${Math.round(priced * 100 / total)}%)`;
     },
 
+    // ── แผนที่การเข้าใช้ ──
+    hmDayValue(u, d) { return u.days[d]?.[this.hmMetric] || 0; },
+    hmHourValue(u, h) { return u.hours[h]?.[this.hmMetric] || 0; },
+    hmTotal(u) {
+      return this.hmView === 'day'
+        ? this.data.heatmap.dates.reduce((sum, d) => sum + this.hmDayValue(u, d), 0)
+        : this.data.heatmap.hours.reduce((sum, h) => sum + this.hmHourValue(u, h), 0);
+    },
+    // ระดับสี 0 = ไม่มี / 1–5 ตามสัดส่วนกับค่าสูงสุดในตาราง
+    hmCellClass(v) {
+      if (!v || !this.hmMax) return this.hmLevelClasses[0];
+      return this.hmLevelClasses[Math.min(5, Math.max(1, Math.ceil(v * 5 / this.hmMax)))];
+    },
+    hmDayName(d) { return ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][new Date(d + 'T00:00:00').getDay()]; },
+    hmIsWeekend(d) { const w = new Date(d + 'T00:00:00').getDay(); return w === 0 || w === 6; },
+    hmHourLabel(h) { return h === 7 ? '≤7' : h === 18 ? '18+' : String(h); },
+    hmDayTitle(u, d) {
+      const x = u.days[d];
+      const head = u.full_name + ' · ' + this.hmDayName(d) + ' ' + this.shortDateThai(d);
+      if (!x) return head + '\nไม่ได้เข้าระบบ';
+      return head + '\nเปิด ' + x.pv + ' หน้า · เข้าระบบ ' + x.login + ' ครั้ง\nเวลา ' + x.first + '–' + x.last + ' น. · ใช้มือถือ ' + x.mobile_pct + '%';
+    },
+    hmHourTitle(u, h) {
+      const x = u.hours[h];
+      const label = h === 7 ? 'ก่อน 8:00' : h === 18 ? 'ตั้งแต่ 18:00' : h + ':00–' + h + ':59';
+      return u.full_name + ' · ' + label + '\n' + (x ? 'เปิด ' + x.pv + ' หน้า · เข้าระบบ ' + x.login + ' ครั้ง' : 'ไม่ได้ใช้ช่วงนี้');
+    },
+    // กดช่อง → โหลดหน้าที่เปิด (+ ลำดับเวลาเฉพาะรายวัน) จาก api/usage_report.php action=activity
+    async openHmDetail(u, mode, key) {
+      this.hmDetail = { user: u, mode, key, data: null, show: this.hmMetric === 'login' ? 'login' : 'pv' };   // เปิดตามปุ่ม "นับ" ที่เลือกอยู่
+      const q = mode === 'date' ? `date=${key}` : `hour=${key}&days=${this.days}`;
+      const res = await apiCall('GET', `api/usage_report.php?action=activity&user_id=${u.id}&${q}`);
+      if (!res.success) { this.hmDetail = null; await this.showAlert(res.message || 'โหลดรายละเอียดไม่สำเร็จ', 'error'); return; }
+      if (this.hmDetail && this.hmDetail.user.id === u.id && this.hmDetail.key === key) this.hmDetail.data = res.data;
+    },
+    hmMinutesText(m) { return m < 1 ? 'ไม่ถึง 1 นาที' : m < 60 ? m + ' นาที' : Math.floor(m / 60) + ' ชม. ' + (m % 60) + ' นาที'; },
+    hmDeviceLabel(t) { return { mobile: 'มือถือ', tablet: 'แท็บเล็ต', desktop: 'คอมพิวเตอร์' }[t] || t; },
+    exportHeatmap() {
+      const hm = this.data.heatmap;
+      const isDay = this.hmView === 'day';
+      const cols = isDay ? hm.dates : hm.hours;
+      const headers = ['ชื่อ', ...cols.map(c => isDay ? this.hmDayName(c) + ' ' + this.shortDateThai(c) : this.hmHourLabel(c)), 'รวม'];
+      const rows = this.hmRows.map(u => [u.full_name, ...cols.map(c => isDay ? this.hmDayValue(u, c) : this.hmHourValue(u, c)), this.hmTotal(u)]);
+      const role = this.hmRoles.find(r => r.key === this.hmRole).label;
+      this.exportExcel(`แผนที่การเข้าใช้_${role}_${isDay ? 'รายวัน' : 'รายชั่วโมง'}_${this.hmMetricLabel}_${this.days}วัน`, headers, rows);
+    },
+
     exportReport() {
+      if (this.tab === 'heatmap') return this.exportHeatmap();
       const d = this.data;
       const seen = u => u.last_seen ? this.formatDateThai(u.last_seen) : 'ยังไม่เคยเข้าใช้';
       const rows = [

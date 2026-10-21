@@ -24,6 +24,8 @@ const NOTIFY_TYPES = [
     'deal_won'         => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_won',      'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
     // แพ้การประมูล / ยกเลิก / ดีลไม่สำเร็จ → หัวหน้า (2026-10-08) — ref_type/page ถูกทับใน notifyDealLost() (bid_lost → bid-pipeline / deal_lost → sales-pipeline)
     'deal_lost'        => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_lost',     'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
+    // ดีลขายตรงใหม่ → หัวหน้า (2026-10-21) — แบบ ก ทุกดีล / แบบ ข มูลค่าถึงเกณฑ์ (app_config) ผ่าน notifyDealCreated()
+    'deal_created'     => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_created',  'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
     // ธุรการ/admin เปลี่ยน Sale ผู้ดูแลลูกค้า → แจ้ง Sale คนใหม่ (2026-10-09) — page ถูกทับเป็น accounts.html?account_id=… ใน notifyAccountOwnerAssigned()
     'account_owner_assigned' => ['recipient' => 'sale', 'bell_type' => 'system',   'ref_type' => 'account',       'page' => 'accounts.html',       'email' => false, 'line' => true,  'channels' => ['line']],
     // admin นำเข้าประกาศ e-GP ใหม่ → แจ้งธุรการขายให้คัดกรอง (2026-10-09) — กดแล้วเปิดหน้า "ประกาศวันนี้"
@@ -35,6 +37,8 @@ const NOTIFY_TYPES = [
     'quote_requested' => ['recipient' => 'salesadmin', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
     // ธุรการออกใบเสนอราคาตามคำขอแล้ว → Sale เจ้าของดีล (2026-10-14 ระยะ 3) — ผ่าน notifyQuoteIssued() / Sale ออกเองไม่แจ้ง
     'quote_issued'    => ['recipient' => 'sale', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    // ธุรการ/admin ยกเลิกคำขอใบเสนอราคาให้ (เช่น Sale แจ้งว่าไม่เอาแล้ว) → Sale เจ้าของดีล (2026-10-21) — ผ่าน notifyQuoteCancelled() / Sale ยกเลิกเอง / ระบบยกเลิกเอง ไม่แจ้ง
+    'quote_cancelled' => ['recipient' => 'sale', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
 ];
 
 // กลุ่มผู้รับ (เรียงตามลำดับแสดงผลในหน้าตั้งค่าการแจ้งเตือน) — รหัส = users.role
@@ -55,7 +59,7 @@ const NOTIFY_PUBLIC_VIEW_DAYS = 7;
 // ref_type ของกระดิ่ง → ชนิดงาน: 'bid' (ref_id = project_assignments.id) | 'deal' (ref_id = pipeline_items.id) | null = ไม่ใช่งานเดียว
 function notifyRecordKind(?string $refType): ?string {
     if (in_array($refType, ['assignment', 'bid_won', 'bid_lost', 'bid_cancelled_by_sale'], true)) return 'bid';
-    if (in_array($refType, ['pipeline_item', 'deal_won', 'deal_lost'], true)) return 'deal';
+    if (in_array($refType, ['pipeline_item', 'deal_won', 'deal_lost', 'deal_created'], true)) return 'deal';
     return null;
 }
 
@@ -364,6 +368,65 @@ function notifyDealWon(PDO $db, string $kind, int $refId, array $user): void {
         foreach ($managers as $managerId) notify($db, 'deal_won', (int)$managerId, $data, (int)$user['id']);
     } catch (Throwable $e) {
         error_log("[notify] deal_won {$kind} {$refId}: " . $e->getMessage());
+    }
+}
+
+/**
+ * ดีลขายตรงใหม่ → แจ้งหัวหน้า (role manager ทุกคน — ยืนยันจากผู้ใช้ 2026-10-21)
+ * admin เลือกแบบในหน้าตั้งค่าการแจ้งเตือน (app_config):
+ *   deal_created_notify_mode = 'all' (แบบ ก — ทุกดีลใหม่, ค่าตั้งต้น) | 'value' (แบบ ข — Big Deal Alert แบบ Salesforce)
+ *   deal_created_min_value   = เกณฑ์มูลค่า (บาท) ใช้เมื่อเป็นแบบ ข — ดูจากมูลค่าดีล ไม่ใช้ลำดับความสำคัญ (ผู้ใช้เลือก ข1)
+ * $trigger 'create' = ตอนสร้างดีล / 'value' = ตอนแก้มูลค่า (แบบ ข: มูลค่าขึ้นจนถึงเกณฑ์ทีหลัง ก็แจ้ง)
+ * ครั้งเดียวต่อดีล (กระดิ่ง ref_type deal_created + ref_id) / ไม่นับดีลคู่งานประมูล และดีลนำเข้าย้อนหลัง / LINE ส่งหลังตอบหน้าเว็บ
+ */
+function notifyDealCreated(PDO $db, int $itemId, array $user, string $trigger): void {
+    try {
+        $cfg = $db->query("SELECT `key`, value FROM app_config WHERE `key` IN ('deal_created_notify_mode', 'deal_created_min_value')")->fetchAll(PDO::FETCH_KEY_PAIR);
+        $mode = ($cfg['deal_created_notify_mode'] ?? 'all') === 'value' ? 'value' : 'all';
+        $minValue = (float)($cfg['deal_created_min_value'] ?? 500000);
+        if ($mode === 'all' && $trigger !== 'create') return;
+
+        $st = $db->prepare("SELECT pi.project_code, pi.title, COALESCE(a.name, pi.client_name) AS client, pi.value, pi.win_probability,
+                                   pi.expected_close, pi.source_type, u.full_name AS sale_name, dt.deal_type_name, pi.product_category, pi.brand
+                            FROM pipeline_items pi
+                            JOIN users u ON u.id = pi.assigned_to
+                            LEFT JOIN accounts a ON a.id = pi.account_id
+                            LEFT JOIN deal_types dt ON dt.deal_type_id = pi.deal_type_id
+                            WHERE pi.id = ?");
+        $st->execute([$itemId]);
+        $job = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$job || $job['source_type'] === 'ebidding') return;
+        if ($mode === 'value' && (float)$job['value'] < $minValue) return;
+
+        $imp = $db->prepare('SELECT 1 FROM quotation_import_log WHERE pipeline_item_id = ? LIMIT 1');
+        $imp->execute([$itemId]);
+        if ($imp->fetchColumn()) return;
+        $sent = $db->prepare("SELECT 1 FROM notifications WHERE ref_type = 'deal_created' AND ref_id = ? LIMIT 1");
+        $sent->execute([$itemId]);
+        if ($sent->fetchColumn()) return;
+
+        $head  = $mode === 'value' ? '💰 ดีลใหม่มูลค่าสูง' : '🆕 ดีลขายตรงใหม่';
+        $title = mb_strlen($job['title']) > 80 ? mb_substr($job['title'], 0, 80) . '...' : $job['title'];
+        $value = (float)$job['value'] > 0 ? number_format((float)$job['value'], 0, '.', ',') . ' บาท' : 'ยังไม่ระบุ';
+        $prob  = $job['win_probability'] !== null ? round((float)$job['win_probability'] * 100) . '%' : '-';
+        $close = $job['expected_close'] ? (function_exists('thaiShortDate') ? thaiShortDate($job['expected_close']) : $job['expected_close']) : '-';
+        $data = [
+            'title'      => $head,
+            'body'       => "{$job['project_code']} {$title} · {$value} ({$job['sale_name']})",
+            'ref_type'   => 'deal_created',
+            'ref_id'     => $itemId,
+            'page'       => 'sales-pipeline.html',
+            'line_title' => $head,
+            'line_body'  => "{$job['project_code']} {$title}\nลูกค้า: " . ($job['client'] ?: '-')
+                          . (!empty($job['deal_type_name']) ? "\nประเภทดีล: {$job['deal_type_name']}" : '')
+                          . (notifyProductLine($job) !== '' ? "\n" . notifyProductLine($job) : '')
+                          . "\nมูลค่า: {$value} · โอกาสปิด {$prob}\nคาดปิด: {$close}\nSale: {$job['sale_name']}",
+            'defer_line' => true,
+        ];
+        $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($managers as $managerId) notify($db, 'deal_created', (int)$managerId, $data, (int)$user['id']);
+    } catch (Throwable $e) {
+        error_log("[notify] deal_created {$itemId}: " . $e->getMessage());
     }
 }
 

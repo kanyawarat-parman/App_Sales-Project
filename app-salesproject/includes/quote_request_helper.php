@@ -309,6 +309,55 @@ function applyQuoteAmended(PDO $db, array $req, float $grossNet, ?float $netAmou
     return ['ok' => true, 'message' => "คำขอ {$code} แก้ไขใบเดิม — ยอดใบ " . number_format($oldAmount ?? 0, 2) . ' → ' . number_format($grossNet, 2), 'notify' => null];
 }
 
+/**
+ * ยกเลิกคำขอโดยคน (ไม่ลบ — สถานะ cancelled + ผู้ยกเลิก/เวลา/เหตุผล) ใช้ทั้งหน้าเว็บระบบงานขาย และปุ่ม "ยกเลิก" ในแท็บรอเปิดใบของระบบใบเสนอราคา
+ * (Cancel with reason แบบ ServiceNow / Salesforce Case — ยืนยันจากผู้ใช้ 2026-10-21)
+ * + บันทึกประวัติดีล (สถานะดีลไม่เปลี่ยน) / คืน true = ต้องแจ้ง Sale เจ้าของดีล (คนอื่นยกเลิกให้) — ผู้เรียกส่ง notifyQuoteCancelled() หลังตอบกลับ
+ * ใบร่างในระบบใบเสนอราคาที่ผูกคำขอนี้ ไม่แตะ (ยืนยันจากผู้ใช้ — ร่าง Revision อยู่ใต้เลข QT เดียวกับใบจริง) ระบบใบเสนอราคาบล็อกการยืนยันร่างนั้นเอง
+ */
+function cancelQuoteRequestBy(PDO $db, array $req, int $actorId, string $actorName, string $reason): bool {
+    $reason = mb_substr($reason, 0, 255);
+    $db->beginTransaction();
+    try {
+        $n = $db->prepare("UPDATE quote_requests SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW(), cancel_reason = ?, updated_by = ?
+                           WHERE quote_request_id = ? AND status IN ('pending','accepted')");
+        $n->execute([$actorId, $reason, $actorId, $req['quote_request_id']]);
+        if ($n->rowCount()) {
+            $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+               ->execute([$req['pipeline_item_id'], $req['project_code'], $actorId, $req['stage'], $req['stage'],
+                          "ยกเลิกคำขอใบเสนอราคา {$req['quote_request_code']} — {$reason} (โดย {$actorName})"]);
+        }
+        $db->commit();
+        return $n->rowCount() > 0 && $actorId !== (int)$req['deal_owner_id'];
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        throw $e;
+    }
+}
+
+// แจ้ง Sale เจ้าของดีลว่าคำขอถูกยกเลิก (quote_cancelled — 2026-10-21) — แจ้งเฉพาะตอนคนอื่นยกเลิก / ไม่โยน error
+function notifyQuoteCancelled(PDO $db, int $quoteRequestId): void {
+    try {
+        $st = $db->prepare(quoteRequestSelectSql() . ' WHERE qr.quote_request_id = ?');
+        $st->execute([$quoteRequestId]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$r || $r['status'] !== 'cancelled') return;
+        $title = mb_strlen($r['title']) > 80 ? mb_substr($r['title'], 0, 80) . '...' : $r['title'];
+        notify($db, 'quote_cancelled', (int)$r['deal_owner_id'], [
+            'title'      => "❌ ยกเลิกคำขอใบเสนอราคา {$r['quote_request_code']}",
+            'body'       => "{$r['project_code']} {$title} · เหตุผล: {$r['cancel_reason']}",
+            'ref_type'   => 'quote_request',
+            'ref_id'     => $quoteRequestId,
+            'page'       => 'quote-requests.html?code=' . rawurlencode($r['quote_request_code']),
+            'line_title' => "❌ ยกเลิกคำขอใบเสนอราคา",
+            'line_body'  => "{$r['quote_request_code']} · {$r['project_code']}\n{$title}\nลูกค้า: " . ($r['customer_name'] ?: '-')
+                          . "\nยกเลิกโดย: " . ($r['cancelled_by_name'] ?: '-') . "\nเหตุผล: {$r['cancel_reason']}",
+        ], $r['cancelled_by'] ? (int)$r['cancelled_by'] : null);
+    } catch (Throwable $e) {
+        error_log("[notify] quote_cancelled {$quoteRequestId}: " . $e->getMessage());
+    }
+}
+
 // แจ้ง Sale เจ้าของดีลว่าออกใบแล้ว (quote_issued) — ลิงก์เปิดคำขอนั้นในหน้าคำขอใบเสนอราคา / ไม่โยน error
 function notifyQuoteIssued(PDO $db, int $quoteRequestId): void {
     try {

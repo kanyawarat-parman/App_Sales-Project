@@ -21,6 +21,7 @@ switch ($method) {
         switch ($action) {
             case 'summary': usageSummary($db); break;
             case 'detail':  usageDetail($db); break;
+            case 'activity': usageActivity($db); break;   // กดช่องในแผนที่การเข้าใช้ → หน้าที่เปิด + ลำดับเวลา (2026-10-21)
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -176,7 +177,131 @@ function usageSummary(PDO $db): void {
         'config' => $cfg, 'days' => $days, 'from' => substr($from, 0, 10),
         'overview' => $overview, 'rows' => $rows, 'salesadmin_backlog' => $salesadminBacklog,
         'trend' => usageTrend($db),
+        'heatmap' => usageHeatmap($db, $from, $users),
     ]);
+}
+
+/**
+ * แผนที่การเข้าใช้ (Activity Heatmap — ยืนยันจากผู้ใช้ 2026-10-21) จาก user_activity_logs ในช่วงที่เลือก
+ * days[user_id][Y-m-d] = {pv หน้าที่เปิด, login เข้าระบบ, first, last เวลาแรก/สุดท้าย, mobile_pct}
+ * hours[user_id][ชั่วโมง] = {pv, login} — ก่อน 7 โมงรวมไว้ที่ 7 / ตั้งแต่ 18 โมงรวมไว้ที่ 18 (หน้าเว็บแสดง "≤7" / "18+")
+ */
+function usageHeatmap(PDO $db, string $from, array $users): array {
+    $dates = [];
+    for ($t = strtotime(substr($from, 0, 10)); $t <= strtotime(date('Y-m-d')); $t += 86400) $dates[] = date('Y-m-d', $t);
+
+    $st = $db->prepare("SELECT user_id, DATE(created_at) AS d, SUM(event_type = 'page_view') AS pv, SUM(event_type = 'login') AS login,
+                               MIN(created_at) AS first, MAX(created_at) AS last, SUM(device_type = 'mobile') AS mobile, COUNT(*) AS total
+                        FROM user_activity_logs WHERE created_at >= ? GROUP BY user_id, DATE(created_at)");
+    $st->execute([$from]);
+    $days = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $days[(int)$r['user_id']][$r['d']] = [
+            'pv' => (int)$r['pv'], 'login' => (int)$r['login'],
+            'first' => substr($r['first'], 11, 5), 'last' => substr($r['last'], 11, 5),
+            'mobile_pct' => (int)round((int)$r['mobile'] * 100 / max(1, (int)$r['total'])),
+        ];
+    }
+
+    $st = $db->prepare("SELECT user_id, LEAST(GREATEST(HOUR(created_at), 7), 18) AS h, SUM(event_type = 'page_view') AS pv, SUM(event_type = 'login') AS login
+                        FROM user_activity_logs WHERE created_at >= ? GROUP BY user_id, h");
+    $st->execute([$from]);
+    $hours = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $hours[(int)$r['user_id']][(int)$r['h']] = ['pv' => (int)$r['pv'], 'login' => (int)$r['login']];
+    }
+
+    $rows = [];
+    foreach ($users as $u) {
+        $id = (int)$u['id'];
+        $rows[] = ['id' => $id, 'full_name' => $u['full_name'], 'role' => $u['role'],
+                   'days' => (object)($days[$id] ?? []), 'hours' => (object)($hours[$id] ?? [])];
+    }
+    return ['dates' => $dates, 'hours' => range(7, 18), 'users' => $rows];
+}
+
+/**
+ * รายละเอียดช่องในแผนที่การเข้าใช้ (Drill-down — ยืนยันจากผู้ใช้ 2026-10-21)
+ * ?user_id=&date=Y-m-d          → pages (หน้าที่เปิด เรียงมากไปน้อย) + timeline (ลำดับเวลา เปิดหน้าเดิมติดกันรวมเป็นบรรทัดเดียว)
+ * ?user_id=&hour=7..18&days=7|30 → pages ของชั่วโมงนั้น รวมทุกวันในช่วงที่เลือก (ไม่มี timeline)
+ * ชื่อหน้าส่งเป็นชื่อไฟล์ — หน้าเว็บแปลงเป็นชื่อเมนูด้วย pageLabel()
+ */
+function usageActivity(PDO $db): void {
+    $userId = (int)($_GET['user_id'] ?? 0);
+    if (isset($_GET['date'])) {
+        $date = (string)$_GET['date'];
+        $d = DateTime::createFromFormat('Y-m-d', $date);
+        if (!$d || $d->format('Y-m-d') !== $date) jsonResponse(false, null, 'วันที่ไม่ถูกต้อง', 400);
+        $where = 'user_id = ? AND created_at >= ? AND created_at < ? + INTERVAL 1 DAY';
+        $params = [$userId, "$date 00:00:00", "$date 00:00:00"];
+    } else {
+        $hour = (int)($_GET['hour'] ?? -1);
+        if ($hour < 7 || $hour > 18) jsonResponse(false, null, 'ชั่วโมงไม่ถูกต้อง', 400);
+        $days = (int)($_GET['days'] ?? 7);
+        if (!in_array($days, [7, 30], true)) $days = 7;
+        $from = date('Y-m-d 00:00:00', strtotime('-' . ($days - 1) . ' days'));
+        $where = 'user_id = ? AND created_at >= ? AND LEAST(GREATEST(HOUR(created_at), 7), 18) = ?';
+        $params = [$userId, $from, $hour];
+    }
+
+    $st = $db->prepare("SELECT page, COUNT(*) AS n FROM user_activity_logs WHERE $where AND event_type = 'page_view' AND page IS NOT NULL
+                        GROUP BY page ORDER BY n DESC, page");
+    $st->execute($params);
+    $pages = array_map(fn($r) => ['page' => $r['page'], 'n' => (int)$r['n']], $st->fetchAll(PDO::FETCH_ASSOC));
+
+    $timeline = [];
+    if (isset($date)) {
+        $st = $db->prepare("SELECT created_at, event_type, page, device_type FROM user_activity_logs WHERE $where ORDER BY created_at, user_activity_log_id");
+        $st->execute($params);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $last = count($timeline) - 1;
+            // เปิดหน้าเดิมติดกัน = รวมเป็นบรรทัดเดียว (นับครั้ง)
+            if ($r['event_type'] === 'page_view' && $last >= 0 && $timeline[$last]['event_type'] === 'page_view' && $timeline[$last]['page'] === $r['page']) {
+                $timeline[$last]['n']++;
+                continue;
+            }
+            $timeline[] = ['time' => substr($r['created_at'], 11, 5), 'event_type' => $r['event_type'], 'page' => $r['page'],
+                           'device_type' => $r['device_type'], 'n' => 1];
+        }
+    }
+    jsonResponse(true, ['pages' => $pages, 'timeline' => $timeline, 'sessions' => usageLoginSessions($db, $userId, $where, $params)]);
+}
+
+/**
+ * ประวัติการเข้าระบบ (Login History แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-21): 1 แถว = เข้าระบบ 1 ครั้งในช่องที่กด
+ * ใช้ถึง = ออกจากระบบ หรือกิจกรรมสุดท้ายก่อนเข้าระบบครั้งถัดไป (ไม่เกิน 8 ชม. ตามอายุ login) — คนส่วนใหญ่ไม่กดออก จึงเป็นเวลาประมาณ
+ */
+function usageLoginSessions(PDO $db, int $userId, string $where, array $params): array {
+    $st = $db->prepare("SELECT created_at, device_type, browser FROM user_activity_logs WHERE $where AND event_type = 'login' ORDER BY created_at DESC");
+    $st->execute($params);
+    $logins = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    $next = $db->prepare("SELECT MIN(created_at) FROM user_activity_logs WHERE user_id = ? AND event_type = 'login' AND created_at > ?");
+    $events = $db->prepare("SELECT created_at, event_type FROM user_activity_logs WHERE user_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, user_activity_log_id");
+    $sessions = [];
+    foreach ($logins as $l) {
+        $start = $l['created_at'];
+        $next->execute([$userId, $start]);
+        $limit = date('Y-m-d H:i:s', strtotime($start) + 8 * 3600);
+        $nextLogin = $next->fetchColumn();
+        if ($nextLogin && $nextLogin < $limit) $limit = $nextLogin;
+
+        $events->execute([$userId, $start, $limit]);
+        $end = $start; $pages = 0; $loggedOut = false;
+        foreach ($events->fetchAll(PDO::FETCH_ASSOC) as $e) {
+            $end = $e['created_at'];
+            if ($e['event_type'] === 'page_view') $pages++;
+            if ($e['event_type'] === 'logout') { $loggedOut = true; break; }
+        }
+        $sessions[] = [
+            'date' => substr($start, 0, 10), 'time' => substr($start, 11, 5),
+            'end_date' => substr($end, 0, 10), 'end_time' => substr($end, 11, 5),
+            'minutes' => (int)round((strtotime($end) - strtotime($start)) / 60),
+            'pages' => $pages, 'logged_out' => $loggedOut,
+            'device_type' => $l['device_type'], 'browser' => $l['browser'],
+        ];
+    }
+    return $sessions;
 }
 
 // แนวโน้ม 8 สัปดาห์ (เริ่มวันจันทร์) — คนที่เข้าใช้ต่อ role / การอัปเดตดีล+งานประมูลโดยคน / ตรวจข้อมูลย้อนหลัง

@@ -31,6 +31,7 @@ switch ($method) {
     case 'POST':
         switch ($action) {
             case 'accept': acceptQuoteRequest($db); break;
+            case 'cancel': cancelQuoteRequestExt($db); break;   // ธุรการกด "ยกเลิก" ในแท็บรอเปิดใบ (2026-10-21)
             case 'issued':    quoteIssued($db);    break;   // ระยะ 3 — บันทึกจริงใบตามคำขอแล้ว
             case 'confirmed': quoteConfirmed($db); break;   // ระยะ 3 — ลูกค้ายืนยันสั่งซื้อ
             default: jsonResponse(false, null, 'Unknown action', 400);
@@ -116,6 +117,34 @@ function acceptQuoteRequest(PDO $db): void {
     $req = $stmt->fetch(PDO::FETCH_ASSOC);
     $req['contacts'] = quoteRequestContacts($db, (int)$req['pipeline_item_id']);
     jsonResponse(true, $req, "รับเรื่อง {$code} แล้ว");
+}
+
+/**
+ * ยกเลิกคำขอจากระบบใบเสนอราคา (body: quote_request_code, username, cancel_reason) — กติกาเดียวกับปุ่มยกเลิกในระบบงานขาย
+ * ผู้ยกเลิก = username ที่ตรงกันทั้ง 2 ระบบ + ต้องมีสิทธิ์ยกเลิก (canCancelQuoteRequest) / คนอื่นยกเลิกให้ = แจ้ง Sale เจ้าของดีล
+ */
+function cancelQuoteRequestExt(PDO $db): void {
+    $body = getJsonBody();
+    $code = trim($body['quote_request_code'] ?? '');
+    $actor = userByUsername($db, trim($body['username'] ?? ''));
+    if (!$actor) jsonResponse(false, null, 'ไม่พบผู้ใช้นี้ในระบบงานขาย (username ต้องตรงกันทั้ง 2 ระบบ)', 400);
+    $reason = trim($body['cancel_reason'] ?? '');
+    if ($reason === '') jsonResponse(false, null, 'กรุณาระบุเหตุผลที่ยกเลิก', 400);
+
+    $stmt = $db->prepare(quoteRequestSelectSql() . ' WHERE qr.quote_request_code = ?');
+    $stmt->execute([$code]);
+    $req = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$req) jsonResponse(false, null, "ไม่พบคำขอ {$code}", 404);
+    if (!in_array($req['status'], QUOTE_REQUEST_OPEN_STATUSES, true)) jsonResponse(false, null, "คำขอ {$code} สถานะ: " . QUOTE_REQUEST_STATUS_LABELS[$req['status']] . ' ยกเลิกไม่ได้', 400);
+    if (!canCancelQuoteRequest($actor, $req)) jsonResponse(false, null, 'ไม่มีสิทธิ์ยกเลิกคำขอนี้ในระบบงานขาย', 403);
+
+    $msg = "ยกเลิกคำขอ {$code} แล้ว";
+    if (cancelQuoteRequestBy($db, $req, (int)$actor['id'], $actor['full_name'], $reason)) {
+        respondThenContinue(null, $msg);   // แจ้ง LINE หลังตอบกลับ ระบบใบเสนอราคาไม่ต้องรอ
+        notifyQuoteCancelled($db, (int)$req['quote_request_id']);
+        exit;
+    }
+    jsonResponse(true, null, $msg);
 }
 
 // ระยะ 3 — ระบบใบเสนอราคาแจ้งว่าบันทึกจริงใบตามคำขอแล้ว (body: quote_request_code, quotation_id, revision, username, issued_at, gross_amount_net)

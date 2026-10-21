@@ -67,7 +67,24 @@ function listNotificationTypes(PDO $db): void {
         $receivers[$r['role']]['line']  = (int)$r['line_users'];
     }
 
-    jsonResponse(true, ['types' => $rows, 'receivers' => $receivers, 'public_view_ready' => $publicViewReady, 'public_view_days' => NOTIFY_PUBLIC_VIEW_DAYS]);
+    jsonResponse(true, ['types' => $rows, 'receivers' => $receivers, 'public_view_ready' => $publicViewReady, 'public_view_days' => NOTIFY_PUBLIC_VIEW_DAYS,
+                        'deal_created' => dealCreatedConfig($db)]);
+}
+
+// เรื่อง "ดีลขายตรงใหม่" (deal_created — 2026-10-21): แบบ ก ทุกดีล ('all') / แบบ ข มูลค่าตั้งแต่เกณฑ์ ('value') — เก็บใน app_config
+// ยังไม่มีค่าใน app_config = แบบ ก, เกณฑ์ 500,000 (ตรงกับ notifyDealCreated())
+function dealCreatedConfig(PDO $db): array {
+    $cfg = $db->query("SELECT `key`, value FROM app_config WHERE `key` IN ('deal_created_notify_mode', 'deal_created_min_value')")->fetchAll(PDO::FETCH_KEY_PAIR);
+    return ['mode' => ($cfg['deal_created_notify_mode'] ?? 'all') === 'value' ? 'value' : 'all',
+            'min_value' => (float)($cfg['deal_created_min_value'] ?? 500000)];
+}
+
+// บันทึกค่า app_config 1 ค่า — เปลี่ยน updated_by เฉพาะเมื่อค่าเปลี่ยนจริง (กฎการสร้าง Database ข้อ 1) / คืน true = เปลี่ยน
+function saveAppConfigValue(PDO $db, string $key, string $value, int $userId): bool {
+    $st = $db->prepare('INSERT INTO app_config (`key`, value, created_by, updated_by) VALUES (?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE updated_by = IF(value <=> VALUES(value), updated_by, VALUES(updated_by)), value = VALUES(value)');
+    $st->execute([$key, $value, $userId, $userId]);
+    return $st->rowCount() > 0;
 }
 
 /**
@@ -153,8 +170,9 @@ function listDeliveries(PDO $db): void {
 // เปลี่ยนผู้แก้ไขเฉพาะแถวที่ค่าเปลี่ยนจริง
 function saveNotificationTypes(PDO $db, array $user): void {
     $body  = getJsonBody();
-    $items = $body['items'] ?? null;
-    if (!is_array($items) || !$items) jsonResponse(false, null, 'ไม่มีข้อมูลที่จะบันทึก', 400);
+    $items = $body['items'] ?? [];
+    // เปลี่ยนแค่แบบแจ้งดีลขายตรงใหม่ (ไม่มีเรื่องอื่นเปลี่ยน) ก็บันทึกได้ (2026-10-21)
+    if (!is_array($items) || (!$items && empty($body['deal_created']))) jsonResponse(false, null, 'ไม่มีข้อมูลที่จะบันทึก', 400);
 
     $stmt = $db->prepare('UPDATE notification_types
                           SET send_email = IF(email_supported = 1, ?, 0),
@@ -179,6 +197,18 @@ function saveNotificationTypes(PDO $db, array $user): void {
             $rowChanged = $rowChanged || $pv->rowCount() > 0;
         }
         if ($rowChanged) $changed++;
+    }
+
+    // ดีลขายตรงใหม่: แบบ ก / ข + เกณฑ์มูลค่า (2026-10-21)
+    if (isset($body['deal_created']) && is_array($body['deal_created'])) {
+        $mode = ($body['deal_created']['mode'] ?? 'all') === 'value' ? 'value' : 'all';
+        $min  = (float)($body['deal_created']['min_value'] ?? 0);
+        if ($mode === 'value' && $min <= 0) jsonResponse(false, null, 'กรุณาระบุมูลค่าขั้นต่ำของดีลใหม่ที่ต้องแจ้งหัวหน้า', 400);
+        $before = dealCreatedConfig($db);
+        saveAppConfigValue($db, 'deal_created_notify_mode', $mode, (int)$user['id']);
+        if ($min > 0) saveAppConfigValue($db, 'deal_created_min_value', (string)$min, (int)$user['id']);
+        $after = dealCreatedConfig($db);
+        if ($before !== $after) $changed++;
     }
     jsonResponse(true, ['changed' => $changed], $changed ? "บันทึกแล้ว ({$changed} เรื่อง)" : 'ไม่มีการเปลี่ยนแปลง');
 }

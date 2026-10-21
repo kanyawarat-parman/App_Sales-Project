@@ -137,10 +137,12 @@
           <!-- ยกเลิกคำขอ (ธุรการ / admin / ผู้ขอ / Sale เจ้าของดีล — API ตรวจสิทธิ์) -->
           <div v-if="isOpen(modal.data)" class="pt-2 border-t border-slate-100">
             <button v-if="!cancelOpen" type="button" @click="cancelOpen = true" class="text-sm font-semibold text-red-600 underline bg-transparent border-0 p-0 cursor-pointer">ยกเลิกคำขอนี้</button>
-            <div v-else class="flex flex-wrap gap-2 items-center">
-              <input v-model="cancelReason" placeholder="เหตุผลที่ยกเลิก เช่น ขอซ้ำ / ลูกค้ายกเลิก" class="flex-1 min-w-[200px] border border-slate-300 rounded-xl px-3 py-2 text-base bg-white">
-              <button type="button" @click="cancelOpen = false" class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ไม่ยกเลิก</button>
-              <button type="button" @click="cancelRequest" class="px-3 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 border-0 cursor-pointer">ยืนยันยกเลิก</button>
+            <div v-else class="rounded-xl border border-red-200 bg-red-50/40 p-3 space-y-3">
+              <app-quote-cancel-reason v-model="cancelReason"></app-quote-cancel-reason>
+              <div class="flex justify-end gap-2">
+                <button type="button" @click="cancelOpen = false" class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ไม่ยกเลิก</button>
+                <button type="button" @click="cancelRequest" class="px-3 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 border-0 cursor-pointer">ยืนยันยกเลิก</button>
+              </div>
             </div>
           </div>
         </div>
@@ -175,11 +177,11 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=95"></script>
+<script src="shared/app.js?v=100"></script>
 <script>
 const { createApp } = Vue;
 createApp({
-  components: { AppNav, AppModal },
+  components: { AppNav, AppModal, AppQuoteCancelReason },
   data() {
     return {
       authReady: false,
@@ -310,7 +312,7 @@ createApp({
     },
 
     async cancelRequest() {
-      if (!this.cancelReason.trim()) return this.showAlert('กรุณาระบุเหตุผลที่ยกเลิก', 'error');
+      if (!this.cancelReason.trim()) return this.showAlert('กรุณาเลือกเหตุผลที่ยกเลิก (เลือก "อื่นๆ" ต้องพิมพ์เหตุผล)', 'error');
       const res = await apiCall('POST', 'api/quote_requests.php?action=cancel', { quote_request_code: this.modal.data.quote_request_code, cancel_reason: this.cancelReason });
       if (!res.success) return this.showAlert(res.message || 'ยกเลิกไม่สำเร็จ', 'error');
       this.closeModal();
