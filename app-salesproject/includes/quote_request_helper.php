@@ -6,6 +6,7 @@
 // ใช้ร่วมกันโดย api/quote_requests.php (คนที่ login) และ api/quote_requests_ext.php (ระบบใบเสนอราคา ใช้ token)
 require_once __DIR__ . '/code_helper.php';
 require_once __DIR__ . '/notify_helper.php';
+require_once __DIR__ . '/delivery_helper.php';   // thaiShortDate() — วันที่ต้องการใบในข้อความแจ้งเตือน
 
 const QUOTE_REQUEST_DIRECT_STAGES = ['Interest', 'Send PI', 'Negotiating'];
 const QUOTE_REQUEST_BID_STAGES    = ['ชนะการประมูล'];
@@ -75,7 +76,7 @@ function canCancelQuoteRequest(array $user, array $req): bool {
 function quoteRequestSelectSql(): string {
     return "
         SELECT qr.quote_request_id, qr.quote_request_code, qr.pipeline_item_id, qr.project_code,
-               qr.request_type, qr.ref_quotation_id, qr.issue_by, qr.request_note, qr.status,
+               qr.request_type, qr.ref_quotation_id, qr.issue_by, qr.request_note, qr.needed_by_date, qr.status,
                qr.requested_by, qr.requested_at, qr.accepted_by, qr.accepted_at,
                qr.quotation_id, qr.quotation_revision, qr.quote_amount, qr.quote_net_amount, qr.issued_by, qr.issued_at,
                qr.cancelled_by, qr.cancelled_at, qr.cancel_reason, qr.confirmed_at, qr.confirmed_so_code,
@@ -170,13 +171,16 @@ function notifyQuoteRequested(PDO $db, int $quoteRequestId, array $user): void {
         $note  = trim((string)$req['request_note']);
         $data = [
             'title'      => "📄 {$req['sale_name']} {$type}",
-            'body'       => "{$req['quote_request_code']} · {$req['project_code']} {$title}",
+            'body'       => "{$req['quote_request_code']} · {$req['project_code']} {$title}"
+                          . ($req['needed_by_date'] ? ' · ต้องการภายใน ' . thaiShortDate($req['needed_by_date']) : ''),
             'ref_type'   => 'quote_request',
             'ref_id'     => $quoteRequestId,
             'page'       => 'quote-requests.html?code=' . rawurlencode($req['quote_request_code']),
             'line_title' => "📄 {$type}",
             'line_body'  => "{$req['quote_request_code']} · {$req['project_code']}\n{$title}\nลูกค้า: " . ($req['customer_name'] ?: '-')
-                          . "\nประเภทงาน: {$kind}\nSale: {$req['sale_name']}" . ($note !== '' ? "\nรายละเอียด: " . mb_substr($note, 0, 300) : ''),
+                          . "\nประเภทงาน: {$kind}\nSale: {$req['sale_name']}"
+                          . ($req['needed_by_date'] ? "\nต้องการใบภายใน: " . thaiShortDate($req['needed_by_date']) : '')
+                          . ($note !== '' ? "\nรายละเอียด: " . mb_substr($note, 0, 300) : ''),
         ];
         $admins = $db->query("SELECT id FROM users WHERE role = 'salesadmin' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
         foreach ($admins as $adminId) notify($db, 'quote_requested', (int)$adminId, $data, (int)$user['id']);

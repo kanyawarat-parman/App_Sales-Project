@@ -73,6 +73,7 @@
               </div>
               <div class="font-bold text-[1rem] text-slate-800 mt-2 leading-snug">{{ r.title }}</div>
               <div class="text-sm text-slate-500">{{ r.customer_name || '-' }} · Sale: {{ r.sale_name }}</div>
+              <div v-if="neededBy(r)" class="text-sm mt-1" :class="neededBy(r).cls">{{ neededBy(r).text }}</div>
               <div v-if="r.request_note" class="text-sm text-slate-700 mt-1.5 line-clamp-2 whitespace-pre-line">{{ r.request_note }}</div>
               <!-- เลข QT ฉบับล่าสุด = ลิงก์หน้าพิมพ์ระบบใบเสนอราคา (2026-10-14) — @click.stop ไม่ให้เปิดหน้ารายละเอียดของการ์ดซ้อน -->
               <div v-if="r.quotation_id" class="text-sm text-emerald-700 font-semibold mt-1.5">ใบเสนอราคา
@@ -106,6 +107,9 @@
           <div class="grid grid-cols-[130px_1fr] gap-x-3 gap-y-1.5 text-sm">
             <div class="text-slate-500">ประเภทงาน</div><div class="text-slate-800">{{ modal.data.source_type === 'ebidding' ? 'งานประมูล (ชนะแล้ว)' : 'ขายตรง' }} · สถานะดีล {{ modal.data.stage }}</div>
             <div class="text-slate-500">ขอใบแบบ</div><div class="text-slate-800">{{ modal.data.request_type === 'revision' ? 'แก้ไขใบ ' + modal.data.ref_quotation_id : 'ใบใหม่' }} · {{ modal.data.issue_by === 'sale' ? 'Sale ออกเอง' : 'ให้ธุรการออก' }}</div>
+            <template v-if="neededBy(modal.data)">
+              <div class="text-slate-500">วันที่ต้องการใบ</div><div :class="neededBy(modal.data).cls">{{ neededBy(modal.data).text.replace('ต้องการภายใน ', '') }}</div>
+            </template>
             <div class="text-slate-500">Sale เจ้าของงาน</div><div class="text-slate-800">{{ modal.data.sale_name }} <span v-if="modal.data.sale_id" class="text-slate-400">(รหัส {{ modal.data.sale_id }})</span></div>
             <div class="text-slate-500">มูลค่าดีล</div><div class="text-slate-800">{{ modal.data.value ? formatPrice(modal.data.value) : '-' }}</div>
             <!-- ยอดของใบที่ออก (2026-10-14) — งานประมูลมูลค่าดีลไม่เปลี่ยนตามใบ แสดงแยกให้เทียบได้ -->
@@ -171,7 +175,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=85"></script>
+<script src="shared/app.js?v=95"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -260,6 +264,8 @@ createApp({
     },
 
     isOpen(r) { return r.status === 'pending' || r.status === 'accepted'; },
+    // วันที่ต้องการใบ (2026-10-21) — สี/ข้อความจาก quoteNeededBy() ใน shared/app.js
+    neededBy(r) { return quoteNeededBy(r.needed_by_date, this.isOpen(r)); },
     inTab(r, tab) {
       if (tab === 'all') return true;
       if (tab === 'open') return this.isOpen(r);

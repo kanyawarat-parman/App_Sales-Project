@@ -93,14 +93,25 @@ function createQuoteRequest(PDO $db, array $user): void {
     $note = trim($body['request_note'] ?? '');
     // รายละเอียดไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-20 — เดิมบังคับเมื่อให้ธุรการออก)
 
+    // วันที่ต้องการใบ (Due Date — 2026-10-21): ไม่บังคับ Sale ใส่หรือไม่ใส่ก็ได้ (ยืนยันจากผู้ใช้ 2026-10-21 — เดิมบังคับเมื่อให้ธุรการออก)
+    // ใช้เฉพาะคำขอให้ธุรการออก (Sale ออกเองไม่บันทึก) / ถ้าใส่ ต้องเป็นวันที่ถูกต้องและไม่ใช่วันที่ผ่านมาแล้ว
+    $neededBy = null;
+    $neededByInput = trim((string)($body['needed_by_date'] ?? ''));
+    if ($issueBy === 'salesadmin' && $neededByInput !== '') {
+        $d = DateTime::createFromFormat('Y-m-d', $neededByInput);
+        if (!$d || $d->format('Y-m-d') !== $neededByInput) jsonResponse(false, null, 'วันที่ต้องการไม่ถูกต้อง', 400);
+        if ($neededByInput < date('Y-m-d')) jsonResponse(false, null, 'วันที่ต้องการใบต้องไม่ใช่วันที่ผ่านมาแล้ว', 400);
+        $neededBy = $neededByInput;
+    }
+
     $db->beginTransaction();
     try {
         $code = nextQuoteRequestCode($db, (int)$user['id']);
         $db->prepare("INSERT INTO quote_requests (quote_request_code, pipeline_item_id, project_code, request_type, ref_quotation_id, issue_by,
-                          request_note, status, requested_by, requested_at, created_by, updated_by)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?, ?)")
+                          request_note, needed_by_date, status, requested_by, requested_at, created_by, updated_by)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?, ?)")
            ->execute([$code, $deal['id'], $deal['project_code'], $requestType, $refQuotation, $issueBy,
-                      $note !== '' ? $note : null, $user['id'], $user['id'], $user['id']]);
+                      $note !== '' ? $note : null, $neededBy, $user['id'], $user['id'], $user['id']]);
         $id = (int)$db->lastInsertId();
         $db->commit();
     } catch (Throwable $e) {

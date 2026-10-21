@@ -1403,6 +1403,20 @@ const QUOTE_REQUEST_STATUS = {
   issued:    { label: 'ออกใบแล้ว',     cls: 'bg-emerald-100 text-emerald-800' },
   cancelled: { label: 'ยกเลิก',        cls: 'bg-slate-100 text-slate-500' },
 };
+/* วันที่ต้องการใบ (needed_by_date — ยืนยันจากผู้ใช้ 2026-10-21) → {text, cls} หรือ null
+   คำขอที่ยังค้าง: เลยกำหนด = แดง / วันนี้-พรุ่งนี้ = ส้ม / อื่นๆ = เทา — คำขอที่จบแล้วแสดงวันที่เฉยๆ
+   ใช้ใน AppQuoteRequests และ quote-requests.html */
+function quoteNeededBy(dateStr, isOpen) {
+  if (!dateStr) return null;
+  const date = SharedMethods.shortDateThai(dateStr);
+  if (!isOpen) return { text: 'ต้องการภายใน ' + date, cls: 'text-slate-500' };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((new Date(String(dateStr).substring(0, 10) + 'T00:00:00') - today) / 86400000);
+  if (days < 0)  return { text: 'ต้องการภายใน ' + date + ' · เลยกำหนด ' + (-days) + ' วัน', cls: 'text-red-600 font-bold' };
+  if (days === 0) return { text: 'ต้องการภายใน ' + date + ' · วันนี้', cls: 'text-amber-700 font-bold' };
+  if (days === 1) return { text: 'ต้องการภายใน ' + date + ' · พรุ่งนี้', cls: 'text-amber-700 font-bold' };
+  return { text: 'ต้องการภายใน ' + date + ' · อีก ' + days + ' วัน', cls: 'text-slate-600 font-semibold' };
+}
 /* ── AppDealFiles: แท็บ "ไฟล์" ในหน้าต่างดีล — แนบไฟล์ + ประเภท + หมายเหตุ (Files แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-20) ──
    ผูกด้วย pipeline_item_id (ไม่เปลี่ยนตามสถานะ) → เห็นไฟล์ทุกสถานะของดีล / API: api/deal_files.php (sql/add_deal_files.sql)
    แนบ: sale เจ้าของดีล, ธุรการ, admin / ลบ: ผู้แนบ, admin (API ตรวจซ้ำ) / เปิดไฟล์ผ่าน API ที่ต้อง login เท่านั้น
@@ -1560,7 +1574,7 @@ const AppQuoteRequests = {
   data() {
     return {
       loading: false, info: null, showForm: false, saving: false,
-      form: { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: '', request_note: '' },
+      form: { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: '', request_note: '', needed_by_date: '' },
       cancelCode: '', cancelReason: '',
     };
   },
@@ -1569,8 +1583,14 @@ const AppQuoteRequests = {
   },
   methods: {
     formatDateTimeThai,
+    formatDateThai,
     formatPrice: SharedMethods.formatPrice,
     statusOf(s) { return QUOTE_REQUEST_STATUS[s] || { label: s, cls: 'bg-slate-100 text-slate-500' }; },
+    neededBy(r) { return quoteNeededBy(r.needed_by_date, r.status === 'pending' || r.status === 'accepted'); },
+    todayIso() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    },
     async load() {
       this.info = null;
       this.$emit('summary', null);
@@ -1595,14 +1615,20 @@ const AppQuoteRequests = {
       return { short: count ? 'ยังไม่มีใบ' : 'ยังไม่ได้ขอ', sub: '', cls: 'bg-slate-50 text-slate-600', count };
     },
     openForm() {
-      this.form = { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: this.info?.quotations?.[0] || '', request_note: '' };
+      this.form = { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: this.info?.quotations?.[0] || '', request_note: '', needed_by_date: '' };
       this.showForm = true;
     },
     async submit() {
       if (this.form.request_type === 'revision' && !this.form.ref_quotation_id) return this.$root.showAlert('กรุณาเลือกใบเสนอราคาเดิมที่ต้องการแก้ไข', 'error');
+      // วันที่ต้องการใบ: ไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-21) — ใส่แล้วต้องไม่ใช่วันที่ผ่านมาแล้ว / Sale ออกเองไม่ส่งไป
+      if (this.form.issue_by === 'salesadmin' && this.form.needed_by_date && this.form.needed_by_date < this.todayIso()) {
+        return this.$root.showAlert('วันที่ต้องการใบต้องไม่ใช่วันที่ผ่านมาแล้ว', 'error');
+      }
       // รายละเอียดไม่บังคับแล้ว ทั้งให้ธุรการออกและออกเอง (ยืนยันจากผู้ใช้ 2026-10-20)
       this.saving = true;
-      const res = await apiCall('POST', 'api/quote_requests.php?action=create', { project_code: this.projectCode, ...this.form });
+      const body = { project_code: this.projectCode, ...this.form };
+      if (body.issue_by !== 'salesadmin') body.needed_by_date = '';
+      const res = await apiCall('POST', 'api/quote_requests.php?action=create', body);
       this.saving = false;
       if (!res.success) return this.$root.showAlert(res.message || 'ส่งคำขอไม่สำเร็จ', 'error');
       this.showForm = false;
@@ -1640,10 +1666,10 @@ const AppQuoteRequests = {
     <!-- ฟอร์มขอใบเสนอราคา (เปิดในกล่องเดียวกัน ไม่ซ้อนหน้าต่าง) -->
     <div v-if="showForm" class="rounded-xl border-2 border-teal-200 bg-teal-50/40 p-4 space-y-3">
       <div>
-        <div class="text-sm font-semibold text-slate-700 mb-1.5">ใครเป็นคนออกใบ</div>
+        <div class="text-sm font-semibold text-slate-700 mb-1.5">เลือกผู้ที่ต้องการให้เปิดใบเสนอราคา</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button type="button" @click="form.issue_by='salesadmin'" class="text-left px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
-            :class="form.issue_by==='salesadmin' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">ให้ธุรการขายออกใบ<div class="text-xs font-normal text-slate-500">ระบบแจ้งธุรการให้ทันที</div></button>
+            :class="form.issue_by==='salesadmin' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">ธุรการขาย<div class="text-xs font-normal text-slate-500">ระบบแจ้งธุรการให้ทันที</div></button>
           <button type="button" @click="form.issue_by='sale'" class="text-left px-3 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer"
             :class="form.issue_by==='sale' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'">Sale ออกใบเอง<div class="text-xs font-normal text-slate-500">ไม่แจ้งธุรการ</div></button>
         </div>
@@ -1660,9 +1686,15 @@ const AppQuoteRequests = {
           <option v-for="q in info.quotations" :key="q" :value="q">{{ q }}</option>
         </select>
       </div>
+      <div v-if="form.issue_by==='salesadmin'">
+        <label class="block text-sm font-semibold text-slate-700 mb-1">วันที่ต้องการ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+        <input type="date" v-model="form.needed_by_date" :min="todayIso()"
+          class="w-full sm:max-w-xs border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+        <div v-if="form.needed_by_date" class="text-sm text-slate-600 mt-1">{{ formatDateThai(form.needed_by_date) }}</div>
+      </div>
       <div>
         <label class="block text-sm font-semibold text-slate-700 mb-1">รายละเอียด <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
-        <textarea v-model="form.request_note" rows="3" placeholder="เช่น เก้าอี้รุ่น … 50 ตัว, ส่วนลด, เงื่อนไขการชำระเงิน, วันที่ลูกค้าต้องการใบ"
+        <textarea v-model="form.request_note" rows="3" placeholder="เช่น เก้าอี้รุ่น … 50 ตัว, ส่วนลด, เงื่อนไขการชำระเงิน"
           class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
       </div>
       <div class="flex justify-end gap-2">
@@ -1687,6 +1719,7 @@ const AppQuoteRequests = {
         ยอดใบ {{ formatPrice(r.quote_amount) }} <span class="font-normal text-slate-500">(ก่อน VAT)</span>
         <span v-if="r.quote_net_amount !== null" class="font-normal text-slate-500"> · รวม VAT {{ formatPrice(r.quote_net_amount) }}</span>
       </div>
+      <div v-if="neededBy(r)" class="text-sm mt-1" :class="neededBy(r).cls">{{ neededBy(r).text }}</div>
       <div v-if="r.request_note" class="text-sm text-slate-700 mt-1.5 whitespace-pre-line">{{ r.request_note }}</div>
       <div class="text-xs text-slate-500 mt-1.5 space-y-0.5">
         <div>ขอโดย {{ r.requested_by_name }} · {{ formatDateTimeThai(r.requested_at) }}</div>
