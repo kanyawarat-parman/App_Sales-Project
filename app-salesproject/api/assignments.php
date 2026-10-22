@@ -503,6 +503,8 @@ function createAssignment(PDO $db, array $user): void {
     // ── บันทึกเสร็จแล้ว ตอบกลับผู้ใช้ทันที ก่อนไปส่ง LINE/Email ──
     // (กัน UI ค้างรอ ถ้า SMTP/LINE server ตอบสนองช้าหรือไม่ตอบสนอง)
     respondThenContinue(['id' => $assignmentId], 'มอบหมายงานสำเร็จ');
+    // มอบหมายงานใหม่ (รอดำเนินการ) → ตามตาราง "แจ้งเมื่องานเข้าขั้น" (2026-10-22) — หลังตอบหน้าเว็บแล้ว ผู้ใช้ไม่ต้องรอ
+    notifyStageChanged($db, 'bid', $assignmentId, null, 'รอดำเนินการ', (int)$user['id']);
 
     // ── งานเบื้องหลัง: ส่งแจ้งเตือน (ผลลัพธ์ไม่กระทบ response ที่ส่งไปแล้ว) ──
     // กระดิ่ง + LINE ผ่านศูนย์กลางแจ้งเตือน (ประเภท bid_assigned — 2026-10-08) / ผู้ทำให้เกิด = ผู้มอบหมาย
@@ -884,6 +886,10 @@ function updateAssignment(PDO $db, array $user): void {
         if (in_array($body['status'], $lostStatuses, true) && !in_array($current['status'], $lostStatuses, true)) {
             notifyDealLost($db, 'bid', $id, $user);
         }
+        // เปลี่ยนขั้นอื่น (ไม่ใช่ชนะ / แพ้ / ยกเลิก) → ตามตาราง "แจ้งเมื่องานเข้าขั้น" (2026-10-22)
+        if ($body['status'] !== 'ชนะการประมูล' && !in_array($body['status'], $lostStatuses, true)) {
+            notifyStageChanged($db, 'bid', $id, $current['status'], $body['status'], (int)$user['id']);
+        }
         // Sale กดยกเลิกเอง → แจ้งธุรการขายให้ทราบผลด้วย (ยืนยันจากผู้ใช้ 2026-10-10)
         if ($body['status'] === 'ยกเลิก' && $current['status'] !== 'ยกเลิก' && $user['role'] === 'sale') {
             notifySaleCancelled($db, $id, $user);
@@ -961,6 +967,9 @@ function acceptAssignment(PDO $db, array $user): void {
     if ($newStatus === 'ยกเลิก') {
         notifyDealLost($db, 'bid', $id, $user, true);
         notifySaleCancelled($db, $id, $user, true);   // แจ้งธุรการขายให้ทราบผล (2026-10-10)
+    } else {
+        // Sale รับงาน → ตามตาราง "แจ้งเมื่องานเข้าขั้น" (2026-10-22)
+        notifyStageChanged($db, 'bid', $id, 'รอดำเนินการ', $newStatus, (int)$user['id']);
     }
     jsonResponse(true, ['status' => $newStatus], 'บันทึกผลสำเร็จ');
 }

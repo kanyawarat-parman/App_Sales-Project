@@ -246,6 +246,7 @@ function applyQuoteIssued(PDO $db, array $body): array {
                 $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
                    ->execute([$d['id'], $d['project_code'], $actorId, 'Interest', 'Send PI', "ออก{$ref} — ระบบเลื่อนเป็นส่ง PI เอง"]);
                 $stage = 'Send PI';
+                $autoMovedDealId = (int)$d['id'];   // แจ้งตามตาราง "แจ้งเมื่องานเข้าขั้น" หลัง commit (2026-10-22)
             }
             if ($grossNet > 0 && abs($grossNet - (float)$d['value']) >= 0.01) {
                 $db->prepare('UPDATE pipeline_items SET value = ?, updated_by = ? WHERE id = ?')->execute([$grossNet, $actorId, $d['id']]);
@@ -255,6 +256,7 @@ function applyQuoteIssued(PDO $db, array $body): array {
             }
         }
         $db->commit();
+        if (!empty($autoMovedDealId)) notifyStageChanged($db, 'direct', $autoMovedDealId, 'Interest', 'Send PI', $actorId);
     } catch (Throwable $e) {
         $db->rollBack();
         throw $e;

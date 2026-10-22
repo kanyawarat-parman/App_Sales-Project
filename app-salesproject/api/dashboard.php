@@ -162,7 +162,7 @@ if ($user['role'] === 'sale') {
 }
 
 // ===== Manager / Admin specific =====
-if (in_array($user['role'], ['manager', 'admin'])) {
+if (in_array($user['role'], ['manager', 'admin', 'viewer'])) {   // viewer (ผู้บริหาร) เห็นภาพรวมแบบหัวหน้า (2026-10-22)
     $stmt = $db->query("SELECT
         SUM(CASE WHEN status IN ('ชนะการประมูล','ส่งมอบแล้ว') THEN 1 ELSE 0 END) AS win_c,
         SUM(CASE WHEN status IN ('ชนะการประมูล','ส่งมอบแล้ว','แพ้การประมูล') THEN 1 ELSE 0 END) AS decided_c

@@ -519,8 +519,10 @@ const AppNav = {
     isManager()    { return ['admin','manager'].includes(this.user?.role); },
     isSalesAdmin() { return ['admin','salesadmin'].includes(this.user?.role); },
     isSale()       { return this.user?.role === 'sale'; },
+    // ผู้บริหาร ดูอย่างเดียว (viewer — 2026-10-22): เห็นเมนูดูข้อมูลแบบหัวหน้า ไม่มีหมวดตั้งค่า / งานธุรการ — server กันการแก้ไขทุกตัว
+    isViewer()     { return this.user?.role === 'viewer'; },
     roleLabel() {
-      const m = { admin:'Admin', salesadmin:'SalesAdmin', manager:'Manager', sale:'Sale' };
+      const m = { admin:'Admin', salesadmin:'SalesAdmin', manager:'Manager', sale:'Sale', viewer:'ผู้บริหาร · ดูอย่างเดียว' };
       return m[this.user?.role] || this.user?.role;
     },
     roleBadgeCls() {
@@ -529,6 +531,7 @@ const AppNav = {
         salesadmin: 'bg-amber-100 text-amber-700',
         manager:    'bg-teal-100 text-teal-700',
         sale:       'bg-sky-100 text-sky-700',
+        viewer:     'bg-violet-100 text-violet-700',
       };
       return m[this.user?.role] || 'bg-slate-100 text-slate-600';
     },
@@ -552,7 +555,7 @@ const AppNav = {
       g.push({ href:'dashboard.html', page:'dashboard', label:'ภาพรวม', icon:'home' });
 
       g.push({ type:'section', label:'ขาย' });
-      if (this.isManager || this.isSale) {
+      if (this.isManager || this.isSale || this.isViewer) {
         g.push({ href:'bid-pipeline.html', page:'bid-pipeline', label:'งานประมูล (e-Bidding)', icon:'bid_pipeline' });
       }
       if (this.isSale || this.isAdmin) {
@@ -562,7 +565,7 @@ const AppNav = {
         // เพิ่ม isAdmin — ยืนยันจากผู้ใช้ 2026-09-22 ว่า "admin ต้องเห็นทุกเมนู" (admin เดิมไม่เห็นเมนูนี้)
         g.push({ href:'my-assignments.html', page:'my-assignments', label:'งานที่ได้รับ', icon:'my_assignments' });
       }
-      if (this.isAdmin || this.isManager || this.isSale) {
+      if (this.isAdmin || this.isManager || this.isSale || this.isViewer) {
         g.push({ href:'sales-pipeline.html', page:'sales-pipeline', label:'งานขายตรง (Sales Hunt)', icon:'sales_pipeline' });
       }
       // คำขอใบเสนอราคา (Quote Request — 2026-10-14) — ทุก role: Sale เห็นของตัวเอง / ธุรการขายใช้ติดตามงานที่ต้องออกใบ (เห็นแค่รายการคำขอ ไม่เห็นหน้างานขายตรงทั้งหน้า)
@@ -591,20 +594,20 @@ const AppNav = {
       // แยกหมวด "รายงาน" กับ "ตั้งค่าระบบ" ออกจากหมวด "ระบบ" เดิม ตามมาตรฐาน CRM (Reports แยกจาก Setup — ยืนยันจากผู้ใช้ 2026-10-08)
       // หมวดตั้งค่าระบบเป็นของ admin เท่านั้น role อื่นจึงเห็นแค่หมวดรายงาน
       // แยก "รายงาน" (รายการใช้ทำงาน / ส่งต่อ) กับ "วิเคราะห์" (แนวโน้ม / หาจุดปรับ) แบบ Salesforce Reports vs Dashboards (ยืนยันจากผู้ใช้ 2026-10-10)
-      if (this.isManager || this.isSale || this.isAdmin || this.isSalesAdmin) {
+      if (this.isManager || this.isSale || this.isAdmin || this.isSalesAdmin || this.isViewer) {
         g.push({ type:'section', label:'รายงาน' });
         // คาดการณ์งานส่งมอบ (วันคาดส่งมอบตอนปิดดีล/ชนะ) — admin / ธุรการ / manager ส่งต่อฝ่ายจัดส่ง (ยืนยันจากผู้ใช้ 2026-10-07)
-        if (this.isManager || this.isAdmin || this.isSalesAdmin) {
+        if (this.isManager || this.isAdmin || this.isSalesAdmin || this.isViewer) {
           g.push({ href:'delivery-forecast.html', page:'delivery-forecast', label:'คาดการณ์ส่งมอบ', icon:'truck' });
         }
         // รายงานการใช้งานระบบ (Adoption Dashboard) — manager + admin เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-30)
-        if (this.isManager || this.isAdmin) {
+        if (this.isManager || this.isAdmin || this.isViewer) {
           g.push({ href:'usage-report.html', page:'usage-report', label:'การใช้งานระบบ', icon:'usage' });
         }
 
         g.push({ type:'section', label:'วิเคราะห์' });
         // เดิมชื่อ "รายงานวิเคราะห์" — เปลี่ยนให้บอกเนื้อหา + admin เห็นด้วย (ธุรการไม่ต้อง) (ยืนยันจากผู้ใช้ 2026-10-10)
-        if (this.isManager || this.isSale || this.isAdmin) {
+        if (this.isManager || this.isSale || this.isAdmin || this.isViewer) {
           g.push({ href:'analytics.html', page:'analytics', label:'ยอดขายและ Pipeline', icon:'analytics' });
         }
         // แพ้ชนะ ปิดดีล และคู่แข่ง (เดิม "วิเคราะห์ผลแพ้/ชนะ" → "วิเคราะห์ผลปิดงาน" → ชื่อนี้ ไม่ซ้ำคำกับหัวหมวด "วิเคราะห์" — ยืนยันจากผู้ใช้ 2026-10-10 — เปลี่ยน 2026-10-10 ใช้ได้ทั้งงานประมูลและขายตรง) + คู่แข่ง
@@ -681,8 +684,9 @@ const AppNav = {
       // แพ้ / ยกเลิก / ดีลไม่สำเร็จ → แจ้งหัวหน้า (2026-10-08)
       // กดแล้วเปิดรายละเอียดงานนั้นทันที (?code= — 2026-10-10) / ไม่มีรหัสงาน = หน้ารายการตามเดิม
       const codeQs = n.project_code ? '?code=' + encodeURIComponent(n.project_code) : '';
-      if (n.ref_type === 'bid_won' || n.ref_type === 'bid_lost') window.location.href = 'bid-pipeline.html' + codeQs;
-      if (n.ref_type === 'deal_won' || n.ref_type === 'deal_lost' || n.ref_type === 'deal_created') window.location.href = 'sales-pipeline.html' + codeQs;
+      // + งานเปลี่ยนขั้น (bid_stage / deal_stage — ตาราง "แจ้งเมื่องานเข้าขั้น" 2026-10-22)
+      if (['bid_won', 'bid_lost', 'bid_stage'].includes(n.ref_type)) window.location.href = 'bid-pipeline.html' + codeQs;
+      if (['deal_won', 'deal_lost', 'deal_created', 'deal_stage'].includes(n.ref_type)) window.location.href = 'sales-pipeline.html' + codeQs;
       // Sale ยกเลิก / ไม่เข้าประมูล → ธุรการเปิดงานนั้นในหน้าจัดการงานประมูล (2026-10-10)
       if (n.ref_type === 'bid_cancelled_by_sale') window.location.href = 'assignments.html' + codeQs;
       // ได้รับมอบหมายดูแลลูกค้า → เปิดรายละเอียดลูกค้ารายนั้น (2026-10-09)

@@ -46,6 +46,7 @@ function listNotificationTypes(PDO $db): void {
     // ผู้รับของแต่ละเรื่อง (กลุ่มตาม role) — หน้าจอแบ่งกลุ่มตามนี้ (2026-10-10)
     foreach ($rows as &$r) {
         $r['recipient'] = NOTIFY_TYPES[$r['notification_type_id']]['recipient'] ?? '';
+        $r['recipient_label'] = NOTIFY_TYPES[$r['notification_type_id']]['recipient_label'] ?? '';   // คอลัมน์ "แจ้งใคร" (2026-10-22)
         // ดูหน้าสรุปโดยไม่ต้อง login — ติ๊กได้เมื่อโค้ดและตารางบอกว่าเรื่องนี้มีหน้าสรุป (ยังไม่รัน SQL = ติ๊กไม่ได้)
         $r['public_view_supported'] = !empty(NOTIFY_TYPES[$r['notification_type_id']]['public_view']) && (int)($r['public_view_supported'] ?? 0) === 1 ? 1 : 0;
         $r['public_view'] = $r['public_view_supported'] && (int)($r['public_view'] ?? 0) === 1 ? 1 : 0;
@@ -66,9 +67,24 @@ function listNotificationTypes(PDO $db): void {
         $receivers[$r['role']]['email'] = (int)$r['email_users'];
         $receivers[$r['role']]['line']  = (int)$r['line_users'];
     }
+    // รายชื่อผู้ใช้แต่ละ role (ปุ่ม "ดูรายชื่อ" ที่หัวกล่อง — 2026-10-22) — บอกแค่มี/ไม่มีอีเมล / LINE ไม่ส่งค่าจริง
+    $stmt = $db->query("SELECT id, full_name, username, role, notify_enabled, notify_channel,
+            (email IS NOT NULL AND email <> '') AS has_email,
+            (line_user_id IS NOT NULL AND line_user_id <> '') AS has_line
+        FROM users WHERE is_active = 1 ORDER BY full_name");
+    foreach ($stmt->fetchAll() as $u) {
+        if (!isset($receivers[$u['role']])) continue;
+        $receivers[$u['role']]['members'][] = [
+            'id' => (int)$u['id'], 'full_name' => $u['full_name'], 'username' => $u['username'],
+            'notify_enabled' => (int)$u['notify_enabled'], 'notify_channel' => $u['notify_channel'],
+            'has_email' => (int)$u['has_email'], 'has_line' => (int)$u['has_line'],
+        ];
+    }
 
     jsonResponse(true, ['types' => $rows, 'receivers' => $receivers, 'public_view_ready' => $publicViewReady, 'public_view_days' => NOTIFY_PUBLIC_VIEW_DAYS,
-                        'deal_created' => dealCreatedConfig($db)]);
+                        'deal_created' => dealCreatedConfig($db),
+                        // ตาราง "แจ้งเมื่องานเข้าขั้น" (2026-10-22): ขั้นของแต่ละสายงาน + ขั้นที่ติ๊กของแต่ละกลุ่ม + เรื่องแจ้งเตือนของแต่ละกลุ่ม
+                        'stage_notify' => ['stages' => STAGE_NOTIFY_STAGES, 'roles' => STAGE_NOTIFY_ROLES, 'rules' => stageNotifyRules($db)]]);
 }
 
 // เรื่อง "ดีลขายตรงใหม่" (deal_created — 2026-10-21): แบบ ก ทุกดีล ('all') / แบบ ข มูลค่าตั้งแต่เกณฑ์ ('value') — เก็บใน app_config
@@ -172,7 +188,7 @@ function saveNotificationTypes(PDO $db, array $user): void {
     $body  = getJsonBody();
     $items = $body['items'] ?? [];
     // เปลี่ยนแค่แบบแจ้งดีลขายตรงใหม่ (ไม่มีเรื่องอื่นเปลี่ยน) ก็บันทึกได้ (2026-10-21)
-    if (!is_array($items) || (!$items && empty($body['deal_created']))) jsonResponse(false, null, 'ไม่มีข้อมูลที่จะบันทึก', 400);
+    if (!is_array($items) || (!$items && empty($body['deal_created']) && empty($body['stage_rules']))) jsonResponse(false, null, 'ไม่มีข้อมูลที่จะบันทึก', 400);
 
     $stmt = $db->prepare('UPDATE notification_types
                           SET send_email = IF(email_supported = 1, ?, 0),
@@ -197,6 +213,21 @@ function saveNotificationTypes(PDO $db, array $user): void {
             $rowChanged = $rowChanged || $pv->rowCount() > 0;
         }
         if ($rowChanged) $changed++;
+    }
+
+    // ตาราง "แจ้งเมื่องานเข้าขั้น" (2026-10-22): เก็บเฉพาะขั้นที่มีจริง ของกลุ่มที่มีจริง เป็น JSON ใน app_config.stage_notify_rules
+    if (isset($body['stage_rules']) && is_array($body['stage_rules'])) {
+        $clean = [];
+        foreach (STAGE_NOTIFY_ROLES as $role => $type) {
+            foreach (STAGE_NOTIFY_STAGES as $kind => $stages) {
+                $picked = $body['stage_rules'][$role][$kind] ?? [];
+                $clean[$role][$kind] = array_values(array_intersect(array_keys($stages), is_array($picked) ? $picked : []));
+            }
+        }
+        if ($clean !== stageNotifyRules($db)) {
+            saveAppConfigValue($db, 'stage_notify_rules', json_encode($clean, JSON_UNESCAPED_UNICODE), (int)$user['id']);
+            $changed++;
+        }
     }
 
     // ดีลขายตรงใหม่: แบบ ก / ข + เกณฑ์มูลค่า (2026-10-21)

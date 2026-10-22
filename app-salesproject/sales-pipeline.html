@@ -500,17 +500,17 @@
                     <button v-if="canConfirmSpImport(card)" type="button" @click.stop="openSpImportReview(card)"
                       class="w-full text-sm font-bold py-2 px-2 rounded-lg border-0 cursor-pointer bg-teal-700 text-white hover:bg-teal-800 mb-1 disabled:opacity-50"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจดีลนี้</button>
                     <!-- ดู / แก้ไข อยู่ก่อนปุ่มเลื่อนขั้น (แบบเดียวกับ "ดูรายละเอียด" ก่อน "ส่งต่อ" ในงานประมูล — ยืนยันจากผู้ใช้ 2026-10-01) -->
-                    <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 mb-1" @click="openSpForm(card)">ดู / แก้ไข</button>
-                    <button v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)"
+                    <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 mb-1" @click="openSpForm(card)">{{ isViewer ? 'ดูรายละเอียด' : 'ดู / แก้ไข' }}</button>
+                    <button v-if="!isViewer && !['Deal Signed','Delivered','Lost'].includes(card.stage)"
                       class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200 mb-1"
                       @click="confirmSpMove(card, spNextStage(card.stage))">
                       ▶ {{ spNextLabel(card.stage) }}
                     </button>
-                    <div v-if="card.stage === 'Negotiating'" class="flex gap-1 mb-1">
+                    <div v-if="!isViewer && card.stage === 'Negotiating'" class="flex gap-1 mb-1">
                       <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="openSpWinLoss(card, 'Deal Signed')">ปิดดีล</button>
                       <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-red-100 text-red-700 hover:bg-red-200" @click="openSpWinLoss(card, 'Lost')">ไม่สำเร็จ</button>
                     </div>
-                    <div v-if="card.stage === 'Deal Signed'" class="flex gap-1 mb-1">
+                    <div v-if="!isViewer && card.stage === 'Deal Signed'" class="flex gap-1 mb-1">
                       <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="confirmSpMove(card, 'Delivered')">ส่งสินค้าแล้ว</button>
                     </div>
                   </div>
@@ -553,15 +553,15 @@
               </div>
               <button v-if="canConfirmSpImport(card)" type="button" @click.stop="openSpImportReview(card)"
                 class="w-full mt-2 text-sm font-bold py-2 px-2 rounded-lg border-0 cursor-pointer bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-50"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจดีลนี้</button>
-              <div v-if="!['Deal Signed','Delivered','Lost'].includes(card.stage)" class="mt-2" @click.stop>
+              <div v-if="!isViewer && !['Deal Signed','Delivered','Lost'].includes(card.stage)" class="mt-2" @click.stop>
                 <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-sky-100 text-sky-700 hover:bg-sky-200"
                   @click="confirmSpMove(card, spNextStage(card.stage))">▶ {{ spNextLabel(card.stage) }}</button>
               </div>
-              <div v-if="card.stage === 'Negotiating'" class="flex gap-1 mt-1" @click.stop>
+              <div v-if="!isViewer && card.stage === 'Negotiating'" class="flex gap-1 mt-1" @click.stop>
                 <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="openSpWinLoss(card, 'Deal Signed')">ปิดดีล</button>
                 <button class="flex-1 text-xs font-semibold py-2 px-1 rounded-lg border-0 cursor-pointer bg-red-100 text-red-700 hover:bg-red-200" @click="openSpWinLoss(card, 'Lost')">ไม่สำเร็จ</button>
               </div>
-              <div v-if="card.stage === 'Deal Signed'" class="mt-1" @click.stop>
+              <div v-if="!isViewer && card.stage === 'Deal Signed'" class="mt-1" @click.stop>
                 <button class="w-full text-xs font-semibold py-2 px-2 rounded-lg border-0 cursor-pointer bg-emerald-100 text-emerald-700 hover:bg-emerald-200" @click="confirmSpMove(card, 'Delivered')">ส่งสินค้าแล้ว</button>
               </div>
             </div>
@@ -919,7 +919,7 @@
                 </div>
               </div>
               <p v-if="!spContactRows.length" class="text-sm text-slate-400 m-0 mb-2">ลูกค้ารายนี้ยังไม่มีผู้ติดต่อ — กด "+ เพิ่มผู้ติดต่อใหม่"</p>
-              <button type="button" @click="openSpNewContact"
+              <button v-if="!isViewer" type="button" @click="openSpNewContact"
                 class="inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-300 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">+ เพิ่มผู้ติดต่อใหม่</button>
             </div>
           </section>
@@ -1183,7 +1183,8 @@
         </div>
         <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
           <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
-          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitSpForm">
+          <span v-if="isViewer" class="mr-auto text-sm text-violet-700 font-semibold">👁 ดูอย่างเดียว — แก้ไขไม่ได้</span>
+          <button v-if="!isViewer" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitSpForm">
             {{ spForm.id ? 'บันทึกการแก้ไข' : 'สร้างงาน/ดีลใหม่' }}
           </button>
         </div>
@@ -1670,7 +1671,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1828,7 +1829,9 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     },
     isAdmin()      { return this.currentUser?.role === 'admin'; },
     isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
-    isSecretary()  { return ['admin','salesadmin','manager'].includes(this.currentUser?.role); },
+    isSecretary()  { return ['admin','salesadmin','manager','viewer'].includes(this.currentUser?.role); },   // เห็นทั้งทีม (viewer = ผู้บริหาร 2026-10-22)
+    // ผู้บริหาร ดูอย่างเดียว — ซ่อนปุ่มเลื่อนขั้น / ลบ / บันทึก (server กันซ้ำอีกชั้น)
+    isViewer()     { return this.currentUser?.role === 'viewer'; },
     isSale()       { return this.currentUser?.role === 'sale'; },
     // ดีลนำเข้าย้อนหลังที่ยังรอตรวจ + ยังอยู่ขั้นส่งใบเสนอราคา → แสดงปุ่มยืนยัน "ยังเป็นใบเสนอราคาอยู่" (ยืนยันจากผู้ใช้ 2026-09-30)
     // เฉพาะ sale / ธุรการขาย (role ที่นับเป็นคนตรวจ — API ตรวจเจ้าของดีลซ้ำ)
@@ -2244,6 +2247,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         data: null, title: '', orderable: false, className: 'text-right',
         render: (d, type, card) => {
           let html = '<div class="flex gap-1 justify-end flex-wrap">';
+          // ผู้บริหาร ดูอย่างเดียว: มีแค่ปุ่มดูรายละเอียด
+          if (self.isViewer) return html + '<button class="sp-edit-btn text-xs font-semibold px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer whitespace-nowrap">ดูรายละเอียด</button></div>';
           const nextStage = self.spNextStage(card.stage);
           if (!['Deal Signed','Delivered','Lost'].includes(card.stage) && nextStage) {
             html += `<button class="sp-next-btn text-xs font-semibold px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 border-0 cursor-pointer whitespace-nowrap">▶ ${self.esc(self.spNextLabel(card.stage))}</button>`;

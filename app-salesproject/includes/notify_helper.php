@@ -14,36 +14,161 @@ require_once __DIR__ . '/../api/line.php';
 // public_view = เรื่องนี้เป็นงานเดียว มีหน้าสรุปแบบดูอย่างเดียวไม่ต้อง login (notify-view.html) — admin เปิดรายเรื่องในหน้าตั้งค่า (2026-10-10)
 //   ต้องตรงกับ public_view_supported ใน sql/add_notification_public_view.sql
 // recipient = กลุ่มผู้รับ (role) ของเรื่องนี้ — ใช้แบ่งกลุ่มในหน้าตั้งค่าการแจ้งเตือน (2026-10-10) ต้องตรงกับที่โค้ดส่งจริงของแต่ละเรื่อง
+// recipient_label = คำอธิบายว่าใน role นั้นใครได้รับ (ทุกคน / เฉพาะคนที่เกี่ยวกับงาน) แสดงในคอลัมน์ "แจ้งใคร" — ไม่พูดชื่อ role ซ้ำ ชื่อ role อยู่ที่หัวกล่อง (2026-10-22)
 const NOTIFY_TYPES = [
-    'bid_assigned'     => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => true,  'channels' => ['email', 'line']],
-    'bid_reassigned'   => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
-    'deal_transferred' => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'pipeline_item', 'page' => 'sales-pipeline.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
-    'bid_nudge'        => ['recipient' => 'sale', 'public_view' => true, 'bell_type' => 'message',        'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => false, 'line' => false, 'channels' => ['line']],
-    'erp_pending'      => ['recipient' => 'salesadmin', 'bell_type' => 'system',         'ref_type' => 'erp_pending',   'page' => 'accounts.html?tab=erp_pending', 'email' => false, 'line' => false, 'channels' => ['line']],
-    // ชนะงานประมูล / ปิดดีลได้ → หัวหน้า (2026-10-08) — ref_type/page ถูกทับตามชนิดงานใน notifyDealWon() (bid_won → bid-pipeline / deal_won → sales-pipeline)
-    'deal_won'         => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_won',      'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
-    // แพ้การประมูล / ยกเลิก / ดีลไม่สำเร็จ → หัวหน้า (2026-10-08) — ref_type/page ถูกทับใน notifyDealLost() (bid_lost → bid-pipeline / deal_lost → sales-pipeline)
-    'deal_lost'        => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_lost',     'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
-    // ดีลขายตรงใหม่ → หัวหน้า (2026-10-21) — แบบ ก ทุกดีล / แบบ ข มูลค่าถึงเกณฑ์ (app_config) ผ่าน notifyDealCreated()
-    'deal_created'     => ['recipient' => 'manager', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'deal_created',  'page' => 'sales-pipeline.html', 'email' => false, 'line' => true,  'channels' => ['line']],
+    'bid_assigned'     => ['recipient' => 'sale', 'recipient_label' => 'เฉพาะคนที่รับงานนั้น', 'public_view' => true, 'bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => true,  'channels' => ['email', 'line']],
+    'bid_reassigned'   => ['recipient' => 'sale', 'recipient_label' => 'เฉพาะคนที่รับงานคนใหม่', 'public_view' => true, 'bell_type' => 'new_assignment', 'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
+    'deal_transferred' => ['recipient' => 'sale', 'recipient_label' => 'เฉพาะคนที่รับโอนดีล', 'public_view' => true, 'bell_type' => 'system',         'ref_type' => 'pipeline_item', 'page' => 'sales-pipeline.html', 'email' => true,  'line' => false, 'channels' => ['email', 'line']],
+    'bid_nudge'        => ['recipient' => 'sale', 'recipient_label' => 'เฉพาะเจ้าของงานนั้น', 'public_view' => true, 'bell_type' => 'message',        'ref_type' => 'assignment',    'page' => 'my-assignments.html', 'email' => false, 'line' => false, 'channels' => ['line']],
+    'erp_pending'      => ['recipient' => 'salesadmin', 'recipient_label' => 'ทุกคนใน role นี้', 'bell_type' => 'system',         'ref_type' => 'erp_pending',   'page' => 'accounts.html?tab=erp_pending', 'email' => false, 'line' => false, 'channels' => ['line']],
+    // "แจ้งเมื่องานเข้าขั้น" (Stage-based notification แบบ HubSpot / Salesforce Flow — ยืนยันจากผู้ใช้ 2026-10-22)
+    //   รวม 3 เรื่องเดิมของหัวหน้า (deal_won / deal_lost / deal_created) + งานเปลี่ยนขั้นทั่วไป ไว้ในตารางเดียว: ขั้นไหน → แจ้งใคร
+    //   1 เรื่องต่อกลุ่มผู้รับ (LINE / ดูโดยไม่ต้อง login ตั้งแยกกลุ่ม) / ขั้นที่ติ๊กเก็บใน app_config.stage_notify_rules — ดู stageNotifyRules()
+    //   ref_type/page ถูกทับตามเหตุการณ์ (bid_won / deal_won / bid_lost / deal_lost / deal_created / bid_stage / deal_stage)
+    'stage_notify_manager' => ['recipient' => 'manager', 'recipient_label' => 'ทุกคนใน role นี้', 'public_view' => true, 'bell_type' => 'system', 'ref_type' => 'deal_stage', 'page' => 'sales-pipeline.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    'stage_notify_viewer'  => ['recipient' => 'viewer', 'recipient_label' => 'ทุกคนใน role นี้',  'public_view' => true, 'bell_type' => 'system', 'ref_type' => 'deal_stage', 'page' => 'sales-pipeline.html', 'email' => false, 'line' => true, 'channels' => ['line']],
     // ธุรการ/admin เปลี่ยน Sale ผู้ดูแลลูกค้า → แจ้ง Sale คนใหม่ (2026-10-09) — page ถูกทับเป็น accounts.html?account_id=… ใน notifyAccountOwnerAssigned()
-    'account_owner_assigned' => ['recipient' => 'sale', 'bell_type' => 'system',   'ref_type' => 'account',       'page' => 'accounts.html',       'email' => false, 'line' => true,  'channels' => ['line']],
+    'account_owner_assigned' => ['recipient' => 'sale', 'recipient_label' => 'เฉพาะผู้ดูแลลูกค้าคนใหม่', 'bell_type' => 'system',   'ref_type' => 'account',       'page' => 'accounts.html',       'email' => false, 'line' => true,  'channels' => ['line']],
     // admin นำเข้าประกาศ e-GP ใหม่ → แจ้งธุรการขายให้คัดกรอง (2026-10-09) — กดแล้วเปิดหน้า "ประกาศวันนี้"
-    'announcements_imported' => ['recipient' => 'salesadmin', 'bell_type' => 'system',   'ref_type' => 'announcements_imported', 'page' => 'bid_decision.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    'announcements_imported' => ['recipient' => 'salesadmin', 'recipient_label' => 'ทุกคนใน role นี้ (ยกเว้นคนนำเข้า)', 'bell_type' => 'system',   'ref_type' => 'announcements_imported', 'page' => 'bid_decision.html', 'email' => false, 'line' => true, 'channels' => ['line']],
     // Sale ยกเลิก / ไม่เข้าประมูลเอง → แจ้งธุรการขายให้ทราบผล (2026-10-10) — ผ่าน notifySaleCancelled()
-    'bid_cancelled_by_sale' => ['recipient' => 'salesadmin', 'public_view' => true, 'bell_type' => 'system', 'ref_type' => 'bid_cancelled_by_sale', 'page' => 'assignments.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    'bid_cancelled_by_sale' => ['recipient' => 'salesadmin', 'recipient_label' => 'ทุกคนใน role นี้', 'public_view' => true, 'bell_type' => 'system', 'ref_type' => 'bid_cancelled_by_sale', 'page' => 'assignments.html', 'email' => false, 'line' => true, 'channels' => ['line']],
     // Sale ขอใบเสนอราคา (ให้ธุรการออก) → ธุรการขายทุกคน (2026-10-14) — ผ่าน notifyQuoteRequested() ใน includes/quote_request_helper.php
     //   page ถูกทับเป็น quote-requests.html?code=QR-… (เปิดคำขอนั้น) / ref_id = quote_requests.quote_request_id
-    'quote_requested' => ['recipient' => 'salesadmin', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    'quote_requested' => ['recipient' => 'salesadmin', 'recipient_label' => 'ทุกคนใน role นี้', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
     // ธุรการออกใบเสนอราคาตามคำขอแล้ว → Sale เจ้าของดีล (2026-10-14 ระยะ 3) — ผ่าน notifyQuoteIssued() / Sale ออกเองไม่แจ้ง
-    'quote_issued'    => ['recipient' => 'sale', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    'quote_issued'    => ['recipient' => 'sale', 'recipient_label' => 'เฉพาะเจ้าของดีลนั้น', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
     // ธุรการ/admin ยกเลิกคำขอใบเสนอราคาให้ (เช่น Sale แจ้งว่าไม่เอาแล้ว) → Sale เจ้าของดีล (2026-10-21) — ผ่าน notifyQuoteCancelled() / Sale ยกเลิกเอง / ระบบยกเลิกเอง ไม่แจ้ง
-    'quote_cancelled' => ['recipient' => 'sale', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
+    'quote_cancelled' => ['recipient' => 'sale', 'recipient_label' => 'เฉพาะเจ้าของดีลนั้น', 'bell_type' => 'system', 'ref_type' => 'quote_request', 'page' => 'quote-requests.html', 'email' => false, 'line' => true, 'channels' => ['line']],
 ];
 
 // กลุ่มผู้รับ (เรียงตามลำดับแสดงผลในหน้าตั้งค่าการแจ้งเตือน) — รหัส = users.role
 function notifyRecipientGroups(): array {
-    return ['sale' => 'Sale', 'salesadmin' => 'ธุรการขาย', 'manager' => 'หัวหน้า'];
+    return ['sale' => 'Sale', 'salesadmin' => 'ธุรการขาย', 'manager' => 'หัวหน้า', 'viewer' => 'ผู้บริหาร'];
+}
+
+// ── แจ้งเมื่องานเข้าขั้น (2026-10-22) ──
+// ขั้นของแต่ละสายงาน (key = ค่าจริงใน DB / 'new' = สร้างดีลขายตรงใหม่) — ลำดับ = ลำดับแสดงในหน้าตั้งค่า
+const STAGE_NOTIFY_STAGES = [
+    'direct' => ['new' => 'ดีลใหม่ (สนใจ/ติดต่อ)', 'Send PI' => 'ส่ง PI / ใบเสนอ', 'Negotiating' => 'ต่อรอง', 'Deal Signed' => 'ปิดดีลได้',
+                 'Delivered' => 'ส่งสินค้าแล้ว', 'Lost' => 'ไม่สำเร็จ'],
+    'bid'    => ['รอดำเนินการ' => 'รอดำเนินการ (มอบหมายงาน)', 'รับงาน/ศึกษา TOR' => 'รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ' => 'จัดเตรียมยื่นข้อเสนอ',
+                 'รอประกาศผล' => 'รอประกาศผล', 'ชนะการประมูล' => 'ชนะการประมูล', 'ส่งมอบแล้ว' => 'ส่งมอบแล้ว', 'แพ้การประมูล' => 'แพ้การประมูล', 'ยกเลิก' => 'ยกเลิก'],
+];
+// กลุ่มผู้รับ (role) → เรื่องแจ้งเตือน
+const STAGE_NOTIFY_ROLES = ['manager' => 'stage_notify_manager', 'viewer' => 'stage_notify_viewer'];
+// ค่าตั้งต้นเมื่อ admin ยังไม่เคยบันทึก — หัวหน้า = แบบเดิมก่อนรวม (ชนะ / แพ้ / ยกเลิก / ดีลใหม่) / ผู้บริหาร = ทั้งหมด ยกเว้นมอบหมายงาน (ถี่)
+const STAGE_NOTIFY_DEFAULTS = [
+    'manager' => ['direct' => ['new', 'Deal Signed', 'Lost'], 'bid' => ['ชนะการประมูล', 'แพ้การประมูล', 'ยกเลิก']],
+    'viewer'  => ['direct' => ['new', 'Send PI', 'Negotiating', 'Deal Signed', 'Delivered', 'Lost'],
+                  'bid'    => ['รับงาน/ศึกษา TOR', 'จัดเตรียมยื่นข้อเสนอ', 'รอประกาศผล', 'ชนะการประมูล', 'ส่งมอบแล้ว', 'แพ้การประมูล', 'ยกเลิก']],
+];
+
+// ขั้นที่ติ๊กไว้ของแต่ละกลุ่ม {role: {direct: [...], bid: [...]}} — app_config.stage_notify_rules (JSON) / ไม่มี = ค่าตั้งต้น
+function stageNotifyRules(PDO $db): array {
+    $rules = STAGE_NOTIFY_DEFAULTS;
+    try {
+        $st = $db->prepare("SELECT value FROM app_config WHERE `key` = 'stage_notify_rules'");
+        $st->execute();
+        $saved = json_decode((string)$st->fetchColumn(), true);
+        if (is_array($saved)) {
+            foreach (STAGE_NOTIFY_ROLES as $role => $type) {
+                foreach (STAGE_NOTIFY_STAGES as $kind => $stages) {
+                    if (isset($saved[$role][$kind]) && is_array($saved[$role][$kind])) {
+                        $rules[$role][$kind] = array_values(array_intersect(array_keys($stages), $saved[$role][$kind]));
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[notify] stageNotifyRules: ' . $e->getMessage());
+    }
+    return $rules;
+}
+
+/**
+ * ส่งแจ้งเตือนตามตาราง "แจ้งเมื่องานเข้าขั้น" — ทุกกลุ่มที่ติ๊กขั้นนี้ / ผู้ใช้ที่ใช้งานอยู่ในกลุ่ม
+ * $oncePerJob = ไม่ส่งซ้ำถ้าคนนั้นเคยได้กระดิ่ง ref_type + ref_id นี้แล้ว (ชนะ / แพ้ / ดีลใหม่ — ครั้งเดียวต่องาน แยกรายคน)
+ */
+function stageNotifySend(PDO $db, string $kind, string $stageKey, array $data, ?int $actorId, bool $oncePerJob): void {
+    $rules = stageNotifyRules($db);
+    $sent = $db->prepare('SELECT 1 FROM notifications WHERE ref_type = ? AND ref_id = ? AND user_id = ? LIMIT 1');
+    foreach (STAGE_NOTIFY_ROLES as $role => $type) {
+        if (!in_array($stageKey, $rules[$role][$kind] ?? [], true)) continue;
+        $users = $db->prepare('SELECT id FROM users WHERE role = ? AND is_active = 1');
+        $users->execute([$role]);
+        foreach ($users->fetchAll(PDO::FETCH_COLUMN) as $uid) {
+            if ($oncePerJob) {
+                $sent->execute([$data['ref_type'], $data['ref_id'], $uid]);
+                if ($sent->fetchColumn()) continue;
+            }
+            notify($db, $type, (int)$uid, $data, $actorId);
+        }
+    }
+}
+
+// ชื่อขั้นสำหรับข้อความ (ขายตรง: Interest = สนใจ/ติดต่อ)
+function stageNotifyLabel(string $kind, ?string $stage): string {
+    if ($stage === null || $stage === '') return '-';
+    if ($kind === 'direct' && $stage === 'Interest') return 'สนใจ/ติดต่อ';
+    return STAGE_NOTIFY_STAGES[$kind][$stage] ?? $stage;
+}
+
+/**
+ * งานเปลี่ยนขั้นทั่วไป (ไม่ใช่ ชนะ / แพ้ / ดีลใหม่ ซึ่งมีข้อความละเอียดของตัวเอง) → ตามตาราง "แจ้งเมื่องานเข้าขั้น"
+ * $kind 'direct' ($refId = pipeline_items.id) | 'bid' ($refId = project_assignments.id)
+ * ไม่นับดีลคู่ของงานประมูล (แจ้งผ่านงานประมูลแล้ว) และข้อมูลย้อนหลังที่นำเข้า / LINE ส่งหลังตอบหน้าเว็บ / ไม่โยน error
+ */
+function notifyStageChanged(PDO $db, string $kind, int $refId, ?string $oldStage, string $newStage, ?int $actorId): void {
+    try {
+        if ($oldStage === $newStage) return;
+        if ($kind === 'bid') {
+            $imp = $db->prepare('SELECT 1 FROM quotation_import_log WHERE project_assignment_id = ? LIMIT 1');
+            $imp->execute([$refId]);
+            if ($imp->fetchColumn()) return;
+            $st = $db->prepare("SELECT pa.project_code, ann.project_name AS title, COALESCE(a.name, ann.unit_name) AS client,
+                                       COALESCE(pa.bid_amount, ann.price_median) AS value, u.full_name AS sale_name
+                                FROM project_assignments pa
+                                JOIN announcements ann ON ann.id = pa.announcement_id
+                                JOIN users u ON u.id = pa.assigned_to
+                                LEFT JOIN accounts a ON a.id = ann.account_id
+                                WHERE pa.id = ?");
+            $refType = 'bid_stage'; $page = 'bid-pipeline.html'; $what = 'งานประมูล';
+        } else {
+            $imp = $db->prepare('SELECT 1 FROM quotation_import_log WHERE pipeline_item_id = ? LIMIT 1');
+            $imp->execute([$refId]);
+            if ($imp->fetchColumn()) return;
+            $st = $db->prepare("SELECT pi.project_code, pi.title, COALESCE(a.name, pi.client_name) AS client, pi.value, pi.source_type,
+                                       u.full_name AS sale_name
+                                FROM pipeline_items pi
+                                JOIN users u ON u.id = pi.assigned_to
+                                LEFT JOIN accounts a ON a.id = pi.account_id
+                                WHERE pi.id = ?");
+            $refType = 'deal_stage'; $page = 'sales-pipeline.html'; $what = 'ขายตรง';
+        }
+        $st->execute([$refId]);
+        $job = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$job || ($job['source_type'] ?? '') === 'ebidding') return;
+
+        $title = mb_strlen($job['title']) > 80 ? mb_substr($job['title'], 0, 80) . '...' : $job['title'];
+        $value = (float)$job['value'] > 0 ? number_format((float)$job['value'], 0, '.', ',') . ' บาท' : 'ไม่ระบุ';
+        $move  = $oldStage === null
+            ? 'มอบหมายงานใหม่ → ' . stageNotifyLabel($kind, $newStage)
+            : stageNotifyLabel($kind, $oldStage) . ' → ' . stageNotifyLabel($kind, $newStage);
+        $data = [
+            'title'      => "🔄 {$what}เปลี่ยนสถานะ",
+            'body'       => "{$job['project_code']} {$title} · {$move} ({$job['sale_name']})",
+            'ref_type'   => $refType,
+            'ref_id'     => $refId,
+            'page'       => $page,
+            'line_title' => "🔄 {$what}เปลี่ยนสถานะ",
+            'line_body'  => "{$job['project_code']} {$title}\nลูกค้า: " . ($job['client'] ?: '-') . "\nSale: {$job['sale_name']}\n{$move}\nมูลค่า: {$value}",
+            'defer_line' => true,
+        ];
+        stageNotifySend($db, $kind, $newStage, $data, $actorId, false);
+    } catch (Throwable $e) {
+        error_log("[notify] stage {$kind} {$refId}: " . $e->getMessage());
+    }
 }
 
 // URL เต็มของหน้าในระบบ (ปุ่มใน LINE / อีเมล ต้องเป็น https เต็ม)
@@ -58,8 +183,8 @@ const NOTIFY_PUBLIC_VIEW_DAYS = 7;
 
 // ref_type ของกระดิ่ง → ชนิดงาน: 'bid' (ref_id = project_assignments.id) | 'deal' (ref_id = pipeline_items.id) | null = ไม่ใช่งานเดียว
 function notifyRecordKind(?string $refType): ?string {
-    if (in_array($refType, ['assignment', 'bid_won', 'bid_lost', 'bid_cancelled_by_sale'], true)) return 'bid';
-    if (in_array($refType, ['pipeline_item', 'deal_won', 'deal_lost', 'deal_created'], true)) return 'deal';
+    if (in_array($refType, ['assignment', 'bid_won', 'bid_lost', 'bid_cancelled_by_sale', 'bid_stage'], true)) return 'bid';
+    if (in_array($refType, ['pipeline_item', 'deal_won', 'deal_lost', 'deal_created', 'deal_stage'], true)) return 'deal';
     return null;
 }
 
@@ -341,10 +466,7 @@ function notifyDealWon(PDO $db, string $kind, int $refId, array $user): void {
         $st->execute([$refId]);
         $job = $st->fetch(PDO::FETCH_ASSOC);
         if (!$job || ($job['source_type'] ?? '') === 'ebidding') return;
-
-        $sent = $db->prepare('SELECT 1 FROM notifications WHERE ref_type = ? AND ref_id = ? LIMIT 1');
-        $sent->execute([$refType, $refId]);
-        if ($sent->fetchColumn()) return;
+        // ครั้งเดียวต่องาน กันซ้ำรายคนใน stageNotifySend() (เดิมเช็ครวมทุกคน — ผู้บริหารเพิ่มเข้ามา 2026-10-22)
 
         $title = mb_strlen($job['title']) > 80 ? mb_substr($job['title'], 0, 80) . '...' : $job['title'];
         $value = $job['value'] !== null ? number_format((float)$job['value'], 0, '.', ',') . ' บาท' : 'ไม่ระบุ';
@@ -364,8 +486,8 @@ function notifyDealWon(PDO $db, string $kind, int $refId, array $user): void {
                           . "\n{$valueLabel}: {$value}\nSale: {$job['sale_name']}\nคาดส่งมอบ: {$edd}",
             'defer_line' => true,
         ];
-        $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($managers as $managerId) notify($db, 'deal_won', (int)$managerId, $data, (int)$user['id']);
+        // ส่งตามตาราง "แจ้งเมื่องานเข้าขั้น" — ขั้น ชนะการประมูล / ปิดดีลได้ (2026-10-22)
+        stageNotifySend($db, $kind === 'bid' ? 'bid' : 'direct', $kind === 'bid' ? 'ชนะการประมูล' : 'Deal Signed', $data, (int)$user['id'], true);
     } catch (Throwable $e) {
         error_log("[notify] deal_won {$kind} {$refId}: " . $e->getMessage());
     }
@@ -401,9 +523,7 @@ function notifyDealCreated(PDO $db, int $itemId, array $user, string $trigger): 
         $imp = $db->prepare('SELECT 1 FROM quotation_import_log WHERE pipeline_item_id = ? LIMIT 1');
         $imp->execute([$itemId]);
         if ($imp->fetchColumn()) return;
-        $sent = $db->prepare("SELECT 1 FROM notifications WHERE ref_type = 'deal_created' AND ref_id = ? LIMIT 1");
-        $sent->execute([$itemId]);
-        if ($sent->fetchColumn()) return;
+        // ครั้งเดียวต่อดีล กันซ้ำรายคนใน stageNotifySend() (2026-10-22)
 
         $head  = $mode === 'value' ? '💰 ดีลใหม่มูลค่าสูง' : '🆕 ดีลขายตรงใหม่';
         $title = mb_strlen($job['title']) > 80 ? mb_substr($job['title'], 0, 80) . '...' : $job['title'];
@@ -423,8 +543,8 @@ function notifyDealCreated(PDO $db, int $itemId, array $user, string $trigger): 
                           . "\nมูลค่า: {$value} · โอกาสปิด {$prob}\nคาดปิด: {$close}\nSale: {$job['sale_name']}",
             'defer_line' => true,
         ];
-        $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($managers as $managerId) notify($db, 'deal_created', (int)$managerId, $data, (int)$user['id']);
+        // ส่งตามตาราง "แจ้งเมื่องานเข้าขั้น" — แถว ดีลใหม่ (2026-10-22)
+        stageNotifySend($db, 'direct', 'new', $data, (int)$user['id'], true);
     } catch (Throwable $e) {
         error_log("[notify] deal_created {$itemId}: " . $e->getMessage());
     }
@@ -477,10 +597,7 @@ function notifyDealLost(PDO $db, string $kind, int $refId, array $user, bool $sa
         $st->execute([$refId]);
         $job = $st->fetch(PDO::FETCH_ASSOC);
         if (!$job || ($job['source_type'] ?? '') === 'ebidding') return;
-
-        $sent = $db->prepare('SELECT 1 FROM notifications WHERE ref_type = ? AND ref_id = ? LIMIT 1');
-        $sent->execute([$refType, $refId]);
-        if ($sent->fetchColumn()) return;
+        // ครั้งเดียวต่องาน กันซ้ำรายคนใน stageNotifySend() (เดิมเช็ครวมทุกคน — ผู้บริหารเพิ่มเข้ามา 2026-10-22)
 
         $cancelled = ($job['status'] ?? '') === 'ยกเลิก';
         // ยกเลิกแยก 2 แบบ (2026-10-10): มีเหตุผลไม่เข้าประมูล = เราไม่เข้าประมูลเอง / ไม่มีเหตุผล + มีสาเหตุ = หน่วยงาน/ลูกค้ายกเลิก (หลังยื่นซอง/ชนะ)
@@ -523,8 +640,8 @@ function notifyDealLost(PDO $db, string $kind, int $refId, array $user, bool $sa
             'line_body'  => implode("\n", $lines),
             'defer_line' => true,
         ];
-        $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($managers as $managerId) notify($db, 'deal_lost', (int)$managerId, $data, (int)$user['id']);
+        // ส่งตามตาราง "แจ้งเมื่องานเข้าขั้น" — ขั้น แพ้การประมูล / ยกเลิก / ไม่สำเร็จ (2026-10-22)
+        stageNotifySend($db, $kind === 'bid' ? 'bid' : 'direct', $kind === 'bid' ? ($cancelled ? 'ยกเลิก' : 'แพ้การประมูล') : 'Lost', $data, (int)$user['id'], true);
     } catch (Throwable $e) {
         error_log("[notify] deal_lost {$kind} {$refId}: " . $e->getMessage());
     }

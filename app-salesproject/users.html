@@ -102,8 +102,8 @@
                       </td>
                       <td class="px-4 py-2">
                         <span class="whitespace-nowrap inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
-                          :class="u.role==='admin'?'bg-indigo-100 text-indigo-700':u.role==='salesadmin'?'bg-amber-100 text-amber-700':u.role==='manager'?'bg-teal-100 text-teal-700':'bg-sky-100 text-sky-700'">
-                          {{ {admin:'Admin',salesadmin:'SalesAdmin',manager:'Manager',sale:'Sale'}[u.role] || u.role }}
+                          :class="u.role==='admin'?'bg-indigo-100 text-indigo-700':u.role==='salesadmin'?'bg-amber-100 text-amber-700':u.role==='manager'?'bg-teal-100 text-teal-700':u.role==='viewer'?'bg-violet-100 text-violet-700':'bg-sky-100 text-sky-700'">
+                          {{ {admin:'Admin',salesadmin:'SalesAdmin',manager:'Manager',sale:'Sale',viewer:'ผู้บริหาร'}[u.role] || u.role }}
                         </span>
                       </td>
                       <!-- แจ้งเตือน: ช่องทาง / ป้ายส้มเมื่อรับจริงไม่ได้ (กฎเดียวกับ notifyWarnings ในฟอร์ม) -->
@@ -185,6 +185,8 @@
                 <option value="salesadmin">SalesAdmin (ธุรการขาย)</option>
                 <option value="manager">Manager (ผู้จัดการฝ่ายขาย)</option>
                 <option value="sale">Sale (พนักงานขาย)</option>
+                <!-- ผู้บริหาร ดูอย่างเดียว (2026-10-22) — เห็นทุกงานแบบหัวหน้า แต่แก้ไขอะไรไม่ได้ (server กัน) — ต้องรัน sql/add_viewer_role.sql ก่อน -->
+                <option value="viewer">ผู้บริหาร (ดูอย่างเดียว)</option>
               </select>
             </div>
             <!-- แสดงเมื่อเป็น Sale หรือผู้ใช้มีรหัสอยู่แล้ว (2026-10-16) — เดิมซ่อนเมื่อไม่ใช่ Sale ทำให้ล้างรหัสค้างของธุรการ/หัวหน้าไม่ได้ (เช่น 000) -->
@@ -304,7 +306,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 
@@ -319,7 +321,7 @@ createApp({
       lineTesting: null,   // id ผู้ใช้ที่กำลังทดสอบส่ง LINE
       // ค้นหา / ตัวกรอง (จัดหน้าใหม่ 2026-10-22)
       userSearch: '', userRole: 'all', userStatus: 'active', userProblemOnly: false,
-      userRoleTabs: [{ key: 'all', label: 'ทั้งหมด' }, { key: 'admin', label: 'Admin' }, { key: 'salesadmin', label: 'ธุรการขาย' }, { key: 'manager', label: 'Manager' }, { key: 'sale', label: 'Sale' }],
+      userRoleTabs: [{ key: 'all', label: 'ทั้งหมด' }, { key: 'admin', label: 'Admin' }, { key: 'salesadmin', label: 'ธุรการขาย' }, { key: 'manager', label: 'Manager' }, { key: 'sale', label: 'Sale' }, { key: 'viewer', label: 'ผู้บริหาร' }],
       userForm: { id: null, username: '', password: '', full_name: '', role: 'sale', sale_id: '', line_user_id: '', phone: '', email: '', notify_channel: 'line', notify_enabled: 1, avatar_color: '#3B82F6', is_active: 1 },
     };
   },

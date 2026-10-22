@@ -49,80 +49,92 @@
         <template v-else>
           <div v-if="loading" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 p-10 flex justify-center"><div class="spinner w-10 h-10"></div></div>
           <template v-else>
-          <!-- 1 กลุ่มผู้รับ = 1 กล่อง เว้นระยะห่างให้แยกกลุ่มชัด (ผู้ใช้ยืนยัน 2026-10-10 — แถวหัวกลุ่มในตารางเดียวอ่านแยกไม่ออก) -->
+          <!-- 1 กลุ่มผู้รับ = 1 กล่อง เว้นระยะห่างให้แยกกลุ่มชัด (ผู้ใช้ยืนยัน 2026-10-10 — แถวหัวกลุ่มในตารางเดียวอ่านแยกไม่ออก)
+               ทุกเรื่องตอบ 4 คำถามเรียงเหมือนกัน: ① เหตุการณ์ที่แจ้ง → ② แจ้งใคร → ③ ส่งทางไหน → ④ การเข้าถึงลิงก์ (กดลิงก์ในข้อความแล้วต้อง login ไหม)
+               (แบบ Salesforce Notification Builder / Jira Notification scheme — ยืนยันจากผู้ใช้ 2026-10-22)
+               "งานเปลี่ยนสถานะใน Pipeline" เป็นเหตุการณ์หนึ่งที่มีเงื่อนไข (สถานะที่ติ๊ก) — เลือกผ่านปุ่ม [เลือกสถานะ] ไม่ใช่ตารางแยก -->
           <div class="space-y-6">
-            <section v-for="g in typeGroups" :key="g.role" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
+            <section v-for="g in settingGroups" :key="g.role" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
               <div class="px-5 py-4 border-b-2 border-slate-200 flex items-center gap-3">
                 <div class="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
+                <!-- หัวกล่อง = role จริงในระบบที่ใช้ส่ง (สีป้ายเดียวกับ role ในเมนูผู้ใช้ — shared/app.js roleBadgeCls) / ช่อง "แจ้งใคร" ในตาราง = คำอธิบาย (2026-10-22) -->
                 <div>
-                  <h2 class="text-lg font-bold text-slate-800">แจ้ง {{ g.label }}</h2>
-                  <div v-if="g.rec" class="text-sm text-slate-500">
-                    {{ g.label }} {{ g.rec.users }} คน ·
+                  <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 flex-wrap">
+                    <span class="text-sm font-semibold text-slate-500">Role ในระบบ:</span>
+                    <span class="px-3 py-0.5 rounded-full text-base font-bold" :class="roleBadgeClass(g.role)">{{ g.label }}</span>
+                  </h2>
+                  <div v-if="g.rec" class="text-sm text-slate-500 mt-0.5">
+                    ผู้ใช้ role นี้ {{ g.rec.users }} คน ·
                     <span :class="receiverLow(g.rec, g.rec.email) ? 'text-red-600 font-semibold' : ''">รับอีเมล {{ g.rec.email }}</span> ·
                     <span :class="receiverLow(g.rec, g.rec.line) ? 'text-red-600 font-semibold' : ''">รับ LINE {{ g.rec.line }}</span>
+                    <button type="button" @click="memberList = { role: g.role, label: g.label, members: g.rec.members || [] }"
+                      class="ml-2 bg-transparent border-0 p-0 cursor-pointer text-teal-700 font-semibold underline underline-offset-2 hover:text-teal-800">ดูรายชื่อ</button>
                   </div>
                 </div>
               </div>
               <div class="overflow-x-auto">
-                <!-- คอลัมน์ช่องทางแคบลง + หัวคอลัมน์ตัดบรรทัดได้ ให้ 5 คอลัมน์พอดีจอถึง ~900px (เดิมถูกตัดเมื่อจอแคบกว่า ~1000px — 2026-10-10) -->
-                <table class="w-full min-w-[580px] text-sm">
+                <table class="w-full min-w-[880px] text-sm table-fixed">
                   <thead>
                     <tr class="bg-slate-50 text-slate-500">
-                      <th class="text-left font-semibold px-5 py-2.5">เรื่องที่แจ้งเตือน</th>
-                      <th class="font-semibold px-2 py-2.5 w-[84px]">กระดิ่ง</th>
-                      <th class="font-semibold px-2 py-2.5 w-[84px]">อีเมล</th>
-                      <th class="font-semibold px-2 py-2.5 w-[84px]">LINE</th>
-                      <th v-if="publicViewReady" class="font-semibold px-2 py-2.5 w-[96px] leading-tight">ดูโดยไม่ต้อง<br>login</th>
+                      <th rowspan="2" class="text-left font-semibold px-5 py-2.5 align-middle"><span class="inline-flex w-5 h-5 rounded-full bg-teal-50 text-teal-700 text-xs items-center justify-center mr-1">1</span>เหตุการณ์ที่แจ้ง</th>
+                      <th rowspan="2" class="text-left font-semibold px-3 py-2.5 w-[160px] align-middle"><span class="inline-flex w-5 h-5 rounded-full bg-teal-50 text-teal-700 text-xs items-center justify-center mr-1">2</span>แจ้งใคร</th>
+                      <th colspan="2" class="font-semibold px-2 pt-2.5 pb-1 border-b border-slate-200"><span class="inline-flex w-5 h-5 rounded-full bg-teal-50 text-teal-700 text-xs items-center justify-center mr-1">3</span>ส่งทางไหน</th>
+                      <th v-if="publicViewReady" rowspan="2" class="text-left font-semibold px-3 py-2.5 w-[220px] align-middle"><span class="inline-flex w-5 h-5 rounded-full bg-teal-50 text-teal-700 text-xs items-center justify-center mr-1">4</span>การเข้าถึงลิงก์</th>
+                    </tr>
+                    <tr class="bg-slate-50 text-slate-500">
+                      <th class="font-semibold px-2 pt-1 pb-2 w-[84px]">อีเมล</th>
+                      <th class="font-semibold px-2 pt-1 pb-2 w-[84px]">LINE</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="t in g.items" :key="t.notification_type_id" class="border-t border-slate-100"
-                      :class="isChanged(t) || (t.notification_type_id === 'deal_created' && dealCreatedChanged) ? 'bg-amber-50/60' : ''">
+                      :class="rowChanged(t) ? 'bg-amber-50/60' : ''">
+                      <!-- ① เหตุการณ์ที่แจ้ง -->
                       <td class="px-5 py-3 align-top">
-                        <div class="font-semibold text-slate-700">{{ t.notification_type_name }}</div>
-                        <div class="text-xs text-slate-500 mt-0.5 leading-relaxed">{{ t.notification_type_description }}</div>
-                        <!-- ดีลขายตรงใหม่: แบบ ก ทุกดีล / แบบ ข เฉพาะมูลค่าถึงเกณฑ์ (Big Deal Alert) — ยืนยันจากผู้ใช้ 2026-10-21 -->
-                        <div v-if="t.notification_type_id === 'deal_created'" class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                          <span class="font-semibold text-slate-600">แจ้งเมื่อ:</span>
-                          <label class="inline-flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" value="all" v-model="dealCreated.mode" class="w-4 h-4 accent-teal-600"> ทุกดีลใหม่
-                          </label>
-                          <label class="inline-flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" value="value" v-model="dealCreated.mode" class="w-4 h-4 accent-teal-600"> เฉพาะมูลค่าตั้งแต่
-                          </label>
-                          <span class="inline-flex items-center gap-1.5">
-                            <input type="number" min="1" step="1000" v-model.number="dealCreated.min_value" :disabled="dealCreated.mode !== 'value'"
-                              class="w-32 border border-slate-300 rounded-lg px-2 py-1 text-sm text-right disabled:bg-slate-50 disabled:text-slate-400"> บาท
-                          </span>
-                        </div>
+                        <template v-if="stageRoleOf(t)">
+                          <div class="font-semibold text-slate-700">งานเปลี่ยนสถานะใน Pipeline</div>
+                          <div class="text-xs text-slate-500 mt-1 leading-relaxed">
+                            <div><span class="text-slate-600 font-semibold">ขายตรง:</span> {{ stageSummary(stageRoleOf(t), 'direct') }}</div>
+                            <div><span class="text-slate-600 font-semibold">ประมูล:</span> {{ stageSummary(stageRoleOf(t), 'bid') }}</div>
+                          </div>
+                          <button type="button" @click="openStagePicker(stageRoleOf(t))"
+                            class="mt-2 px-3 py-1 rounded-lg bg-white ring-1 ring-teal-300 text-teal-700 font-semibold hover:bg-teal-50 border-0 cursor-pointer">เลือกสถานะ</button>
+                        </template>
+                        <template v-else>
+                          <div class="font-semibold text-slate-700">{{ t.notification_type_name }}</div>
+                          <div class="text-xs text-slate-500 mt-0.5 leading-relaxed">{{ t.notification_type_description }}</div>
+                        </template>
                       </td>
-                      <!-- กระดิ่ง: ขึ้นเสมอ ปิดไม่ได้ -->
-                      <td class="px-3 py-3 text-center align-middle">
-                        <div class="text-xs text-slate-400 font-semibold">ขึ้นเสมอ</div>
-                      </td>
-                      <td class="px-3 py-3 text-center align-middle">
-                        <label v-if="Number(t.email_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                      <!-- ② แจ้งใคร -->
+                      <!-- คำอธิบายว่าใน role ของกล่องนี้ใครได้รับ — ไม่พูดชื่อ role ซ้ำ (role จริงอยู่ที่หัวกล่อง) -->
+                      <td class="px-3 py-3 align-top text-slate-600">{{ t.recipient_label || 'ทุกคนใน role นี้' }}</td>
+                      <!-- ③ ส่งทางไหน (กระดิ่งในระบบขึ้นเสมอ) -->
+                      <td class="px-2 py-3 text-center align-top">
+                        <label v-if="!t.pseudo && Number(t.email_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
                           <input type="checkbox" v-model="t.send_email" class="w-5 h-5 accent-teal-600 cursor-pointer">
                           <span class="text-xs font-semibold" :class="t.send_email ? 'text-teal-700' : 'text-slate-400'">{{ t.send_email ? 'ส่ง' : 'ไม่ส่ง' }}</span>
                         </label>
-                        <div v-else class="text-xs text-slate-400">ไม่มีแบบอีเมล</div>
+                        <div v-else class="text-slate-400">—</div>
                       </td>
-                      <td class="px-3 py-3 text-center align-middle">
-                        <label v-if="Number(t.line_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                      <td class="px-2 py-3 text-center align-top">
+                        <div v-if="t.pseudo" class="text-xs text-slate-400" title="ยังไม่ได้รัน sql/add_stage_notify.sql — ใช้ค่าตั้งต้น ส่ง LINE">ส่ง<br>(ค่าตั้งต้น)</div>
+                        <label v-else-if="Number(t.line_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
                           <input type="checkbox" v-model="t.send_line" class="w-5 h-5 accent-teal-600 cursor-pointer">
                           <span class="text-xs font-semibold" :class="t.send_line ? 'text-teal-700' : 'text-slate-400'">{{ t.send_line ? 'ส่ง' : 'ไม่ส่ง' }}</span>
                         </label>
-                        <div v-else class="text-xs text-slate-400">—</div>
+                        <div v-else class="text-slate-400">—</div>
                       </td>
-                      <!-- ดูหน้าสรุปโดยไม่ต้อง login (2026-10-10) — เรื่องที่เป็นรายการหลายงานติ๊กไม่ได้ -->
-                      <td v-if="publicViewReady" class="px-3 py-3 text-center align-middle">
-                        <label v-if="Number(t.public_view_supported) === 1" class="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
-                          <input type="checkbox" v-model="t.public_view" class="w-5 h-5 accent-teal-600 cursor-pointer">
-                          <span class="text-xs font-semibold" :class="t.public_view ? 'text-teal-700' : 'text-slate-400'">{{ t.public_view ? 'เปิด' : 'ปิด' }}</span>
-                        </label>
-                        <div v-else class="text-xs text-slate-400">—</div>
+                      <!-- ④ กดปุ่ม "ดูรายละเอียด" ใน LINE / อีเมล แล้วต้อง login ไหม (2026-10-10) — เรื่องที่เป็นรายการหลายงานต้อง login เสมอ -->
+                      <td v-if="publicViewReady" class="px-3 py-3 align-top">
+                        <div v-if="!t.pseudo && !hasOutgoing(t)" class="text-xs text-slate-400 leading-snug">ไม่มีข้อความออกไป<br>(กระดิ่งอย่างเดียว)</div>
+                        <select v-else-if="!t.pseudo && Number(t.public_view_supported) === 1" v-model="t.public_view"
+                          class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white cursor-pointer">
+                          <option :value="false">ต้อง login</option>
+                          <option :value="true">ไม่ต้อง login (ดูอย่างเดียว {{ publicViewDays }} วัน)</option>
+                        </select>
+                        <div v-else class="text-xs text-slate-500">ต้อง login</div>
                       </td>
                     </tr>
                   </tbody>
@@ -130,6 +142,7 @@
               </div>
             </section>
           </div>
+          <p class="text-xs text-slate-500 mt-2">กระดิ่งในระบบขึ้นทุกเรื่องเสมอ · "—" = เรื่องนี้ไม่มีช่องทางนั้น</p>
 
           <!-- แถบบันทึกอันเดียว ท้ายทุกกลุ่ม -->
           <div class="mt-6 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 flex items-center justify-between gap-3 flex-wrap px-5 py-4">
@@ -147,7 +160,7 @@
           </template>
         </template>
 
-        <p class="text-xs text-slate-400 mt-3 max-w-[860px]">ต้องการแจ้งเตือนเรื่องใหม่ (เช่น ชนะงานแล้วแจ้งหัวหน้า) ต้องเพิ่มในโปรแกรมก่อน จึงจะขึ้นในรายการนี้ · LINE OA มีโควตาข้อความต่อเดือน ควรเปิด LINE เฉพาะเรื่องที่ต้องทำทันที</p>
+        <p class="text-xs text-slate-400 mt-3 max-w-[860px]">ต้องการแจ้งเตือนเรื่องใหม่ (เช่น ปฏิทิน / สรุปงานทุกเช้า) ต้องเพิ่มในโปรแกรมก่อน จึงจะขึ้นในรายการนี้ · LINE OA มีโควตาข้อความต่อเดือน ควรเปิด LINE เฉพาะเรื่องที่ต้องทำทันที</p>
         </template>
 
         <!-- ═══ แท็บประวัติการส่ง ═══ -->
@@ -271,14 +284,107 @@
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="helpOpen = false">×</button>
         </div>
         <div class="overflow-y-auto px-6 py-4 text-sm text-slate-600 leading-relaxed space-y-3">
-          <p>เลือกว่าแต่ละเรื่องจะส่ง <b class="text-slate-700">อีเมล</b> และ <b class="text-slate-700">LINE</b> หรือไม่ — <b class="text-slate-700">กระดิ่งในระบบขึ้นทุกเรื่องเสมอ</b> (เป็นหลักฐานว่าแจ้งแล้ว)</p>
+          <p>ทุกเรื่องอ่านจากซ้ายไปขวาเหมือนกัน: <b class="text-slate-700">① เหตุการณ์ที่แจ้ง</b> → <b class="text-slate-700">② แจ้งใคร</b> → <b class="text-slate-700">③ ส่งทางไหน</b> (อีเมล / LINE) → <b class="text-slate-700">④ การเข้าถึงลิงก์</b> กดลิงก์ "ดูรายละเอียด" ในข้อความแล้วต้อง login ไหม — <b class="text-slate-700">กระดิ่งในระบบขึ้นทุกเรื่องเสมอ</b> (เป็นหลักฐานว่าแจ้งแล้ว)</p>
+          <p><b class="text-slate-700">งานเปลี่ยนสถานะใน Pipeline</b> = แจ้งเมื่องานขายตรง / งานประมูลเลื่อนเข้าสถานะที่ติ๊กไว้ — กด <b class="text-slate-700">เลือกสถานะ</b> เพื่อติ๊กสถานะ แล้วกดบันทึกท้ายหน้า</p>
           <p>ผู้รับจะได้อีเมล / LINE เมื่อ <b class="text-slate-700">เรื่องนั้นเปิดไว้ในหน้านี้</b> และ <b class="text-slate-700">ผู้รับตั้งรับช่องทางนั้น</b> ในหน้า
             <a href="users.html" class="text-teal-700 font-semibold underline underline-offset-2">ผู้ใช้งาน</a> (เปิดแจ้งเตือน + เลือก LINE / Email / ทั้งคู่)</p>
-          <p v-if="publicViewReady"><b class="text-slate-700">ดูโดยไม่ต้อง login</b> = กดปุ่มใน LINE / อีเมล แล้วเห็นหน้าสรุปงานนั้นทันที (ดูอย่างเดียว หมดอายุ {{ publicViewDays }} วัน) — ปิด = ต้อง login ก่อน แล้วเปิดงานนั้นให้</p>
+          <p v-if="publicViewReady"><b class="text-slate-700">การเข้าถึงลิงก์: ไม่ต้อง login</b> = กดปุ่ม "ดูรายละเอียด" ใน LINE / อีเมล แล้วเห็นหน้าสรุปงานนั้นทันที (ดูอย่างเดียว หมดอายุ {{ publicViewDays }} วัน) — <b class="text-slate-700">ต้อง login</b> = login ก่อน แล้วเปิดงานนั้นให้ · เรื่องที่เป็นรายการหลายงานต้อง login เสมอ</p>
           <p>แบ่งเป็นกลุ่มตาม <b class="text-slate-700">ผู้รับ</b> — หัวกลุ่มบอกจำนวนคนที่รับได้จริง (นับเฉพาะคนที่ใส่อีเมล / LINE User ID แล้ว) <span class="text-red-600">ตัวเลขสีแดง</span> = รับได้ไม่ถึงครึ่งของกลุ่ม</p>
         </div>
         <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
           <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="helpOpen = false">ปิด</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- เลือกขั้นของเรื่อง "งานเข้าขั้นที่เลือก" (เงื่อนไขของเรื่อง — 2026-10-22) — กดตกลงแล้วยังไม่บันทึก ต้องกดบันทึกท้ายหน้า -->
+    <div v-if="stagePicker" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="stagePicker = null">
+      <div class="bg-white rounded-2xl w-full max-w-[720px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <div>
+            <h3 class="font-bold text-lg text-slate-800 m-0">เลือกสถานะที่จะแจ้ง{{ stagePicker.label }}</h3>
+            <div class="text-sm text-slate-500">ติ๊ก = งานเข้าสถานะนี้แล้วแจ้ง{{ stagePicker.label }}ทุกคน · 1 การเปลี่ยนสถานะ = 1 ข้อความต่อคน · ไม่นับข้อมูลย้อนหลังที่นำเข้า</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="stagePicker = null">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4">
+          <div class="flex flex-wrap items-center gap-2 text-sm mb-3">
+            <span class="text-slate-500">ปุ่มลัด:</span>
+            <button type="button" @click="presetStagePicker('all')" class="px-3 py-1 rounded-lg bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ติ๊กทั้งหมด</button>
+            <button type="button" @click="presetStagePicker('result')" class="px-3 py-1 rounded-lg bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">เฉพาะชนะ/แพ้</button>
+            <button type="button" @click="presetStagePicker('none')" class="px-3 py-1 rounded-lg bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ล้างทั้งหมด</button>
+          </div>
+          <div class="grid md:grid-cols-2 gap-x-6 gap-y-4">
+            <div v-for="kind in ['direct', 'bid']" :key="kind">
+              <div class="text-sm font-bold text-slate-700 mb-1.5">{{ kind === 'direct' ? 'ขายตรง (Sales Hunt)' : 'งานประมูล (e-Bidding)' }}</div>
+              <div v-for="(label, key) in stageNotify.stages[kind]" :key="kind + key" class="py-1">
+                <label class="flex items-center gap-2 cursor-pointer select-none text-slate-700">
+                  <input type="checkbox" :checked="stagePicker.rules[kind].includes(key)" @change="togglePickerStage(kind, key)" class="w-5 h-5 accent-teal-600 cursor-pointer">
+                  <span>{{ label }}</span>
+                  <span v-if="kind === 'bid' && key === 'รอดำเนินการ'" class="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">เกิดบ่อย</span>
+                </label>
+                <!-- ดีลใหม่: แบบ ก ทุกดีล / แบบ ข มูลค่าถึงเกณฑ์ (Big Deal Alert — 2026-10-21) ใช้ค่าเดียวกันทุกกลุ่มผู้รับ -->
+                <div v-if="kind === 'direct' && key === 'new' && stagePicker.rules.direct.includes('new')" class="ml-7 mt-1 space-y-1 text-sm">
+                  <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" value="all" v-model="stagePicker.dc.mode" class="w-4 h-4 accent-teal-600"> ทุกดีลใหม่</label>
+                  <label class="flex items-center gap-1.5 cursor-pointer flex-wrap"><input type="radio" value="value" v-model="stagePicker.dc.mode" class="w-4 h-4 accent-teal-600"> เฉพาะมูลค่าตั้งแต่
+                    <input type="number" min="1" step="1000" v-model.number="stagePicker.dc.min_value" :disabled="stagePicker.dc.mode !== 'value'"
+                      class="w-28 border border-slate-300 rounded-lg px-2 py-1 text-sm text-right disabled:bg-slate-50 disabled:text-slate-400"> บาท</label>
+                  <div class="text-xs text-slate-500">ใช้กับทุกกลุ่มที่ติ๊ก "ดีลใหม่"</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+          <button class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="stagePicker = null">ยกเลิก</button>
+          <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-teal-700 text-white hover:bg-teal-800 border-0 cursor-pointer" @click="applyStagePicker">ตกลง</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- รายชื่อผู้ใช้ใน role (ปุ่ม "ดูรายชื่อ" ที่หัวกล่อง — 2026-10-22) — บอกว่าแต่ละคนได้รับอีเมล / LINE ไหม และสาเหตุถ้าไม่ได้ -->
+    <div v-if="memberList" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="memberList = null">
+      <div class="bg-white rounded-2xl w-full max-w-[760px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0 flex items-center gap-2 flex-wrap">
+            รายชื่อผู้ใช้ role
+            <span class="px-3 py-0.5 rounded-full text-base font-bold" :class="roleBadgeClass(memberList.role)">{{ memberList.label }}</span>
+            <span class="text-sm font-normal text-slate-500">({{ memberList.members.length }} คน)</span>
+          </h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="memberList = null">×</button>
+        </div>
+        <div class="overflow-auto">
+          <div v-if="!memberList.members.length" class="p-8 text-center text-sm text-slate-400">ยังไม่มีผู้ใช้ที่ใช้งานอยู่ใน role นี้</div>
+          <table v-else class="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr class="bg-slate-50 text-slate-500 text-left">
+                <th class="font-semibold px-5 py-2.5">ชื่อ</th>
+                <th class="font-semibold px-3 py-2.5">รับแจ้งเตือน</th>
+                <th class="font-semibold px-3 py-2.5">ช่องทางที่เลือก</th>
+                <th class="font-semibold px-3 py-2.5">อีเมล</th>
+                <th class="font-semibold px-3 py-2.5">LINE</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in memberList.members" :key="m.id" class="border-t border-slate-100 align-top">
+                <td class="px-5 py-2.5">
+                  <div class="font-semibold text-slate-700">{{ m.full_name }}</div>
+                  <div class="text-xs text-slate-400">{{ m.username }}</div>
+                </td>
+                <td class="px-3 py-2.5" :class="m.notify_enabled ? 'text-slate-600' : 'text-red-600 font-semibold'">{{ m.notify_enabled ? 'เปิด' : 'ปิด' }}</td>
+                <td class="px-3 py-2.5 text-slate-600">{{ m.notify_enabled ? channelLabel(m.notify_channel) : '—' }}</td>
+                <td class="px-3 py-2.5" :class="memberGets(m, 'email').ok ? 'text-emerald-700' : 'text-red-600'">{{ memberGets(m, 'email').text }}</td>
+                <td class="px-3 py-2.5" :class="memberGets(m, 'line').ok ? 'text-emerald-700' : 'text-red-600'">{{ memberGets(m, 'line').text }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-6 py-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+          <span class="text-xs text-slate-500">กระดิ่งในระบบได้ทุกคน · สีแดง = ไม่ได้รับช่องทางนั้น</span>
+          <div class="flex gap-2">
+            <a href="users.html" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-teal-300 text-teal-700 hover:bg-teal-50 no-underline">ไปหน้าผู้ใช้งาน</a>
+            <button class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="memberList = null">ปิด</button>
+          </div>
         </div>
       </div>
     </div>
@@ -288,7 +394,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -304,7 +410,11 @@ createApp({
       original: {},     // ค่าที่บันทึกไว้ ใช้เทียบว่าเปลี่ยนอะไรบ้าง — key = notification_type_id
       receivers: null,
       publicViewReady: false,
-      dealCreated: { mode: 'all', min_value: 500000 },        // ดีลขายตรงใหม่ แบบ ก / ข (app_config — 2026-10-21)
+      dealCreated: { mode: 'all', min_value: 500000 },
+      stageNotify: null,          // { stages, roles } จาก API (ตารางแจ้งเมื่องานเข้าขั้น — 2026-10-22)
+      memberList: null,           // หน้าต่างรายชื่อผู้ใช้ใน role { role, label, members }
+      stagePicker: null,        // หน้าต่าง "เลือกขั้น" { role, label, rules: {direct, bid}, dc: {mode, min_value} }
+      stageRules: {}, stageRulesOriginal: {},        // ดีลขายตรงใหม่ แบบ ก / ข (app_config — 2026-10-21)
       dealCreatedOriginal: { mode: 'all', min_value: 500000 },   // รัน sql/add_notification_public_view.sql แล้ว → แสดงคอลัมน์ "ดูโดยไม่ต้อง login" (2026-10-10)
       publicViewDays: 7,
       helpOpen: false,  // modal วิธีใช้หน้านี้ (2026-10-10)  // จำนวนผู้รับต่อกลุ่ม { sale: {label, users, email, line}, ... } (แยกตาม role 2026-10-10)
@@ -318,7 +428,7 @@ createApp({
     };
   },
   computed: {
-    changedCount() { return this.types.filter(t => this.isChanged(t)).length + (this.dealCreatedChanged ? 1 : 0); },
+    changedCount() { return this.types.filter(t => this.isChanged(t)).length + (this.dealCreatedChanged ? 1 : 0) + (this.stageRulesChanged ? 1 : 0); },
     dealCreatedChanged() {
       const a = this.dealCreated, o = this.dealCreatedOriginal;
       return a.mode !== o.mode || (a.mode === 'value' && Number(a.min_value) !== Number(o.min_value));
@@ -327,8 +437,21 @@ createApp({
     roleLabels() {
       return Object.fromEntries(Object.entries(this.receivers || {}).map(([role, r]) => [role, r.label]));
     },
+    stageRulesChanged() { return JSON.stringify(this.stageRules) !== JSON.stringify(this.stageRulesOriginal); },
+    // หน้าตั้งค่า: เรื่อง "งานเข้าขั้นที่เลือก" อยู่ในกลุ่มผู้รับของตัวเองเหมือนเรื่องอื่น (2026-10-22)
+    //   ยังไม่ได้รัน sql/add_stage_notify.sql (ไม่มีแถวในตาราง) → แสดงแถวค่าตั้งต้น เลือกขั้นได้ แต่ตั้งช่องทางไม่ได้
+    settingGroups() {
+      const groups = this.typeGroupsAll.map(g => ({ ...g, items: [...g.items] }));
+      Object.entries(this.stageNotify?.roles || {}).forEach(([role, typeId]) => {
+        if (this.types.some(t => t.notification_type_id === typeId) || !this.roleLabels[role]) return;
+        const pseudo = { notification_type_id: typeId, recipient: role, recipient_label: 'ทุกคนใน role นี้', pseudo: true };
+        const g = groups.find(x => x.role === role);
+        if (g) g.items.push(pseudo); else groups.push({ role, label: this.roleLabels[role], rec: this.receivers[role], items: [pseudo] });
+      });
+      return groups;
+    },
     // เรื่องแจ้งเตือนแบ่งกลุ่มตามผู้รับ — เรื่องที่ไม่ระบุผู้รับไปอยู่กลุ่ม "อื่นๆ" ท้ายสุด (กันหายจากหน้าจอ)
-    typeGroups() {
+    typeGroupsAll() {
       const groups = Object.entries(this.roleLabels).map(([role, label]) => ({
         role, label, rec: this.receivers[role], items: this.types.filter(t => t.recipient === role),
       }));
@@ -342,7 +465,7 @@ createApp({
       return this.histFilter.role ? users.filter(u => u.role === this.histFilter.role) : users;
     },
     histTypeGroups() {
-      return this.histFilter.role ? this.typeGroups.filter(g => g.role === this.histFilter.role) : this.typeGroups;
+      return this.histFilter.role ? this.typeGroupsAll.filter(g => g.role === this.histFilter.role) : this.typeGroupsAll;
     },
     // แถวที่แก้ไขล่าสุด (แสดงผู้แก้/เวลา)
     lastUpdated() {
@@ -404,6 +527,11 @@ createApp({
       this.receivers = res.data.receivers;
       this.publicViewReady = !!res.data.public_view_ready;
       this.publicViewDays = res.data.public_view_days || 7;
+      if (res.data.stage_notify) {
+        this.stageNotify = { stages: res.data.stage_notify.stages, roles: res.data.stage_notify.roles };
+        this.stageRules = JSON.parse(JSON.stringify(res.data.stage_notify.rules));
+        this.stageRulesOriginal = JSON.parse(JSON.stringify(res.data.stage_notify.rules));
+      }
       if (res.data.deal_created) {
         this.dealCreated = { mode: res.data.deal_created.mode, min_value: Number(res.data.deal_created.min_value) };
         this.dealCreatedOriginal = { ...this.dealCreated };
@@ -412,6 +540,84 @@ createApp({
       this.original = Object.fromEntries(this.types.map(t => [t.notification_type_id, { send_email: t.send_email, send_line: t.send_line, public_view: t.public_view }]));
     },
 
+    // ── เรื่อง "งานเข้าขั้นที่เลือก" (2026-10-22) ──
+    // เรื่องนี้เป็นของกลุ่มไหน (stage_notify_manager → manager) — ไม่ใช่เรื่องเลื่อนขั้น = null
+    stageRoleOf(t) {
+      return Object.entries(this.stageNotify?.roles || {}).find(([, typeId]) => typeId === t.notification_type_id)?.[0] || null;
+    },
+    // สรุปขั้นที่ติ๊กใต้ชื่อเรื่อง เช่น "ทุกขั้น ยกเว้น รอดำเนินการ" / "ปิดดีลได้, ไม่สำเร็จ"
+    stageSummary(role, kind) {
+      const stages = this.stageNotify.stages[kind];
+      const all = Object.keys(stages), on = this.stageRules[role]?.[kind] || [];
+      const name = k => stages[k] + (kind === 'direct' && k === 'new' && this.dealCreated.mode === 'value'
+        ? ` (มูลค่าตั้งแต่ ${Number(this.dealCreated.min_value).toLocaleString('th-TH')} บาท)` : '');
+      if (!on.length) return 'ไม่แจ้ง';
+      if (on.length === all.length) return 'ทุกสถานะ';
+      const off = all.filter(k => !on.includes(k));
+      if (off.length <= 2 && off.length < on.length) return 'ทุกสถานะ ยกเว้น ' + off.map(k => stages[k]).join(', ');
+      return all.filter(k => on.includes(k)).map(name).join(', ');
+    },
+    // เปิดหน้าต่างเลือกขั้น — แก้สำเนา กดตกลงค่อยนำไปใช้ (ยังไม่บันทึกจนกดบันทึกท้ายหน้า)
+    openStagePicker(role) {
+      this.stagePicker = {
+        role, label: this.roleLabels[role] || role,
+        rules: JSON.parse(JSON.stringify(this.stageRules[role] || { direct: [], bid: [] })),
+        dc: { ...this.dealCreated },
+      };
+    },
+    togglePickerStage(kind, key) {
+      const list = this.stagePicker.rules[kind];
+      const next = list.includes(key) ? list.filter(k => k !== key) : [...list, key];
+      // เรียงตามลำดับขั้น ให้เทียบการเปลี่ยนแปลงได้ตรง
+      this.stagePicker.rules[kind] = Object.keys(this.stageNotify.stages[kind]).filter(k => next.includes(k));
+    },
+    // ปุ่มลัด: ทั้งหมด (ยกเว้นมอบหมายงานที่เกิดบ่อย) / เฉพาะชนะ-แพ้ (+ ยกเลิก / ไม่สำเร็จ) / ล้าง
+    presetStagePicker(preset) {
+      const presets = {
+        all:    { direct: Object.keys(this.stageNotify.stages.direct), bid: Object.keys(this.stageNotify.stages.bid).filter(k => k !== 'รอดำเนินการ') },
+        result: { direct: ['Deal Signed', 'Lost'], bid: ['ชนะการประมูล', 'แพ้การประมูล', 'ยกเลิก'] },
+        none:   { direct: [], bid: [] },
+      };
+      this.stagePicker.rules = JSON.parse(JSON.stringify(presets[preset]));
+    },
+    async applyStagePicker() {
+      const p = this.stagePicker;
+      if (p.rules.direct.includes('new') && p.dc.mode === 'value' && !(Number(p.dc.min_value) > 0)) {
+        await this.showAlert('กรุณาระบุมูลค่าขั้นต่ำของดีลใหม่', 'error'); return;
+      }
+      this.stageRules[p.role] = p.rules;
+      if (p.rules.direct.includes('new')) this.dealCreated = { mode: p.dc.mode, min_value: Number(p.dc.min_value) };
+      this.stagePicker = null;
+    },
+    // สีป้าย role — ชุดเดียวกับ roleBadgeCls ใน shared/app.js (AppNav)
+    roleBadgeClass(role) {
+      const m = { admin: 'bg-indigo-100 text-indigo-700', salesadmin: 'bg-amber-100 text-amber-700', manager: 'bg-teal-100 text-teal-700',
+                  sale: 'bg-sky-100 text-sky-700', viewer: 'bg-violet-100 text-violet-700' };
+      return m[role] || 'bg-slate-100 text-slate-600';
+    },
+    // ── หน้าต่างรายชื่อผู้ใช้ใน role ──
+    channelLabel(ch) { return { line: 'LINE', email: 'อีเมล', both: 'LINE + อีเมล' }[ch] || '—'; },
+    // คนนี้จะได้รับช่องทางนี้ไหม + สาเหตุ (กติกาเดียวกับตัวเลข "รับอีเมล / รับ LINE" บนหัวกล่อง)
+    memberGets(m, ch) {
+      const has = ch === 'line' ? m.has_line : m.has_email;
+      const picked = m.notify_channel === ch || m.notify_channel === 'both';
+      if (!m.notify_enabled) return { ok: false, text: has ? 'ไม่ได้ (ปิดรับ)' : (ch === 'line' ? 'ยังไม่ผูก' : 'ไม่มีอีเมล') };
+      if (!has) return { ok: false, text: ch === 'line' ? 'ยังไม่ผูก LINE' : 'ไม่มีอีเมล' };
+      if (!picked) return { ok: false, text: 'ไม่ได้เลือกช่องทางนี้' };
+      return { ok: true, text: '✓ ได้รับ' };
+    },
+    // มีข้อความออกไปทางอีเมล / LINE ไหม (ไม่มี = ปุ่ม "ดูรายละเอียด" ไม่มีให้กด)
+    hasOutgoing(t) {
+      return (Number(t.email_supported) === 1 && t.send_email) || (Number(t.line_supported) === 1 && t.send_line);
+    },
+    // แถวที่มีการเปลี่ยนแปลง (ระบายสีเหลือง) — รวมขั้นที่เลือกของเรื่องเลื่อนขั้น
+    rowChanged(t) {
+      const role = this.stageRoleOf(t);
+      if (!role) return this.isChanged(t);
+      const rulesChanged = JSON.stringify(this.stageRules[role]) !== JSON.stringify(this.stageRulesOriginal[role]);
+      const dcChanged = this.dealCreatedChanged && (this.stageRules[role]?.direct || []).includes('new');
+      return (!t.pseudo && this.isChanged(t)) || rulesChanged || dcChanged;
+    },
     isChanged(t) {
       const o = this.original[t.notification_type_id];
       return !!o && (o.send_email !== t.send_email || o.send_line !== t.send_line || o.public_view !== t.public_view);
@@ -420,6 +626,7 @@ createApp({
     resetChanges() {
       this.types.forEach(t => { Object.assign(t, this.original[t.notification_type_id]); });
       this.dealCreated = { ...this.dealCreatedOriginal };
+      this.stageRules = JSON.parse(JSON.stringify(this.stageRulesOriginal));
     },
 
     // สรุปสิ่งที่เปลี่ยนให้ดูก่อนยืนยัน เช่น "ข้อความเร่งงานจากธุรการ: LINE ไม่ส่ง → ส่ง"
@@ -430,10 +637,22 @@ createApp({
         const parts = [];
         if (o.send_email !== t.send_email) parts.push(`อีเมล ${o.send_email ? 'ส่ง' : 'ไม่ส่ง'} → ${t.send_email ? 'ส่ง' : 'ไม่ส่ง'}`);
         if (o.send_line !== t.send_line)   parts.push(`LINE ${o.send_line ? 'ส่ง' : 'ไม่ส่ง'} → ${t.send_line ? 'ส่ง' : 'ไม่ส่ง'}`);
-        if (o.public_view !== t.public_view) parts.push(`ดูโดยไม่ต้อง login ${o.public_view ? 'เปิด' : 'ปิด'} → ${t.public_view ? 'เปิด' : 'ปิด'}`);
+        if (o.public_view !== t.public_view) parts.push(`การเข้าถึงลิงก์ ${o.public_view ? 'ไม่ต้อง login' : 'ต้อง login'} → ${t.public_view ? 'ไม่ต้อง login' : 'ต้อง login'}`);
         return `• ${t.notification_type_name}: ${parts.join(', ')}`;
       });
       const dcText = d => d.mode === 'value' ? `เฉพาะมูลค่าตั้งแต่ ${Number(d.min_value).toLocaleString('th-TH')} บาท` : 'ทุกดีลใหม่';
+      if (this.stageRulesChanged) {
+        Object.keys(this.stageRules).forEach(role => {
+          const label = this.roleLabels[role] || role;
+          ['direct', 'bid'].forEach(kind => {
+            const before = this.stageRulesOriginal[role]?.[kind] || [], after = this.stageRules[role]?.[kind] || [];
+            const added = after.filter(k => !before.includes(k)).map(k => this.stageNotify.stages[kind][k]);
+            const removed = before.filter(k => !after.includes(k)).map(k => this.stageNotify.stages[kind][k]);
+            if (added.length) lines.push(`• แจ้ง${label} เพิ่มสถานะ: ${added.join(', ')}`);
+            if (removed.length) lines.push(`• แจ้ง${label} เลิกแจ้ง: ${removed.join(', ')}`);
+          });
+        });
+      }
       if (this.dealCreatedChanged) {
         if (this.dealCreated.mode === 'value' && !(Number(this.dealCreated.min_value) > 0)) { await this.showAlert('กรุณาระบุมูลค่าขั้นต่ำของดีลใหม่ที่ต้องแจ้งหัวหน้า', 'error'); return; }
         lines.push(`• ดีลขายตรงใหม่ แจ้งเมื่อ: ${dcText(this.dealCreatedOriginal)} → ${dcText(this.dealCreated)}`);
@@ -443,6 +662,7 @@ createApp({
       this.saving = true;
       const res = await apiCall('POST', 'api/notification_types.php?action=save', {
         items: changed.map(t => ({ notification_type_id: t.notification_type_id, send_email: t.send_email ? 1 : 0, send_line: t.send_line ? 1 : 0, public_view: t.public_view ? 1 : 0 })),
+        ...(this.stageRulesChanged ? { stage_rules: this.stageRules } : {}),
         ...(this.dealCreatedChanged ? { deal_created: { mode: this.dealCreated.mode, min_value: Number(this.dealCreated.min_value) || 0 } } : {}),
       });
       this.saving = false;

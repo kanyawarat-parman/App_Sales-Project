@@ -283,7 +283,7 @@ function getKanban(PDO $db, array $user): void {
 
     // Per-sale summary (admin/secretary only, no filter) — ตลอดกาลเสมอ ไม่กรองตาม period เช่นกัน
     $perSale = [];
-    if (in_array($user['role'], ['admin','salesadmin','manager']) && empty($_GET['assigned_to'])) {
+    if (in_array($user['role'], ['admin','salesadmin','manager','viewer']) && empty($_GET['assigned_to'])) {
         $pSql = "
             SELECT u.id, u.full_name, u.avatar_color, u.photo_url,
                    SUM(pi.stage NOT IN ('Delivered','Lost'))       AS active,
@@ -863,9 +863,13 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
         // เพิ่งปิดดีลได้ (จากขั้นที่ยังไม่ชนะ) → แจ้งหัวหน้า — ดีลคู่ของงานประมูล/ดีลย้อนหลังข้ามในฟังก์ชัน (ยืนยันจากผู้ใช้ 2026-10-08)
         if (in_array($body['stage'], ['Deal Signed', 'Delivered'], true) && !in_array($row['stage'], ['Deal Signed', 'Delivered'], true)) {
             notifyDealWon($db, 'direct', $id, $user);
-        }
         // ดีลไม่สำเร็จ (Lost) → แจ้งหัวหน้า — ดีลคู่ของงานประมูล/ดีลย้อนหลังข้ามในฟังก์ชัน (ยืนยันจากผู้ใช้ 2026-10-08)
-        if ($body['stage'] === 'Lost') notifyDealLost($db, 'direct', $id, $user);
+        } elseif ($body['stage'] === 'Lost') {
+            notifyDealLost($db, 'direct', $id, $user);
+        } else {
+            // เปลี่ยนขั้นอื่น → ตามตาราง "แจ้งเมื่องานเข้าขั้น" (2026-10-22) — ดีลคู่งานประมูล/ข้อมูลย้อนหลังข้ามในฟังก์ชัน
+            notifyStageChanged($db, 'direct', $id, $row['stage'], $body['stage'], (int)$user['id']);
+        }
 
         // ดีลออกจากสถานะที่ขอใบเสนอราคาได้ (ปิดดีล / ส่งสินค้า / ไม่สำเร็จ) → คำขอที่ค้างยกเลิกเอง (2026-10-14)
         cancelStaleQuoteRequests($db, (int)$user['id']);

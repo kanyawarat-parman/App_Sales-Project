@@ -540,7 +540,7 @@
                           </div>
                         </div>
                         <span v-else class="text-slate-300 text-xs">-</span>
-                        <button v-if="isManager" @click="startEditTarget(s)"
+                        <button v-if="canEditTargets" @click="startEditTarget(s)"
                           class="block mt-0.5 text-[.65rem] text-blue-400 hover:text-blue-600 cursor-pointer ml-auto">แก้ไข</button>
                       </template>
                     </td>
@@ -809,7 +809,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 
@@ -849,7 +849,8 @@ createApp({
     };
   },
   computed: {
-    isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
+    isManager() { return ['admin','manager','viewer'].includes(this.currentUser?.role); },   // เห็นทั้งทีม (viewer = ผู้บริหาร 2026-10-22)
+    canEditTargets() { return ['admin','manager'].includes(this.currentUser?.role); },   // ผู้บริหารดูอย่างเดียว ตั้งเป้าไม่ได้
     isSale()    { return this.currentUser?.role === 'sale'; },
 
     pipelineViewLabel() {
@@ -891,7 +892,7 @@ createApp({
       const res = await apiCall('GET', 'api/auth.php?action=me');
       if (!res.success) { location.href = 'login.html'; return; }
       this.currentUser = res.data;
-      if (!['admin','salesadmin','manager','sale'].includes(this.currentUser.role)) {
+      if (!['admin','salesadmin','manager','sale','viewer'].includes(this.currentUser.role)) {
         location.href = 'dashboard.html'; return;
       }
     } catch { location.href = 'login.html'; return; }

@@ -28,6 +28,15 @@ function requireAuth(): array {
         exit;
     }
     $_SESSION['last_activity'] = time();
+    // บทบาทดูอย่างเดียว (viewer — ผู้บริหาร, 2026-10-22): กันคำสั่งแก้ไขข้อมูลทุกตัวที่จุดเดียว (Read Only Profile)
+    // อนุญาตเฉพาะ GET + ออกจากระบบ (auth.php) + อ่านกระดิ่ง (notifications.php) — ไม่ใช่ข้อมูลงาน
+    if (($_SESSION['user']['role'] ?? '') === 'viewer'
+        && !in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD'], true)
+        && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? ''), ['auth.php', 'notifications.php'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'บัญชีนี้ดูอย่างเดียว — แก้ไขข้อมูลไม่ได้', 'code' => 403], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     return $_SESSION['user'];
 }
 

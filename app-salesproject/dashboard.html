@@ -35,7 +35,8 @@
         </div>
         <template v-else>
           <dashboard-salesadmin v-if="currentUser.role === 'salesadmin'" :data="data"></dashboard-salesadmin>
-          <dashboard-manager v-else-if="currentUser.role === 'manager'" :data="data"></dashboard-manager>
+          <!-- viewer (ผู้บริหาร ดูอย่างเดียว — 2026-10-22) ใช้ภาพรวมแบบหัวหน้า -->
+          <dashboard-manager v-else-if="currentUser.role === 'manager' || currentUser.role === 'viewer'" :data="data"></dashboard-manager>
           <dashboard-sale v-else-if="currentUser.role === 'sale'" :data="data"></dashboard-sale>
           <dashboard-admin v-else :data="data"></dashboard-admin>
         </template>
@@ -49,7 +50,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script src="shared/dashboard-salesadmin.js?v=14"></script>
 <script src="shared/dashboard-manager.js?v=3"></script>
 <script src="shared/dashboard-sale.js?v=11"></script>
@@ -75,7 +76,7 @@ createApp({
        ให้ตรงกับเมนูจริงที่แต่ละ role เห็นในแถบบน (ดู AppNav's navGroups() ใน shared/app.js) */
     tabItems() {
       const role = this.currentUser?.role;
-      if (role === 'manager') {
+      if (role === 'manager' || role === 'viewer') {
         return [
           { label:'ภาพรวม', icon:'home', active:true },
           { label:'งานประมูล', icon:'cols3', href:'bid-pipeline.html' },

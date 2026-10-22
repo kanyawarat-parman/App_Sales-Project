@@ -1446,7 +1446,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 
@@ -1581,7 +1581,8 @@ createApp({
       if (['admin','salesadmin'].includes(this.currentUser?.role)) return true;
       return this.canEditUnitName && !this.modal?.data?.account_id;
     },
-    isManager() { return ['admin','manager'].includes(this.currentUser?.role); },
+    isManager() { return ['admin','manager','viewer'].includes(this.currentUser?.role); },   // เห็นทั้งทีม (viewer = ผู้บริหาร 2026-10-22)
+    isViewer()  { return this.currentUser?.role === 'viewer'; },   // ดูอย่างเดียว — ซ่อนปุ่มเลื่อนสถานะ (server กันซ้ำ)
     isSale()    { return this.currentUser?.role === 'sale'; },
     // แก้วันส่งมอบจริง: งานที่ส่งมอบแล้ว / sale เจ้าของงาน, ธุรการ, admin (API ตรวจซ้ำ)
     canEditDeliveredDate() {
@@ -1785,7 +1786,7 @@ createApp({
       const res = await apiCall('GET', 'api/auth.php?action=me');
       if (!res.success) { window.location.href = 'login.html'; return; }
       this.currentUser = res.data;
-      if (!['admin','manager','sale'].includes(this.currentUser.role)) {
+      if (!['admin','manager','sale','viewer'].includes(this.currentUser.role)) {   // viewer = ผู้บริหาร ดูอย่างเดียว (2026-10-22)
         window.location.href = 'dashboard.html'; return;
       }
     } catch { window.location.href = 'login.html'; return; }
@@ -2337,6 +2338,7 @@ createApp({
     },
 
     canMove(status) {
+      if (this.isViewer) return false;
       return ['รับงาน/ศึกษา TOR','จัดเตรียมยื่นข้อเสนอ','รอประกาศผล','ชนะการประมูล'].includes(status);
     },
     nextStage(status) { return NEXT_MAP[status] || null; },

@@ -136,7 +136,7 @@
           <div v-if="isOpen(modal.data)" class="text-sm text-slate-500">ธุรการออกใบในระบบใบเสนอราคา โดยเลือกคำขอนี้ (เชื่อมระบบใบเสนอราคาในขั้นถัดไป)</div>
           <!-- ยกเลิกคำขอ (ธุรการ / admin / ผู้ขอ / Sale เจ้าของดีล — API ตรวจสิทธิ์) -->
           <div v-if="isOpen(modal.data)" class="pt-2 border-t border-slate-100">
-            <button v-if="!cancelOpen" type="button" @click="cancelOpen = true" class="text-sm font-semibold text-red-600 underline bg-transparent border-0 p-0 cursor-pointer">ยกเลิกคำขอนี้</button>
+            <button v-if="!cancelOpen && currentUser?.role !== 'viewer'" type="button" @click="cancelOpen = true" class="text-sm font-semibold text-red-600 underline bg-transparent border-0 p-0 cursor-pointer">ยกเลิกคำขอนี้</button>
             <div v-else class="rounded-xl border border-red-200 bg-red-50/40 p-3 space-y-3">
               <app-quote-cancel-reason v-model="cancelReason"></app-quote-cancel-reason>
               <div class="flex justify-end gap-2">
@@ -177,7 +177,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 createApp({

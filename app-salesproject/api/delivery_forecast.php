@@ -7,7 +7,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 
 $user   = requireAuth();
-requireRole(['admin', 'salesadmin', 'manager']);
+requireRole(['admin', 'salesadmin', 'manager', 'viewer']);
 $db     = (new Database())->getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? 'list';

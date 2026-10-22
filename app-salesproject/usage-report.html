@@ -477,7 +477,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 createApp({
@@ -643,7 +643,7 @@ createApp({
       if (!res.success) { window.location.href = 'login.html'; return; }
       this.currentUser = res.data;
       // manager + admin เท่านั้น (ยืนยันจากผู้ใช้ 2026-09-30 — API บังคับซ้ำ)
-      if (!['manager', 'admin'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
+      if (!['manager', 'admin', 'viewer'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
     } catch { window.location.href = 'login.html'; return; }
     this.authReady = true;
     await this.load();

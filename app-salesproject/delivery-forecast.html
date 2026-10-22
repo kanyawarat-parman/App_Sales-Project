@@ -121,7 +121,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=100"></script>
+<script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
 const MONTHS_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
@@ -191,7 +191,7 @@ createApp({
       if (!res.success) { window.location.href = 'login.html'; return; }
       this.currentUser = res.data;
       // admin / ธุรการขาย / manager (API บังคับซ้ำ)
-      if (!['admin', 'salesadmin', 'manager'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
+      if (!['admin', 'salesadmin', 'manager', 'viewer'].includes(this.currentUser.role)) { window.location.href = 'dashboard.html'; return; }
     } catch { window.location.href = 'login.html'; return; }
     this.authReady = true;
     await this.load();

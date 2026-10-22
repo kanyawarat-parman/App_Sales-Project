@@ -11,7 +11,7 @@ require_once __DIR__ . '/../includes/erp_pending_helper.php';
 // สถานะที่ถือว่าปิดแล้ว (ขายตรง + งานประมูล) — ไม่นับเป็นดีลค้าง/งานค้าง
 const USAGE_CLOSED_STAGES = "'Delivered','Lost','ส่งมอบแล้ว','แพ้การประมูล','ยกเลิก'";
 
-$user   = requireRole(['manager', 'admin']);
+$user   = requireRole(['manager', 'admin', 'viewer']);   // viewer = ผู้บริหาร ดูอย่างเดียว (2026-10-22)
 $db     = (new Database())->getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? 'summary';
