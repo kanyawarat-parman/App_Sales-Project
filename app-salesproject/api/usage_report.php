@@ -184,7 +184,7 @@ function usageSummary(PDO $db): void {
 /**
  * แผนที่การเข้าใช้ (Activity Heatmap — ยืนยันจากผู้ใช้ 2026-10-21) จาก user_activity_logs ในช่วงที่เลือก
  * days[user_id][Y-m-d] = {pv หน้าที่เปิด, login เข้าระบบ, first, last เวลาแรก/สุดท้าย, mobile_pct}
- * hours[user_id][ชั่วโมง] = {pv, login} — ก่อน 7 โมงรวมไว้ที่ 7 / ตั้งแต่ 18 โมงรวมไว้ที่ 18 (หน้าเว็บแสดง "≤7" / "18+")
+ * hours[user_id][ชั่วโมง 0-23] = {pv, login} — แสดงครบ 24 ชั่วโมง (เดิมรวม ≤7 / 18+ — ผู้ใช้ขอแสดงเต็ม 2026-10-22)
  */
 function usageHeatmap(PDO $db, string $from, array $users): array {
     $dates = [];
@@ -203,7 +203,7 @@ function usageHeatmap(PDO $db, string $from, array $users): array {
         ];
     }
 
-    $st = $db->prepare("SELECT user_id, LEAST(GREATEST(HOUR(created_at), 7), 18) AS h, SUM(event_type = 'page_view') AS pv, SUM(event_type = 'login') AS login
+    $st = $db->prepare("SELECT user_id, HOUR(created_at) AS h, SUM(event_type = 'page_view') AS pv, SUM(event_type = 'login') AS login
                         FROM user_activity_logs WHERE created_at >= ? GROUP BY user_id, h");
     $st->execute([$from]);
     $hours = [];
@@ -217,13 +217,13 @@ function usageHeatmap(PDO $db, string $from, array $users): array {
         $rows[] = ['id' => $id, 'full_name' => $u['full_name'], 'role' => $u['role'],
                    'days' => (object)($days[$id] ?? []), 'hours' => (object)($hours[$id] ?? [])];
     }
-    return ['dates' => $dates, 'hours' => range(7, 18), 'users' => $rows];
+    return ['dates' => $dates, 'hours' => range(0, 23), 'users' => $rows];
 }
 
 /**
  * รายละเอียดช่องในแผนที่การเข้าใช้ (Drill-down — ยืนยันจากผู้ใช้ 2026-10-21)
  * ?user_id=&date=Y-m-d          → pages (หน้าที่เปิด เรียงมากไปน้อย) + timeline (ลำดับเวลา เปิดหน้าเดิมติดกันรวมเป็นบรรทัดเดียว)
- * ?user_id=&hour=7..18&days=7|30 → pages ของชั่วโมงนั้น รวมทุกวันในช่วงที่เลือก (ไม่มี timeline)
+ * ?user_id=&hour=0..23&days=7|30 → pages ของชั่วโมงนั้น รวมทุกวันในช่วงที่เลือก (ไม่มี timeline)
  * ชื่อหน้าส่งเป็นชื่อไฟล์ — หน้าเว็บแปลงเป็นชื่อเมนูด้วย pageLabel()
  */
 function usageActivity(PDO $db): void {
@@ -236,11 +236,11 @@ function usageActivity(PDO $db): void {
         $params = [$userId, "$date 00:00:00", "$date 00:00:00"];
     } else {
         $hour = (int)($_GET['hour'] ?? -1);
-        if ($hour < 7 || $hour > 18) jsonResponse(false, null, 'ชั่วโมงไม่ถูกต้อง', 400);
+        if ($hour < 0 || $hour > 23) jsonResponse(false, null, 'ชั่วโมงไม่ถูกต้อง', 400);
         $days = (int)($_GET['days'] ?? 7);
         if (!in_array($days, [7, 30], true)) $days = 7;
         $from = date('Y-m-d 00:00:00', strtotime('-' . ($days - 1) . ' days'));
-        $where = 'user_id = ? AND created_at >= ? AND LEAST(GREATEST(HOUR(created_at), 7), 18) = ?';
+        $where = 'user_id = ? AND created_at >= ? AND HOUR(created_at) = ?';
         $params = [$userId, $from, $hour];
     }
 

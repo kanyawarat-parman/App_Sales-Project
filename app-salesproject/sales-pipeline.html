@@ -480,7 +480,7 @@
                     <!-- ลูกค้ายืนยันสั่งซื้อตามใบแล้ว (ระยะ 3) — ให้ Sale กดปิดดีลเอง (ต้องกรอกวันคาดส่งมอบ) -->
                     <div v-if="card.quote_confirmed_id && ['Interest','Send PI','Negotiating'].includes(card.stage)" class="inline-block ml-1 mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-emerald-100 text-emerald-800">ลูกค้ายืนยันใบ {{ card.quote_confirmed_id }} แล้ว — กดปิดดีล</div>
                     <div v-if="card.quote_request_status" class="inline-block ml-1 mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold" :class="card.quote_request_status==='accepted' ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'">{{ card.quote_request_status==='accepted' ? 'ธุรการกำลังออกใบ' : 'รอออกใบเสนอราคา' }}</div>
-                    <div class="font-bold text-[.95rem] leading-tight mb-1 text-slate-800">{{ card.title }}</div>
+                    <div v-if="card.title" class="font-bold text-[.95rem] leading-tight mb-1 text-slate-800">{{ card.title }}</div>
                     <div class="text-[.85rem] text-slate-500 mb-1" v-if="card.client_name">{{ card.client_name }}</div>
                     <div class="text-[1.05rem] font-black text-green-600 mb-2" v-if="card.value">฿{{ formatNumber(card.value) }}</div>
                     <div v-if="isSecretary && !spFilter.assigned_to"
@@ -532,7 +532,7 @@
                 <span class="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold" :style="spStageClass(card.stage)">{{ spStageLabel(card.stage, card.source_type) }}</span>
               </div>
               <div v-if="Number(card.import_pending) === 1" class="inline-block mb-1 px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</div>
-              <div class="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1">{{ card.title }}</div>
+              <div v-if="card.title" class="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1">{{ card.title }}</div>
               <div v-if="card.value" class="text-base font-bold text-green-600 mb-0.5">฿{{ formatNumber(card.value) }}</div>
               <div v-if="card.client_name" class="text-xs text-slate-400 mb-2 truncate">{{ card.client_name }}</div>
               <div class="flex items-center justify-between">
@@ -648,7 +648,7 @@
     </div>
 
     <!-- SP: Add / Edit Deal Modal -->
-    <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="!spFormSaving && closeModal()">
       <!-- กว้าง 896px (max-w-4xl) เท่ากับหน้าต่างรายละเอียดงานประมูล/งานที่ได้รับ (ยืนยันจากผู้ใช้ 2026-10-14 — เดิม 800px, ก่อนนั้น 560px) มือถือยังเต็มจอเหมือนเดิม -->
       <!-- ความกว้าง (2026-10-20 ลองแล้ว: 672px แคบไป / 896px กว้างไป) → สร้างดีลใหม่ 768px (max-w-3xl)
            ดีลเดิม (มีหัวสรุป + แท็บ) คง 896px ให้เท่าหน้าต่างรายละเอียดงานประมูล -->
@@ -665,10 +665,10 @@
                 <span v-if="modal.data?.deal_type_id && modal.data.deal_type_id !== 'normal'" class="px-2.5 py-1 rounded-full text-xs font-bold bg-fuchsia-100 text-fuchsia-700">{{ modal.data.deal_type_name }}</span>
               </div>
             </div>
-            <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
+            <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0 disabled:cursor-default" :disabled="spFormSaving" @click="closeModal">×</button>
           </div>
           <template v-if="spForm.id && modal.data">
-            <h3 class="font-bold text-lg text-slate-800 mt-2 mb-0 leading-snug line-clamp-2">{{ modal.data.title }}</h3>
+            <h3 v-if="modal.data.title" class="font-bold text-lg text-slate-800 mt-2 mb-0 leading-snug line-clamp-2">{{ modal.data.title }}</h3>
             <!-- ดีลเก่าที่มีแค่ชื่อพิมพ์ไว้ (client_name) ยังไม่ผูกลูกค้าในระบบ → ป้ายส้ม "ยังไม่ผูกลูกค้า" ไม่ให้เข้าใจว่าผูกแล้ว (ยืนยันจากผู้ใช้ 2026-10-14) -->
             <div class="text-sm text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <template v-if="modal.data.account_id">{{ modal.data.account_name }}</template>
@@ -710,7 +710,9 @@
         <!-- แท็บ (เฉพาะดีลที่บันทึกแล้ว) — ใช้ v-show ค่าที่กำลังแก้ในฟอร์มไม่หายตอนสลับแท็บ / ปุ่มบันทึกด้านล่างบันทึกเฉพาะแท็บข้อมูลดีล -->
         <app-record-tabs v-if="spForm.id" v-model="spFormTab"
           :tabs="[{ key: 'deal', label: 'รายละเอียดดีล' }, { key: 'quote', label: 'ใบเสนอราคา', count: spQuoteSummary?.count }, { key: 'files', label: 'ไฟล์', count: spFileCount }, { key: 'history', label: 'ประวัติ' }]"></app-record-tabs>
-        <div class="flex-1 overflow-y-auto p-5">
+        <!-- ระหว่างบันทึก: ล็อกทั้งฟอร์ม (แก้ไม่ได้) กันแก้ข้อมูลระหว่างส่ง — แบบ ค. ยืนยันจากผู้ใช้ 2026-10-23
+             ไม่ทำสีจาง / ไม่ใช้เคอร์เซอร์รอ — ผู้ใช้บอกดูเหมือนโปรแกรมค้าง ให้หน้าตาปกติ แค่กดไม่ได้ -->
+        <div class="flex-1 overflow-y-auto p-5" :class="spFormSaving ? 'pointer-events-none select-none' : ''" :aria-busy="spFormSaving">
           <!-- ═══ แท็บ รายละเอียดดีล ═══ (ไม่ใช้ชื่อ "ข้อมูลดีล" เพราะซ้ำกับกล่อง ② — 2026-10-14) (ดีลใหม่แสดงส่วนนี้อย่างเดียว) -->
           <div v-show="!spForm.id || spFormTab === 'deal'">
 
@@ -932,7 +934,7 @@
               <h3 class="text-base font-bold text-slate-800">ข้อมูลดีล</h3>
             </div>
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อโครงการ / รายการสินค้า <span class="text-red-500">*</span></label>
+              <label class="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อโครงการ / รายการสินค้า</label>
               <input v-model="spForm.title" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โต๊ะทำงาน 50 ชุด, เก้าอี้ประชุม">
               <div class="text-xs text-slate-500 mt-1">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
             </div>
@@ -1182,10 +1184,12 @@
           </div>
         </div>
         <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
-          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
+          <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px] disabled:cursor-default disabled:hover:bg-white" :disabled="spFormSaving" @click="closeModal">ยกเลิก</button>
           <span v-if="isViewer" class="mr-auto text-sm text-violet-700 font-semibold">👁 ดูอย่างเดียว — แก้ไขไม่ได้</span>
-          <button v-if="!isViewer" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitSpForm">
-            {{ spForm.id ? 'บันทึกการแก้ไข' : 'สร้างงาน/ดีลใหม่' }}
+          <!-- ล็อกปุ่มระหว่างบันทึก กันกดซ้ำแล้วได้ดีล 2 รายการ + วงกลมหมุน (2026-10-23) -->
+          <button v-if="!isViewer" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] disabled:cursor-default disabled:hover:bg-teal-700 gap-2" :disabled="spFormSaving" @click="submitSpForm">
+            <span v-if="spFormSaving" class="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" aria-hidden="true"></span>
+            {{ spFormSaving ? 'กำลังบันทึก…' : (spForm.id ? 'บันทึกการแก้ไข' : 'สร้างงาน/ดีลใหม่') }}
           </button>
         </div>
       </div>
@@ -1302,7 +1306,7 @@
         <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
           <div class="min-w-0">
             <h3 class="font-bold text-lg text-slate-800 m-0">ตรวจดีลย้อนหลัง</h3>
-            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span> · {{ modal.data.title }}</div>
+            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span><template v-if="modal.data.title"> · {{ modal.data.title }}</template></div>
           </div>
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
@@ -1362,7 +1366,7 @@
         <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
           <div class="min-w-0">
             <h3 class="font-bold text-lg text-slate-800 m-0">ส่งสินค้าแล้ว</h3>
-            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span> · {{ modal.data.title }}</div>
+            <div class="text-sm text-slate-500 mt-1 truncate"><span class="font-mono font-bold text-purple-700">{{ modal.data.project_code }}</span><template v-if="modal.data.title"> · {{ modal.data.title }}</template></div>
           </div>
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none shrink-0" @click="closeModal">×</button>
         </div>
@@ -1720,6 +1724,7 @@ createApp({
       spLoading: false,
       spImportReviewSaving: false,
       spDeliveredForm: { date: '', saving: false },   // หน้าต่างบันทึกส่งสินค้าแล้ว (2026-10-07)
+      spFormSaving: false,   // ฟอร์มสร้าง/แก้ไขดีลกำลังบันทึก — ล็อกปุ่มกันกดซ้ำ (2026-10-23)
       spReviewTransferOpen: false,   // หน้าต่างตรวจดีลย้อนหลัง: เปิดส่วนโอนให้ sale คนอื่น (2026-10-01)
       spReviewTransferTo: '',
       reviewSales: [],               // รายชื่อ sale ให้เลือกโอน (โหลดครั้งแรกที่เปิดหน้าต่างตรวจ)
@@ -2192,7 +2197,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
             let html = '';
             if (card.project_code) html += `<div class="text-[.65rem] font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 inline-block mb-0.5">${self.esc(card.project_code)}</div>`;
             if (Number(card.import_pending) === 1) html += ` <span class="inline-block px-1.5 py-0.5 rounded text-[.7rem] font-bold bg-amber-100 text-amber-800">ข้อมูลย้อนหลัง — รอตรวจ</span>`;
-            html += `<div class="font-bold text-sm text-slate-800 leading-snug">${self.esc(card.title)}</div>`;
+            if (card.title) html += `<div class="font-bold text-sm text-slate-800 leading-snug">${self.esc(card.title)}</div>`;
             if (card.client_name) html += `<div class="text-[.82rem] text-slate-500">${self.esc(card.client_name)}</div>`;
             return html;
           },
@@ -2361,7 +2366,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       // ส่งสินค้าแล้ว → หน้าต่างใส่วันที่ส่งจริง (ใช้แทนกล่องยืนยัน — ยืนยันจากผู้ใช้ 2026-10-07)
       if (toStage === 'Delivered') { this.spDeliveredForm = { date: this.todayIso(), saving: false }; this.modal = { type: 'sp-delivered', data: card }; return; }
       const stageInfo = this.spStages.find(s => s.key === toStage);
-      const ok = await this.showConfirm('เลื่อนขั้นตอน', `"${card.title}" จะถูกเลื่อนไปที่ → ${stageInfo?.thLabel || toStage}`, 'ยืนยัน เลื่อนขั้นตอน');
+      const ok = await this.showConfirm('เลื่อนขั้นตอน', `"${this.spDealLabel(card)}" จะถูกเลื่อนไปที่ → ${stageInfo?.thLabel || toStage}`, 'ยืนยัน เลื่อนขั้นตอน');
       if (!ok) return;
       const res = await apiCall('PUT', 'api/pipeline_items.php?id=' + card.id, { stage: toStage });
       if (res.success) { this.loadSpKanban(); await this.showAlert('เลื่อนขั้นตอนสำเร็จ', 'success'); }
@@ -2402,7 +2407,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
 
     async openSpWinLoss(card, stage) {
       this.spWinLossForm = {
-        id: card.id, stage, title: card.title, reason: '', note: '', value: card.value || '',
+        id: card.id, stage, title: this.spDealLabel(card), reason: '', note: '', value: card.value || '',
         winner_competitor_id: '', winning_price: '', deal_competitor_ids: [],
         expected_delivery_date: card.expected_delivery_date || '',   // วันคาดส่งมอบ (บังคับตอนปิดดีลได้ — 2026-10-07)
         delivered_date: this.todayIso(),                              // วันส่งจริง (กรณีตรวจดีลแล้วเลือก ส่งสินค้าแล้ว — 2026-10-07)
@@ -2476,8 +2481,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       const card = this.modal.data;
       // ตัวเลือกที่บันทึกทันที ถามยืนยันก่อน — กดผิดแล้วย้อนกลับเองไม่ได้ (ยืนยันจากผู้ใช้ 2026-10-01)
       // ปิดดีล/ส่งสินค้า/ไม่สำเร็จ เปิดหน้าต่างใส่เหตุผลก่อน (ยกเลิกได้ในหน้าต่างนั้น) / ลบ ถามยืนยันใน deleteSpItem อยู่แล้ว
-      if (choice === 'Send PI' && !(await this.showConfirm('ยืนยันสถานะเดิม?', `"${card.title}" ยังส่ง PI — รอลูกค้าตอบ (ไม่เปลี่ยนสถานะ)`, 'ยืนยัน ยังส่ง PI อยู่'))) return;
-      if (choice === 'Negotiating' && !(await this.showConfirm('เปลี่ยนเป็น ต่อรอง / เจรจา?', `"${card.title}" จะเปลี่ยนสถานะเป็น ต่อรอง / เจรจา`, 'ยืนยัน ต่อรอง / เจรจา'))) return;
+      if (choice === 'Send PI' && !(await this.showConfirm('ยืนยันสถานะเดิม?', `"${this.spDealLabel(card)}" ยังส่ง PI — รอลูกค้าตอบ (ไม่เปลี่ยนสถานะ)`, 'ยืนยัน ยังส่ง PI อยู่'))) return;
+      if (choice === 'Negotiating' && !(await this.showConfirm('เปลี่ยนเป็น ต่อรอง / เจรจา?', `"${this.spDealLabel(card)}" จะเปลี่ยนสถานะเป็น ต่อรอง / เจรจา`, 'ยืนยัน ต่อรอง / เจรจา'))) return;
       if (choice === 'Send PI') { await this.confirmSpImportReview(card); return; }
       if (choice === 'delete') { this.closeModal(); await this.deleteSpItem(card); return; }
       if (choice === 'Negotiating') {
@@ -2496,7 +2501,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     async spReviewTransfer() {
       const card = this.modal.data;
       const to = this.reviewSales.find(u => Number(u.id) === Number(this.spReviewTransferTo));
-      const ok = await this.showConfirm('โอนดีลนี้?', `"${card.title}" จะย้ายไปเป็นของ ${to?.full_name || ''}`, 'ยืนยัน โอนดีล');
+      const ok = await this.showConfirm('โอนดีลนี้?', `"${this.spDealLabel(card)}" จะย้ายไปเป็นของ ${to?.full_name || ''}`, 'ยืนยัน โอนดีล');
       if (!ok) return;
       this.spImportReviewSaving = true;
       const res = await apiCall('POST', `api/pipeline_items.php?action=transfer_import&id=${card.id}`, { assigned_to: Number(this.spReviewTransferTo) });
@@ -2704,7 +2709,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       // ไม่มีค่าเริ่มต้นให้ ความสำคัญ / ประเภทดีล / Fee / โอกาสปิดดีล — กันเผลอกดผ่านแล้วได้ค่าที่ไม่ได้ตั้งใจ (ยืนยันจากผู้ใช้ 2026-09-23)
       const isEmpty = v => v === '' || v === null || v === undefined;
       // ② ข้อมูลดีล
-      if (!this.spForm.title.trim())  { await this.showAlert('กรุณาระบุชื่อโครงการ/รายการ', 'error'); return; }
+      // ชื่อโครงการไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23 — อนาคตอาจกลับมาบังคับ) ไม่ใส่ = เก็บค่าว่าง แสดงตามจริง
       if (!this.spForm.source_type)   { await this.showAlert('กรุณาเลือกแหล่งที่มาของงาน', 'error'); return; }
       if (!this.spForm.fee_structure) { await this.showAlert('กรุณาเลือก "Fee Structure"', 'error'); return; }
       if (!this.spForm.priority)      { await this.showAlert('กรุณาเลือกระดับความสำคัญ', 'error'); return; }
@@ -2743,11 +2748,18 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       if (payload.account_id) payload.deal_contacts = this.spDealContactsPayload();
       if (!payload.assigned_to) payload.assigned_to = this.currentUser.id;
       payload.win_probability = Math.min(100, Math.max(0, Number(payload.win_probability) || 0)) / 100;
+      // กดซ้ำระหว่างกำลังบันทึก → ไม่ส่งซ้ำ (ฝั่ง API กันอีกชั้น: ดีลเดิมภายใน 60 วินาที)
+      if (this.spFormSaving) return;
+      this.spFormSaving = true;
       let res;
-      if (this.spForm.id) {
-        res = await apiCall('PUT', 'api/pipeline_items.php?id=' + this.spForm.id, payload);
-      } else {
-        res = await apiCall('POST', 'api/pipeline_items.php', payload);
+      try {
+        if (this.spForm.id) {
+          res = await apiCall('PUT', 'api/pipeline_items.php?id=' + this.spForm.id, payload);
+        } else {
+          res = await apiCall('POST', 'api/pipeline_items.php', payload);
+        }
+      } finally {
+        this.spFormSaving = false;
       }
       if (res.success) {
         this.closeModal();
@@ -2756,8 +2768,14 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 
+    // ชื่อดีลสำหรับข้อความยืนยัน — ชื่อโครงการไม่บังคับ (2026-10-23) ไม่มีชื่อใช้ รหัส PJ · ลูกค้า แทน
+    spDealLabel(card) {
+      if (card.title) return card.title;
+      return [card.project_code, card.client_name || card.account_name].filter(Boolean).join(' · ');
+    },
+
     async deleteSpItem(card) {
-      const ok = await this.showConfirm('ลบรายการนี้?', `"${card.title}" จะถูกลบออกจากระบบ ไม่สามารถกู้คืนได้`, 'ลบรายการ');
+      const ok = await this.showConfirm('ลบรายการนี้?', `"${this.spDealLabel(card)}" จะถูกลบออกจากระบบ ไม่สามารถกู้คืนได้`, 'ลบรายการ');
       if (!ok) return;
       const res = await apiCall('DELETE', 'api/pipeline_items.php?id=' + card.id);
       if (res.success) { this.loadSpKanban(); await this.showAlert('ลบสำเร็จ', 'success'); }

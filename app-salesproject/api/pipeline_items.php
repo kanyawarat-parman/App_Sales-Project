@@ -461,8 +461,8 @@ function resolveDealType(PDO $db, $dealType): string {
 
 // ─── POST create ─────────────────────────────────────────────────────────────
 function createItem(PDO $db, array $user, array $body): void {
+    // ชื่อโครงการไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23 — อนาคตอาจกลับมาบังคับทั้งหมด) ไม่ใส่ = ค่าว่าง (คอลัมน์ NOT NULL รับ '' ได้)
     $title = trim($body['title'] ?? '');
-    if (!$title) jsonError(400, 'กรุณาระบุชื่อโครงการ/ลูกค้า');
 
     $assignTo = in_array($user['role'], ['admin','salesadmin','manager']) && !empty($body['assigned_to'])
         ? (int)$body['assigned_to']
@@ -493,6 +493,21 @@ function createItem(PDO $db, array $user, array $body): void {
         }
         // ตรวจผู้ติดต่อใหม่ก่อนบันทึกดีล (เบอร์ผิดรูปแบบ / เบอร์ตรงคนเดิมแต่ชื่อต่าง) — กันดีลถูกบันทึกค้างโดยไม่มีผู้ติดต่อ (2026-09-29)
         precheckDealContacts($db, $accountId, dealContactsFromBody($body));
+
+        // กันกดบันทึกซ้ำ (Idempotency — ยืนยันจากผู้ใช้ 2026-10-23): ผู้ใช้คนเดิม + ลูกค้าเดียวกัน + ชื่อโครงการเดียวกัน ภายใน 60 วินาที
+        //   = กดซ้ำ / เน็ตหลุดแล้วกดใหม่ / เปิด 2 แท็บ → ตอบสำเร็จด้วยดีลเดิม ไม่สร้างใหม่ (เดิมได้ดีลซ้ำ 2 รายการ)
+        //   GET_LOCK ต่อผู้ใช้ ให้คำสั่งที่มาพร้อมกันรอกันทีละคำสั่ง — ปลดเองเมื่อจบ request (ปิดการเชื่อมต่อ)
+        $db->query("SELECT GET_LOCK(CONCAT('deal_create_', " . (int)$user['id'] . "), 10)");
+        $dup = $db->prepare("SELECT id FROM pipeline_items
+                             WHERE created_by = ? AND account_id = ? AND title = ? AND source_type <> 'ebidding'
+                               AND created_at >= NOW() - INTERVAL 60 SECOND
+                             ORDER BY id DESC LIMIT 1");
+        $dup->execute([(int)$user['id'], $accountId, $title]);
+        $dupId = $dup->fetchColumn();
+        if ($dupId) {
+            echo json_encode(['success' => true, 'id' => (int)$dupId, 'duplicate' => true, 'message' => 'บันทึกดีลนี้แล้ว (กดซ้ำ — ไม่ได้สร้างเพิ่ม)'], JSON_UNESCAPED_UNICODE);
+            return;
+        }
     }
 
     // รหัสงานกลาง (project_code): ถ้ามี announcement ต้นทาง (มาจากงานประมูล) ให้ copy รหัสเดิมจาก project_assignments มาใช้ ไม่ออกรหัสใหม่ซ้ำ
@@ -743,6 +758,8 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     foreach ($allowed as $f) {
         if (array_key_exists($f, $body)) {
             $fields[]  = "{$f} = ?";
+            // title เป็น NOT NULL และไม่บังคับกรอก (2026-10-23) → ว่าง = '' ไม่ใช่ NULL
+            if ($f === 'title') { $params[] = trim((string)($body[$f] ?? '')); continue; }
             $params[]  = ($body[$f] === '' || $body[$f] === null) ? null : $body[$f];
         }
     }

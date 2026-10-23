@@ -323,7 +323,7 @@
                         </th>
                       </template>
                       <template v-else>
-                        <th v-for="h in data.heatmap.hours" :key="h" class="font-semibold text-center px-0.5 min-w-[38px]">{{ hmHourLabel(h) }}</th>
+                        <th v-for="h in data.heatmap.hours" :key="h" class="font-semibold text-center px-0.5 min-w-[32px]" :class="hmIsOffHour(h) ? 'text-slate-300' : ''">{{ hmHourLabel(h) }}</th>
                       </template>
                       <th class="font-semibold text-center pl-3">รวม</th>
                     </tr>
@@ -571,7 +571,7 @@ createApp({
         hm_pv:             ['หน้าที่เปิด', 'จำนวนครั้งที่เปิดหน้าในระบบ (ทุกหน้า) — ยิ่งมากยิ่งใช้ระบบมาก'],
         hm_login:          ['ครั้งที่เข้าระบบ', 'จำนวนครั้งที่เข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน — ค้าง login ไว้ (ไม่เกิน 8 ชม.) จะไม่นับซ้ำ'],
         hm_day:            ['รายวัน', 'ตัวเลขของแต่ละวันในช่วงที่เลือก (7 / 30 วัน) — ชี้ที่ช่องดูสรุป / กดที่ช่องดูว่าเปิดหน้าไหนบ้าง และลำดับเวลาที่เปิด'],
-        hm_hour:           ['รายชั่วโมง', 'รวมทุกวันในช่วงที่เลือก แยกตามชั่วโมง — ก่อน 8 โมงรวมไว้ที่ ≤7 / ตั้งแต่ 6 โมงเย็นรวมไว้ที่ 18+ · กดที่ช่องดูว่าเปิดหน้าไหนบ้าง'],
+        hm_hour:           ['รายชั่วโมง', 'รวมทุกวันในช่วงที่เลือก แยกตามชั่วโมง ครบ 24 ชั่วโมง (0–23) — หัวคอลัมน์สีจาง = นอกเวลางาน (ก่อน 8:00 / ตั้งแต่ 18:00) · กดที่ช่องดูว่าเปิดหน้าไหนบ้าง'],
         hm_color:          ['สี', 'ยิ่งเข้มยิ่งมาก — เทียบกับค่าสูงสุดในตารางที่แสดงอยู่ (เปลี่ยน role / แบบ / ตัวที่นับ สีจะคำนวณใหม่)'],
       };
     },
@@ -598,7 +598,7 @@ createApp({
         const v = x.user.days[x.key] || {};
         return `${this.formatDateThai(x.key)} · ใช้งาน ${v.first}–${v.last} น. · มือถือ ${v.mobile_pct || 0}%`;
       }
-      const label = x.key === 7 ? 'ก่อน 8:00' : x.key === 18 ? 'ตั้งแต่ 18:00' : `${x.key}:00–${x.key}:59`;
+      const label = `${x.key}:00–${x.key}:59`;
       return `${label} รวม ${this.days} วันล่าสุด`;
     },
     hmDetailPv() { return (this.hmDetail?.data?.pages || []).reduce((sum, p) => sum + p.n, 0); },
@@ -721,7 +721,9 @@ createApp({
       return d && d.substring(8, 10) === '01' && d !== this.data.heatmap.dates[0]
         ? { boxShadow: '-3px 0 0 0 #64748b', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 } : null;   // มุมซ้ายเหลี่ยม เส้นจะตรง ไม่โค้งเป็นวงเล็บ
     },
-    hmHourLabel(h) { return h === 7 ? '≤7' : h === 18 ? '18+' : String(h); },
+    hmHourLabel(h) { return String(h); },
+    // นอกเวลางาน (ก่อน 8:00 / ตั้งแต่ 18:00) หัวคอลัมน์สีจาง — แบบเดียวกับเสาร์-อาทิตย์ในมุมมองรายวัน
+    hmIsOffHour(h) { return h < 8 || h >= 18; },
     hmDayTitle(u, d) {
       const x = u.days[d];
       const head = u.full_name + ' · ' + this.hmDayName(d) + ' ' + this.shortDateThai(d);
@@ -730,7 +732,7 @@ createApp({
     },
     hmHourTitle(u, h) {
       const x = u.hours[h];
-      const label = h === 7 ? 'ก่อน 8:00' : h === 18 ? 'ตั้งแต่ 18:00' : h + ':00–' + h + ':59';
+      const label = h + ':00–' + h + ':59';
       return u.full_name + ' · ' + label + '\n' + (x ? 'เปิด ' + x.pv + ' หน้า · เข้าระบบ ' + x.login + ' ครั้ง' : 'ไม่ได้ใช้ช่วงนี้');
     },
     // กดช่อง → โหลดหน้าที่เปิด (+ ลำดับเวลาเฉพาะรายวัน) จาก api/usage_report.php action=activity
