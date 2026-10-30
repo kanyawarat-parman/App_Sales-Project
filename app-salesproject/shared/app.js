@@ -604,6 +604,8 @@ const AppNav = {
         if (this.isManager || this.isAdmin || this.isViewer) {
           g.push({ href:'usage-report.html', page:'usage-report', label:'การใช้งานระบบ', icon:'usage' });
         }
+        // ตรวจคุณภาพข้อมูล (Data Quality — ยืนยันจากผู้ใช้ 2026-10-30) — ทุก role ในหมวดนี้ / Sale เห็นเฉพาะดีลของตัวเอง (API บังคับ)
+        g.push({ href:'data-quality.html', page:'data-quality', label:'ตรวจคุณภาพข้อมูล', icon:'data_quality' });
 
         g.push({ type:'section', label:'วิเคราะห์' });
         // เดิมชื่อ "รายงานวิเคราะห์" — เปลี่ยนให้บอกเนื้อหา + admin เห็นด้วย (ธุรการไม่ต้อง) (ยืนยันจากผู้ใช้ 2026-10-10)
@@ -739,6 +741,8 @@ const AppNav = {
         sales_pipeline: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
         accounts:       '<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>',
         analytics:      '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+        // ตรวจคุณภาพข้อมูล — โล่ + เครื่องหมายถูก (2026-10-30)
+        data_quality:   '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
         // การใช้งานระบบ — คน + เครื่องหมายถูก (เดิมใช้ analytics ซ้ำกับยอดขายและ Pipeline — 2026-10-10)
         usage:          '<path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>',
         win_loss_analysis: '<path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/>',
@@ -1650,13 +1654,16 @@ const AppQuoteRequests = {
     // short = ค่าที่แสดงในกล่อง: คำขอที่ค้าง (สถานะ) → ใบล่าสุดที่ออกแล้ว (เลขที่ใบ) → ยังไม่ได้ขอ / count = จำนวนคำขอทั้งหมด (แสดงบนแท็บ)
     summary() {
       if (!this.info) return null;
-      const count = this.info.requests.length;
+      // จำนวนบนแท็บ = จำนวนการ์ด (ทุก Rev ที่ออก + คำขอที่ยังไม่ออกใบ — 2026-10-29)
+      const count = this.info.requests.reduce((n, r) => n + Math.max(1, (r.revisions || []).length), 0);
+      // มีใบที่ออกแล้ว = มูลค่าดีลรวม Rev ล่าสุดทุกใบ (หน้าต่างดีลแสดงหมายเหตุใต้ช่องมูลค่า — 2026-10-30)
+      const hasIssued = this.info.requests.some(r => r.status === 'issued');
       const open = this.info.requests.find(r => r.status === 'pending' || r.status === 'accepted');
-      if (open) return { short: this.statusOf(open.status).label, sub: open.quote_request_code, cls: this.statusOf(open.status).cls, count };
+      if (open) return { short: this.statusOf(open.status).label, sub: open.quote_request_code, cls: this.statusOf(open.status).cls, count, hasIssued };
       const confirmed = this.info.requests.find(r => r.confirmed_at);
-      if (confirmed) return { short: 'ลูกค้ายืนยันแล้ว', sub: confirmed.quotation_id, cls: 'bg-emerald-100 text-emerald-800', count };
+      if (confirmed) return { short: 'ลูกค้ายืนยันแล้ว', sub: confirmed.quotation_id, cls: 'bg-emerald-100 text-emerald-800', count, hasIssued };
       const issued = this.info.requests.find(r => r.status === 'issued');
-      if (issued) return { short: issued.quotation_id, sub: 'ออกใบแล้ว', cls: this.statusOf('issued').cls, count };
+      if (issued) return { short: issued.quotation_id, sub: 'ออกใบแล้ว', cls: this.statusOf('issued').cls, count, hasIssued };
       return { short: count ? 'ยังไม่มีใบ' : 'ยังไม่ได้ขอ', sub: '', cls: 'bg-slate-50 text-slate-600', count };
     },
     openForm() {
@@ -1749,7 +1756,40 @@ const AppQuoteRequests = {
     </div>
 
     <div v-if="!info.requests.length && !showForm" class="text-sm text-slate-400">ยังไม่มีคำขอใบเสนอราคา</div>
-    <div v-for="r in info.requests" :key="r.quote_request_code" class="rounded-xl ring-1 ring-slate-200 p-3">
+    <template v-for="r in info.requests" :key="r.quote_request_code">
+    <!-- คำขอที่ออกใบแล้ว: 1 Rev = 1 การ์ด ใหม่สุดก่อน (Quote Versions แบบ ข — ยืนยันจากผู้ใช้ 2026-10-29)
+         Rev ที่ธุรการออกต่อเองไม่มีคำขอใหม่ ผูกกับคำขอของ Rev ล่าสุด (ป้าย "ธุรการออกต่อ") / Rev ล่าสุดของแต่ละเลข QT = "นับในมูลค่าดีล" (มูลค่าดีล = รวมทุกใบ — 2026-10-30) / Rev เก่า = "ฉบับเก่า — ไม่นับ"
+         ข้อมูลคำขอ (รายละเอียด / ขอโดย / รับเรื่อง) อยู่ที่การ์ด Rev แรกของคำขอนั้น -->
+    <div v-for="(v, vi) in (r.revisions || [])" :key="r.quote_request_code + '-' + v.quotation_id + '-' + v.quotation_revision"
+      class="rounded-xl p-3" :class="v.is_primary && info.value_from_quotes ? 'ring-2 ring-emerald-300' : 'ring-1 ring-slate-200'">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="font-mono text-sm font-bold text-slate-700">{{ r.quote_request_code }}</span>
+        <span class="px-2 py-0.5 rounded-full text-xs font-bold" :class="statusOf('issued').cls">{{ statusOf('issued').label }}</span>
+        <span v-if="v.issue_source === 'continue'" class="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">ธุรการออกต่อ</span>
+        <span v-else class="text-xs text-slate-500">{{ r.request_type==='revision' ? 'แก้ไขใบ ' + r.ref_quotation_id : 'ใบใหม่' }} · {{ r.issue_by==='sale' ? 'Sale ออกเอง' : 'ให้ธุรการออก' }}</span>
+        <span v-if="info.value_from_quotes && v.is_primary" class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white">นับในมูลค่าดีล</span>
+        <span v-else-if="info.value_from_quotes && v.is_old" class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500">ฉบับเก่า — ไม่นับ</span>
+        <a v-if="v.view_url" :href="v.view_url" target="_blank" rel="noopener" title="เปิดดูใบเสนอราคาฉบับนี้ (ต้อง login ระบบใบเสนอราคา)"
+          class="ml-auto font-mono text-sm font-bold underline underline-offset-2" :class="v.is_old ? 'text-slate-500 decoration-slate-300 hover:text-slate-700' : 'text-emerald-700 decoration-emerald-300 hover:text-emerald-900'"
+          :title="v.is_old ? 'ฉบับเก่า — เปิดดูได้ แต่มีลายน้ำ ห้ามใช้ส่งลูกค้า' : 'เปิดดูใบเสนอราคา (ต้อง login ระบบใบเสนอราคา)'">{{ v.quotation_id }} Rev {{ v.quotation_revision }}<span v-if="v.is_old" class="no-underline"> (ฉบับเก่า)</span> ↗</a>
+        <span v-else class="ml-auto font-mono text-sm font-bold text-emerald-700">{{ v.quotation_id }} Rev {{ v.quotation_revision }}</span>
+      </div>
+      <div v-if="v.quote_amount !== null && v.quote_amount !== undefined" class="text-sm text-emerald-800 mt-1 font-semibold">
+        ยอดใบ {{ formatPrice(v.quote_amount) }} <span class="font-normal text-slate-500">(ก่อน VAT)</span>
+        <span v-if="v.quote_net_amount !== null" class="font-normal text-slate-500"> · รวม VAT {{ formatPrice(v.quote_net_amount) }}</span>
+      </div>
+      <div v-if="vi === r.revisions.length - 1 && r.request_note" class="text-sm text-slate-700 mt-1.5 whitespace-pre-line">{{ r.request_note }}</div>
+      <div class="text-xs text-slate-500 mt-1.5 space-y-0.5">
+        <template v-if="vi === r.revisions.length - 1">
+          <div>ขอโดย {{ r.requested_by_name }} · {{ formatDateTimeThai(r.requested_at) }}</div>
+          <div v-if="r.accepted_at">รับเรื่องโดย {{ r.accepted_by_name || '-' }} · {{ formatDateTimeThai(r.accepted_at) }}</div>
+        </template>
+        <div v-if="v.issued_at">ออกใบโดย {{ v.issued_by_name || '-' }} · {{ formatDateTimeThai(v.issued_at) }}</div>
+        <div v-if="v.is_latest_of_request && r.confirmed_at" class="text-emerald-700 font-semibold">ลูกค้ายืนยันสั่งซื้อ · {{ formatDateTimeThai(r.confirmed_at) }}<span v-if="r.confirmed_so_code"> · SO {{ r.confirmed_so_code }}</span></div>
+      </div>
+    </div>
+    <!-- คำขอที่ยังไม่ออกใบ / ยกเลิก (ไม่มี Rev) = การ์ดคำขอแบบเดิม -->
+    <div v-if="!(r.revisions || []).length" class="rounded-xl ring-1 ring-slate-200 p-3">
       <div class="flex flex-wrap items-center gap-2">
         <span class="font-mono text-sm font-bold text-slate-700">{{ r.quote_request_code }}</span>
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" :class="statusOf(r.status).cls">{{ statusOf(r.status).label }}</span>
@@ -1785,6 +1825,7 @@ const AppQuoteRequests = {
         </div>
       </template>
     </div>
+    </template>
   </template>
 </section>
   `,

@@ -122,6 +122,131 @@ function attachQuoteViewUrls(PDO $db, array $rows): array {
     return $rows;
 }
 
+/**
+ * บันทึก 1 Rev ที่ออกแล้ว ลงตาราง quote_request_revisions (Quote Versions — ยืนยันจากผู้ใช้ 2026-10-29 แบบ ข)
+ * $source = request (ออกตามคำขอ) / continue (ธุรการออก Rev ต่อเองใต้คำขอเดิม)
+ * Rev เดิมซ้ำ (ระบบใบเสนอราคาส่งซ้ำ) = ไม่ทำอะไร / ยังไม่ได้รัน sql/add_quote_request_revisions.sql = ข้าม (การออกใบยังบันทึกปกติ)
+ */
+function saveQuoteRevision(PDO $db, int $quoteRequestId, string $quotationId, int $revision, string $source,
+                           ?float $amount, ?float $netAmount, ?int $issuedBy, ?string $issuedAt): void {
+    try {
+        $db->prepare('INSERT IGNORE INTO quote_request_revisions
+                        (quote_request_id, quotation_id, quotation_revision, issue_source, quote_amount, quote_net_amount, issued_by, issued_at, created_by, updated_by)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+           ->execute([$quoteRequestId, $quotationId, $revision, $source, $amount, $netAmount, $issuedBy, $issuedAt, $issuedBy, $issuedBy]);
+    } catch (Throwable $e) {
+        error_log('[quote] saveQuoteRevision (ยังไม่ได้รัน sql/add_quote_request_revisions.sql?): ' . $e->getMessage());
+    }
+}
+
+// "แก้ไขใบเดิม (ไม่เพิ่ม Rev)" — ปรับยอดของ Rev นั้นในประวัติ ให้ตรงกับใบ
+function updateQuoteRevisionAmount(PDO $db, string $quotationId, int $revision, float $amount, ?float $netAmount, int $actorId): void {
+    try {
+        $db->prepare('UPDATE quote_request_revisions SET quote_amount = ?, quote_net_amount = ?, updated_by = ? WHERE quotation_id = ? AND quotation_revision = ?')
+           ->execute([$amount, $netAmount, $actorId, $quotationId, $revision]);
+    } catch (Throwable $e) {
+        error_log('[quote] updateQuoteRevisionAmount: ' . $e->getMessage());
+    }
+}
+
+/**
+ * มูลค่าดีลจากใบเสนอราคา = บวกยอดก่อน VAT ของ Rev ล่าสุดของทุกเลข QT ในดีล (ยืนยันจากผู้ใช้ 2026-10-30)
+ * ใบคนละเลข QT ในดีลเดียวกัน = ลูกค้าใช้ทุกใบ (เช่น แยกค่าขนส่งเป็นอีกใบ) — บริษัทไม่เปิดใบใหม่เป็นทางเลือก / Rev เก่าของใบเดียวกัน ไม่นับ
+ * คืน ['total' => ยอดรวม, 'parts' => ["QT… Rev n" …]] / ไม่มีใบที่มียอด = null
+ */
+function dealQuoteTotal(PDO $db, int $pipelineItemId): ?array {
+    $latest = [];   // quotation_id => [rev, amount]
+    $add = function ($qt, $rev, $amount) use (&$latest) {
+        if ($qt === null || $qt === '') return;
+        $rev = (int)$rev;
+        if (!isset($latest[$qt]) || $rev > $latest[$qt][0]) $latest[$qt] = [$rev, $amount !== null ? (float)$amount : null];
+    };
+    // Rev ล่าสุดที่เก็บไว้ที่คำขอ (มีเสมอ แม้ออกก่อนมีตาราง quote_request_revisions)
+    $st = $db->prepare("SELECT quotation_id, quotation_revision, quote_amount FROM quote_requests WHERE pipeline_item_id = ? AND status = 'issued'");
+    $st->execute([$pipelineItemId]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $add($r['quotation_id'], $r['quotation_revision'], $r['quote_amount']);
+    try {
+        $st = $db->prepare("SELECT r.quotation_id, r.quotation_revision, r.quote_amount
+                            FROM quote_request_revisions r JOIN quote_requests qr ON qr.quote_request_id = r.quote_request_id
+                            WHERE qr.pipeline_item_id = ? AND qr.status = 'issued'");
+        $st->execute([$pipelineItemId]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $add($r['quotation_id'], $r['quotation_revision'], $r['quote_amount']);
+    } catch (Throwable $e) {
+        error_log('[quote] dealQuoteTotal (ยังไม่ได้รัน sql/add_quote_request_revisions.sql?): ' . $e->getMessage());
+    }
+    $total = 0.0; $parts = [];
+    ksort($latest);
+    foreach ($latest as $qt => [$rev, $amount]) {
+        if ($amount === null) continue;
+        $total += $amount;
+        $parts[] = $qt . ($rev > 0 ? " Rev {$rev}" : '');
+    }
+    return $parts ? ['total' => round($total, 2), 'parts' => $parts] : null;
+}
+
+// ประวัติดีล: มีหลายใบ → ต่อท้าย " — รวม QT-A Rev 1 + QT-B"
+function quoteTotalNote(array $sum): string {
+    return count($sum['parts']) > 1 ? ' — รวม ' . implode(' + ', $sum['parts']) : '';
+}
+
+/**
+ * แนบทุก Rev ของแต่ละคำขอ (ใหม่สุดก่อน) สำหรับแท็บใบเสนอราคาในดีล — 1 Rev = 1 การ์ด (แบบ ข 2026-10-29)
+ * revisions[] = {quotation_id, quotation_revision, issue_source, quote_amount, quote_net_amount, issued_by_name, issued_at,
+ *               view_url (Rev เก่าส่ง &rev= — หน้าพิมพ์ใส่ลายน้ำฉบับเก่า), is_old (มี Rev ใหม่กว่าของใบเดียวกัน), is_latest_of_request,
+ *               is_primary (นับในมูลค่าดีล = Rev ล่าสุดของแต่ละเลข QT — รวมทุกใบ 2026-10-30)}
+ * Rev ล่าสุดของคำขอที่ยังไม่มีในตาราง (ออกก่อนรัน SQL / ยังไม่ได้รัน SQL) = ใช้ค่าจากคำขอแทน — หน้าจอเหมือนก่อนมีตาราง
+ */
+function attachQuoteRevisions(PDO $db, array $rows): array {
+    $base = defined('QUOTATION_WEB_URL') ? trim(QUOTATION_WEB_URL) : '';
+    if ($base !== '' && substr($base, -1) !== '/') $base .= '/';
+    $ids = array_values(array_unique(array_map('intval', array_column($rows, 'quote_request_id'))));
+    $byRequest = [];
+    if ($ids) {
+        try {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            $st = $db->prepare("SELECT r.quote_request_id, r.quotation_id, r.quotation_revision, r.issue_source, r.quote_amount, r.quote_net_amount,
+                                       r.issued_at, u.full_name AS issued_by_name
+                                FROM quote_request_revisions r LEFT JOIN users u ON u.id = r.issued_by
+                                WHERE r.quote_request_id IN ($in) ORDER BY r.quotation_revision DESC");
+            $st->execute($ids);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $v) $byRequest[(int)$v['quote_request_id']][] = $v;
+        } catch (Throwable $e) {
+            error_log('[quote] attachQuoteRevisions (ยังไม่ได้รัน sql/add_quote_request_revisions.sql?): ' . $e->getMessage());
+        }
+    }
+    foreach ($rows as &$r) {
+        $revs = $byRequest[(int)$r['quote_request_id']] ?? [];
+        $hasLatest = false;
+        foreach ($revs as $v) if ($v['quotation_id'] === ($r['quotation_id'] ?? null) && (int)$v['quotation_revision'] === (int)$r['quotation_revision']) $hasLatest = true;
+        if (($r['status'] ?? '') === 'issued' && !empty($r['quotation_id']) && !$hasLatest) {
+            array_unshift($revs, ['quotation_id' => $r['quotation_id'], 'quotation_revision' => (int)$r['quotation_revision'], 'issue_source' => 'request',
+                                  'quote_amount' => $r['quote_amount'], 'quote_net_amount' => $r['quote_net_amount'],
+                                  'issued_at' => $r['issued_at'], 'issued_by_name' => $r['issued_by_name'] ?? null]);
+        }
+        foreach ($revs as &$v) {
+            $v['quotation_revision'] = (int)$v['quotation_revision'];
+            $v['is_latest_of_request'] = $v['quotation_id'] === ($r['quotation_id'] ?? '') && $v['quotation_revision'] === (int)$r['quotation_revision'];
+            $v['view_url'] = null;   // ใส่ด้านล่าง — เฉพาะ Rev ล่าสุดของแต่ละใบ
+            $v['is_primary'] = false;
+        }
+        unset($v);
+        $r['revisions'] = $revs;
+    }
+    unset($r);
+    // Rev ล่าสุดของแต่ละใบ (เลข QT) = ลิงก์ฉบับปัจจุบัน / Rev เก่า = ลิงก์ &rev= หน้าพิมพ์ใส่ลายน้ำ "ฉบับเก่า – ห้ามใช้ส่งลูกค้า"
+    //   (แบบมาตรฐาน: ดูย้อนหลังได้ แต่กันส่งลูกค้าผิดฉบับ — ยืนยันจากผู้ใช้ 2026-10-30)
+    $latestRev = [];
+    foreach ($rows as $r) foreach ($r['revisions'] as $v) $latestRev[$v['quotation_id']] = max($latestRev[$v['quotation_id']] ?? -1, $v['quotation_revision']);
+    foreach ($rows as &$r) foreach ($r['revisions'] as &$v) {
+        $v['is_old'] = $v['quotation_revision'] < $latestRev[$v['quotation_id']];
+        $v['is_primary'] = !$v['is_old'];   // ตรงกับ dealQuoteTotal()
+        $v['view_url'] = $base === '' ? null
+            : $base . 'print.html?quotationid=' . rawurlencode($v['quotation_id']) . ($v['is_old'] ? '&rev=' . $v['quotation_revision'] : '');
+    }
+    unset($r, $v);
+    return $rows;
+}
+
 // ผู้ติดต่อในดีล (คนหลักก่อน) — เติมให้ธุรการตอนออกใบ
 function quoteRequestContacts(PDO $db, int $pipelineItemId): array {
     $st = $db->prepare("
@@ -235,6 +360,12 @@ function applyQuoteIssued(PDO $db, array $body): array {
            ->execute([$quotationId, $revision, isset($body['gross_amount_net']) ? $grossNet : null, $netAmount,
                       $issuer['id'] ?? null, $issuedAt, $issuer['id'] ?? null, $issuedAt, $issuer['id'] ?? null, $req['quote_request_id']]);
 
+        // เก็บ Rev นี้แยกแถว (คำขอเก็บแค่ Rev ล่าสุด) — แท็บใบเสนอราคาในดีลแสดงทุก Rev เป็นการ์ดแยก (แบบ ข — 2026-10-29)
+        // คำขอนี้ออกใบไปแล้ว + ใบเดิม Rev ใหม่ = ธุรการออก Rev ต่อเองโดยไม่มีคำขอใหม่ (continue) / นอกนั้น = ออกตามคำขอ (request)
+        $source = ($req['status'] === 'issued' && $req['quotation_id'] === $quotationId && $revision > (int)$req['quotation_revision']) ? 'continue' : 'request';
+        saveQuoteRevision($db, (int)$req['quote_request_id'], $quotationId, $revision, $source,
+                          isset($body['gross_amount_net']) ? $grossNet : null, $netAmount, $issuer['id'] ?? null, $issuedAt);
+
         $deal = $db->prepare('SELECT id, project_code, source_type, stage, value FROM pipeline_items WHERE id = ?');
         $deal->execute([$req['pipeline_item_id']]);
         $d = $deal->fetch(PDO::FETCH_ASSOC);
@@ -248,11 +379,17 @@ function applyQuoteIssued(PDO $db, array $body): array {
                 $stage = 'Send PI';
                 $autoMovedDealId = (int)$d['id'];   // แจ้งตามตาราง "แจ้งเมื่องานเข้าขั้น" หลัง commit (2026-10-22)
             }
-            if ($grossNet > 0 && abs($grossNet - (float)$d['value']) >= 0.01) {
-                $db->prepare('UPDATE pipeline_items SET value = ?, updated_by = ? WHERE id = ?')->execute([$grossNet, $actorId, $d['id']]);
+            // มูลค่าดีล = รวม Rev ล่าสุดของทุกเลข QT ในดีล (2026-10-30) — ใบเดียว = ยอดใบนั้น เหมือนเดิม
+            $sum = dealQuoteTotal($db, (int)$d['id']);
+            if ($sum && $sum['total'] > 0 && abs($sum['total'] - (float)$d['value']) >= 0.01) {
+                $db->prepare('UPDATE pipeline_items SET value = ?, updated_by = ? WHERE id = ?')->execute([$sum['total'], $actorId, $d['id']]);
                 $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
                    ->execute([$d['id'], $d['project_code'], $actorId, $stage, $stage,
-                              'มูลค่าดีล ' . number_format((float)$d['value'], 2) . ' → ' . number_format($grossNet, 2) . " ตาม{$ref} (ก่อน VAT)"]);
+                              'มูลค่าดีล ' . number_format((float)$d['value'], 2) . ' → ' . number_format($sum['total'], 2) . " ตาม{$ref}" . quoteTotalNote($sum) . ' (ก่อน VAT)']);
+            } elseif ($req['status'] === 'issued' && $req['quotation_id'] === $quotationId && $revision > (int)$req['quotation_revision']) {
+                // ธุรการออก Revision ต่อจากใบเดิมโดยไม่มีคำขอใหม่ (ใช้เลขคำขอเดิม — 2026-10-29) แต่ยอดเท่าเดิม → ยังบันทึกประวัติว่ามี Rev ใหม่
+                $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+                   ->execute([$d['id'], $d['project_code'], $actorId, $stage, $stage, "ออก{$ref} — ยอดเท่าเดิม"]);
             }
         }
         $db->commit();
@@ -289,19 +426,18 @@ function applyQuoteAmended(PDO $db, array $req, float $grossNet, ?float $netAmou
     try {
         $db->prepare('UPDATE quote_requests SET quote_amount = ?, quote_net_amount = ?, updated_by = ? WHERE quote_request_id = ?')
            ->execute([$grossNet, $netAmount, $actorId, $req['quote_request_id']]);
-
+        // ยอดของ Rev นี้ในประวัติทุก Rev ให้ตรงกับใบด้วย (ที่มา / ผู้ / เวลาออกใบเดิมคงไว้)
+        updateQuoteRevisionAmount($db, $req['quotation_id'], (int)$req['quotation_revision'], $grossNet, $netAmount, $actorId);
         $deal = $db->prepare('SELECT id, project_code, source_type, stage, value FROM pipeline_items WHERE id = ?');
         $deal->execute([$req['pipeline_item_id']]);
         $d = $deal->fetch(PDO::FETCH_ASSOC);
-        // ใบล่าสุดของดีลเท่านั้นที่กำหนดมูลค่าดีล — แก้ใบเก่าที่มีใบใหม่กว่าแล้ว ไม่ทับมูลค่า
-        $latest = $db->prepare("SELECT quote_request_id FROM quote_requests WHERE pipeline_item_id = ? AND status = 'issued' ORDER BY issued_at DESC, quote_request_id DESC LIMIT 1");
-        $latest->execute([$req['pipeline_item_id']]);
-        $isLatest = (int)$latest->fetchColumn() === (int)$req['quote_request_id'];
-        if ($d && $d['source_type'] !== 'ebidding' && $isLatest && $grossNet > 0 && abs($grossNet - (float)$d['value']) >= 0.01) {
-            $db->prepare('UPDATE pipeline_items SET value = ?, updated_by = ? WHERE id = ?')->execute([$grossNet, $actorId, $d['id']]);
+        // มูลค่าดีล = รวม Rev ล่าสุดของทุกเลข QT ในดีล (2026-10-30) — แก้ Rev เก่าที่มี Rev ใหม่กว่าแล้ว ยอดรวมไม่เปลี่ยน
+        $sum = $d && $d['source_type'] !== 'ebidding' ? dealQuoteTotal($db, (int)$d['id']) : null;
+        if ($sum && $sum['total'] > 0 && abs($sum['total'] - (float)$d['value']) >= 0.01) {
+            $db->prepare('UPDATE pipeline_items SET value = ?, updated_by = ? WHERE id = ?')->execute([$sum['total'], $actorId, $d['id']]);
             $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
                ->execute([$d['id'], $d['project_code'], $actorId, $d['stage'], $d['stage'],
-                          'มูลค่าดีล ' . number_format((float)$d['value'], 2) . ' → ' . number_format($grossNet, 2) . " — แก้ไข{$ref} (ไม่เพิ่ม Rev, ก่อน VAT)"]);
+                          'มูลค่าดีล ' . number_format((float)$d['value'], 2) . ' → ' . number_format($sum['total'], 2) . " — แก้ไข{$ref}" . quoteTotalNote($sum) . ' (ไม่เพิ่ม Rev, ก่อน VAT)']);
         }
         $db->commit();
     } catch (Throwable $e) {

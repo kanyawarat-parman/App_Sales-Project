@@ -281,6 +281,19 @@ function contactNameKey(string $name): string {
     return preg_replace('/\s+/u', '', $s);
 }
 
+// หาผู้ติดต่อชื่อเดียวกัน (ตัดคำนำหน้า) ในลูกค้าเดียวกัน — ใช้กันผู้ติดต่อซ้ำแทนการดูเบอร์ (ยืนยันจากผู้ใช้ 2026-10-23:
+// คนละคนใช้เบอร์กลางสำนักงานเดียวกันได้ / ไม่บังคับเบอร์) — เทียบใน PHP เพราะต้องตัดคำนำหน้าก่อน (ผู้ติดต่อต่อลูกค้ามีไม่มาก)
+function findContactByName(PDO $db, int $accountId, string $fullName): ?array {
+    $key = contactNameKey($fullName);
+    if ($key === '') return null;
+    $st = $db->prepare('SELECT id, full_name, phone FROM contacts WHERE account_id = ? ORDER BY id');
+    $st->execute([$accountId]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        if (contactNameKey($c['full_name']) === $key) return $c;
+    }
+    return null;
+}
+
 // ─── รวมลูกค้าซ้ำ (Merge Accounts แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-09-30) ───
 // ธุรการ/admin เลือกรายที่เก็บ ($keepId) แล้วรวมรายที่ซ้ำ ($mergeId) เข้ามา — ขั้นตอนเดียวกับ sql/merge_duplicate_accounts_7.sql (ผ่านบน host แล้ว)
 //   1. ย้ายผู้ติดต่อ / ดีล / ประกาศ / รหัส ERP ไปรายที่เก็บ (รหัส ERP เป็นรหัสรอง — รายที่เก็บยังไม่มีรหัสหลัก ตัวแรกเป็นรหัสหลัก)

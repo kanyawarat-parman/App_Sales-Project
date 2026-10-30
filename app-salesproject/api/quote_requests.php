@@ -61,12 +61,15 @@ function dealQuoteRequests(PDO $db, array $user): void {
     foreach ($requests as &$r) $r['can_cancel'] = in_array($r['status'], QUOTE_REQUEST_OPEN_STATUSES, true) && canCancelQuoteRequest($user, $r);
     unset($r);
     $requests = attachQuoteViewUrls($db, $requests);
+    $requests = attachQuoteRevisions($db, $requests);   // ทุก Rev ของใบ — 1 Rev = 1 การ์ด (แบบ ข 2026-10-29)
 
     $canRequest = canRequestQuote($user, $deal);
     jsonResponse(true, [
         'requests'     => $requests,
         'can_request'  => $canRequest,
         'block_reason' => $canRequest ? quoteRequestBlockReason($db, $deal) : null,
+        // ขายตรง: มูลค่าดีล = รวม Rev ล่าสุดทุกใบ (ป้าย "นับในมูลค่าดีล") / งานประมูล: มูลค่าไม่มาจากใบ
+        'value_from_quotes' => $deal['source_type'] !== 'ebidding',
         // ใบที่ออกแล้วของดีลนี้ — ให้เลือกตอน "ขอแก้ไขใบเดิม" (Revision)
         'quotations'   => array_values(array_unique(array_filter(array_column($requests, 'quotation_id')))),
     ]);

@@ -601,25 +601,29 @@
             <input v-model="spNewContact.full_name" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น คุณสมชาย">
           </div>
           <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">เบอร์มือถือ <span class="text-red-500">*</span></label>
-            <input v-model="spNewContact.phone" type="tel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="081-234-5678">
+            <label class="block text-sm font-semibold text-slate-700 mb-1">เบอร์โทร</label>
+            <input v-model="spNewContact.phone" type="tel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="มือถือ หรือเบอร์สำนักงาน เช่น 02-963-2951">
             <p v-if="phoneInputProblem(spNewContact.phone)" class="text-sm text-amber-700 m-0 mt-1">{{ phoneInputProblem(spNewContact.phone) }}</p>
           </div>
           <div>
             <label class="block text-sm font-semibold text-slate-700 mb-1">ตำแหน่ง</label>
             <input v-model="spNewContact.position" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ไม่บังคับ">
           </div>
-          <!-- เบอร์ตรงผู้ติดต่อเดิม (API ตอบ 409) → ใช้คนเดิม หรือแก้เบอร์ -->
+          <!-- ชื่อตรงผู้ติดต่อเดิมของลูกค้านี้ (API ตอบ 409 — กันซ้ำด้วยชื่อแทนเบอร์ 2026-10-23) → ใช้คนเดิม หรือยืนยันว่าคนละคน -->
           <div v-if="spNewContact.existing" class="p-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-900">
-            เบอร์นี้เป็นของ "{{ spNewContact.existing.full_name }}" อยู่แล้ว — ถ้าเป็นคนเดียวกันกด "ใช้คนเดิม" ถ้าไม่ใช่ให้แก้เบอร์
-            <button type="button" @click="useSpExistingContact"
-              class="block mt-2 px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white border-0 cursor-pointer">ใช้ "{{ spNewContact.existing.full_name }}" แทน</button>
+            มีผู้ติดต่อชื่อ "{{ spNewContact.existing.full_name }}"<span v-if="spNewContact.existing.phone"> ({{ formatPhone(spNewContact.existing.phone) }})</span> ในลูกค้านี้อยู่แล้ว — เป็นคนเดียวกันหรือไม่?
+            <div class="flex flex-wrap gap-2 mt-2">
+              <button type="button" @click="useSpExistingContact"
+                class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white border-0 cursor-pointer">ใช่ — ใช้คนเดิม</button>
+              <button type="button" @click="saveSpNewContact(true)" :disabled="spNewContact.saving"
+                class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-amber-300 text-amber-800 hover:bg-amber-100 border-0 cursor-pointer">คนละคน — เพิ่มใหม่</button>
+            </div>
           </div>
         </div>
         <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
           <button type="button" @click="spNewContact.show = false"
             class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]">ยกเลิก</button>
-          <button type="button" @click="saveSpNewContact" :disabled="spNewContact.saving"
+          <button type="button" @click="saveSpNewContact(false)" :disabled="spNewContact.saving"
             class="inline-flex items-center px-5 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] disabled:opacity-50">บันทึกผู้ติดต่อ</button>
         </div>
       </div>
@@ -635,14 +639,55 @@
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="spFieldHelp=null">×</button>
         </div>
         <div class="overflow-y-auto px-6 py-4 space-y-3 text-[.95rem] text-slate-700 leading-relaxed">
-          <p class="m-0">{{ spFieldHelpText[spFieldHelp].intro }}</p>
-          <div v-for="r in spFieldHelpText[spFieldHelp].rows" :key="r[0]" class="grid grid-cols-[120px_1fr] gap-3 py-2 border-t border-slate-100">
+          <p v-if="spFieldHelpText[spFieldHelp].intro" class="m-0">{{ spFieldHelpText[spFieldHelp].intro }}</p>
+          <!-- กติกาหลัก (กรอบเขียว) + หัว "รายละเอียด" — ใช้กับมูลค่าดีล (2026-10-30) -->
+          <div v-if="spFieldHelpText[spFieldHelp].rule" class="rounded-lg bg-emerald-50 text-emerald-800 font-bold text-sm px-3 py-2">{{ spFieldHelpText[spFieldHelp].rule }}</div>
+          <!-- ลำดับทั่วไปว่ามูลค่าเปลี่ยนเมื่อไร (ไม่ใช่ประวัติจริงของดีล — ดูที่แท็บประวัติ) ป้ายเทา = Sale แก้เอง / เขียว = ระบบทำให้ (2026-10-30) -->
+          <div v-if="spFieldHelpText[spFieldHelp].flow">
+            <div class="text-xs text-slate-500 mb-1.5">มูลค่าเปลี่ยนเมื่อไรบ้าง (ต้นจนจบ)</div>
+            <div v-for="(f, fi) in spFieldHelpText[spFieldHelp].flow" :key="f[0]" class="grid grid-cols-[24px_1fr_auto] gap-2.5 items-start">
+              <div class="flex flex-col items-center self-stretch">
+                <div class="w-[22px] h-[22px] rounded-full text-xs font-bold flex items-center justify-center" :class="f[2] === 'ระบบ' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'">{{ fi + 1 }}</div>
+                <div v-if="fi < spFieldHelpText[spFieldHelp].flow.length - 1" class="flex-1 w-px bg-slate-300 min-h-[10px]"></div>
+              </div>
+              <div class="pb-2 text-sm"><div class="font-semibold text-slate-800">{{ f[0] }}</div><div class="text-slate-500">{{ f[1] }}</div></div>
+              <span class="text-xs px-2 py-0.5 rounded-full" :class="f[2] === 'ระบบ' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'">{{ f[2] }}</span>
+            </div>
+          </div>
+          <div v-if="spFieldHelpText[spFieldHelp].rule && spFieldHelpText[spFieldHelp].rows.length" class="text-xs text-slate-500 -mb-2">รายละเอียด</div>
+          <div v-for="r in spFieldHelpText[spFieldHelp].rows" :key="r[0]" class="grid gap-3 border-t border-slate-100" :class="spFieldHelpText[spFieldHelp].rule ? 'grid-cols-[140px_1fr] py-1.5 text-sm' : 'grid-cols-[120px_1fr] py-2'">
             <div class="font-semibold text-slate-800">{{ r[0] }}</div>
             <div>{{ r[1] }}</div>
           </div>
         </div>
         <div class="px-6 py-3 border-t border-slate-100 flex justify-end">
           <button class="px-5 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer" @click="spFieldHelp=null">ปิด</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ดีลถูกเปลี่ยนหลังเปิดหน้าต่าง (Optimistic Locking แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-30) — ไม่บันทึกทับ ให้โหลดข้อมูลล่าสุดก่อน
+         ช่องที่ผู้ใช้แก้ไว้ (และไม่ชนกับที่เปลี่ยน) ยังอยู่หลังโหลด -->
+    <div v-if="spConflict" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4">
+      <div class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden">
+        <div class="px-6 py-5 border-b border-slate-100">
+          <h3 class="font-bold text-lg text-amber-800 m-0">⚠ ดีลนี้มีการเปลี่ยนแปลงหลังคุณเปิดหน้าต่างนี้</h3>
+          <div v-if="spConflict.last_change" class="text-sm text-slate-600 mt-1">
+            โดย {{ spConflict.last_change.changed_by_name || '-' }} · {{ formatDateTimeThai(spConflict.last_change.changed_at) }}
+            <span v-if="spConflict.last_change.note"> — {{ spConflict.last_change.note }}</span>
+          </div>
+        </div>
+        <div class="p-5 space-y-2 text-sm">
+          <div v-for="c in spConflict.conflicts" :key="c.field" class="flex flex-wrap gap-x-2">
+            <span class="font-semibold text-slate-700">{{ c.label }}:</span>
+            <span class="text-slate-500">{{ spConflictValue(c.field, c.opened) }}</span> →
+            <span class="font-bold text-slate-800">{{ spConflictValue(c.field, c.current) }}</span>
+          </div>
+          <p class="m-0 pt-2 text-slate-600">ยังไม่ได้บันทึก เพื่อไม่ให้ทับข้อมูลใหม่ — กด <b>โหลดข้อมูลล่าสุด</b> แล้วตรวจ / แก้อีกครั้ง (ช่องอื่นที่คุณแก้ไว้ยังอยู่)</p>
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
+          <button type="button" @click="spConflict = null" class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]">ยกเลิก</button>
+          <button type="button" @click="reloadSpFormAfterConflict" class="inline-flex items-center px-5 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]">โหลดข้อมูลล่าสุด</button>
         </div>
       </div>
     </div>
@@ -694,7 +739,8 @@
             </div>
             <!-- กล่องตัวเลข: มูลค่า / โอกาสปิด / นัดติดตาม (ถึงวัน = ส้ม, เลยวัน = แดง) / ใบเสนอราคา (กดแล้วไปแท็บใบเสนอราคา) -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-              <div class="rounded-xl bg-slate-50 px-3 py-2"><div class="text-xs text-slate-500">มูลค่า</div><div class="font-bold text-emerald-700">{{ modal.data.value ? formatNumber(modal.data.value) : '-' }}</div></div>
+              <div class="rounded-xl bg-slate-50 px-3 py-2"><div class="flex items-center gap-1 text-xs text-slate-500">มูลค่า <button type="button" @click.prevent="spFieldHelp='value'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="มูลค่านี้มาจากไหน" aria-label="คำอธิบายช่อง มูลค่าดีล"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></div><div class="font-bold text-emerald-700">{{ modal.data.value ? formatNumber(modal.data.value) : '-' }}</div></div>
+                <!-- หมายเหตุ "มูลค่าดีล: รวมยอดก่อน VAT…" เอาออก (2026-10-30) — คำอธิบายอยู่ในไอคอน ⓘ ข้างคำว่ามูลค่าแล้ว -->
               <div class="rounded-xl bg-slate-50 px-3 py-2"><div class="text-xs text-slate-500">โอกาสปิด</div><div class="font-bold text-slate-800">{{ modal.data.win_probability != null ? Math.round(modal.data.win_probability * 100) + '%' : '-' }}</div></div>
               <div class="rounded-xl px-3 py-2" :class="spHeadFollowup.cls">
                 <div class="text-xs opacity-80">นัดติดตาม</div>
@@ -934,7 +980,7 @@
               <h3 class="text-base font-bold text-slate-800">ข้อมูลดีล</h3>
             </div>
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อโครงการ / รายการสินค้า</label>
+              <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1.5">ชื่อโครงการ / รายการสินค้า <button type="button" @click.prevent="spFieldHelp='title'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง ชื่อโครงการ / รายการสินค้า"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
               <input v-model="spForm.title" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โต๊ะทำงาน 50 ชุด, เก้าอี้ประชุม">
               <div class="text-xs text-slate-500 mt-1">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
             </div>
@@ -1042,7 +1088,7 @@
             <!-- จัดใหม่ 2026-10-20: มูลค่า / โอกาสปิดดีล / วันคาดปิดดีล อยู่แถวเดียวกัน (3 ค่าที่ใช้คำนวณ Weighted Pipeline) — วันส่งมอบอยู่ grid ถัดไป -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1">มูลค่า <span class="text-red-500">*</span></label>
+                <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1">มูลค่า <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='value'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="มูลค่านี้มาจากไหน" aria-label="คำอธิบายช่อง มูลค่าดีล"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
                 <div class="relative">
                   <input v-model="spForm.value" type="number" min="0" class="w-full border border-slate-300 rounded-xl pl-3.5 pr-12 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="0">
                   <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">บาท</span>
@@ -1056,7 +1102,7 @@
                 </div>
               </div>
               <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1">วันคาดปิดดีล <span class="text-red-500">*</span></label>
+                <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1">วันคาดปิดดีล <button type="button" @click.prevent="spFieldHelp='expected_close'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง วันคาดปิดดีล"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
                 <input v-model="spForm.expected_close" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
               </div>
               <div class="text-xs text-slate-500 sm:col-span-3 -mt-1">โอกาสปิดดีลและวันคาดปิด ใช้คำนวณยอดคาดการณ์ (Weighted Pipeline) — งานวาง Spec ควรใส่วันคาดปิดตามจริง</div>
@@ -1183,7 +1229,17 @@
             </div>
           </div>
         </div>
-        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+        <!-- แท็บใบเสนอราคา / ไฟล์ / ประวัติ บันทึกทันทีในแท็บ — ไม่มีปุ่มบันทึกรวม มีแค่ [ปิด] (แบบ Salesforce Record Page — ยืนยันจากผู้ใช้ 2026-10-30)
+             เดิมปุ่ม "บันทึกการแก้ไข" ขึ้นทุกแท็บ Sale ขอใบเสนอราคาแล้วกดบันทึกปิดท้าย → ค่าเก่าในฟอร์มทับมูลค่าที่ระบบเพิ่งอัปเดต (PJ-261027-002) -->
+        <div v-if="spForm.id && spFormTab !== 'deal'" class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+          <template v-if="spFormDirty && !isViewer">
+            <span class="mr-auto text-sm text-amber-700 font-semibold">⚠ มีการแก้ไขในแท็บรายละเอียดดีลที่ยังไม่บันทึก</span>
+            <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-amber-300 text-amber-800 hover:bg-amber-50 border-0 cursor-pointer min-h-[44px]" @click="spFormTab = 'deal'">กลับไปบันทึก</button>
+          </template>
+          <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 cursor-pointer min-h-[44px]"
+            :class="spFormDirty && !isViewer ? 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-teal-700 hover:bg-teal-800 text-white'" @click="closeModal">ปิด</button>
+        </div>
+        <div v-else class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
           <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px] disabled:cursor-default disabled:hover:bg-white" :disabled="spFormSaving" @click="closeModal">ยกเลิก</button>
           <span v-if="isViewer" class="mr-auto text-sm text-violet-700 font-semibold">👁 ดูอย่างเดียว — แก้ไขไม่ได้</span>
           <!-- ล็อกปุ่มระหว่างบันทึก กันกดซ้ำแล้วได้ดีล 2 รายการ + วงกลมหมุน (2026-10-23) -->
@@ -1678,6 +1734,9 @@
 <script src="shared/app.js?v=101"></script>
 <script>
 const { createApp } = Vue;
+// ช่องในฟอร์มดีลที่ตรวจว่ามีคนเปลี่ยนหลังเปิดหน้าต่าง (กันบันทึกทับ — 2026-10-30) ต้องตรงกับ $lockFields ใน api/pipeline_items.php updateItem()
+const SP_LOCK_FIELDS = ['title', 'stage', 'value', 'win_probability', 'expected_close', 'priority', 'segment', 'product_category', 'brand',
+  'fee_structure', 'specialization', 'next_action', 'next_followup_date', 'notes', 'deal_type_id', 'assigned_to', 'account_id'];
 
 createApp({
   components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppDuplicateAccounts, AppQuoteRequests, AppRecordTabs, AppDealFiles },
@@ -1715,6 +1774,31 @@ createApp({
           ['ไม่แน่ใจ', 'ใส่ 20% ไว้ก่อน แล้วปรับขึ้นเมื่อดีลคืบหน้า'],
           ['ควรปรับเมื่อ', 'ส่งใบเสนอราคาแล้ว ลูกค้าต่อรอง หรือมีสัญญาณว่าจะซื้อ / ไม่ซื้อ'],
         ] },
+        // มูลค่าดีล — กติกาตาม includes/quote_request_helper.php dealQuoteTotal() (ยืนยันจากผู้ใช้ 2026-10-30)
+        value: { title: 'มูลค่าดีล', intro: '', rule: 'มูลค่ารวมทั้งหมด ก่อน VAT ทุกเลข QT ที่ Rev ล่าสุด ทั้งหมดในดีล',
+          // [ขั้น, เกิดอะไรกับมูลค่า, ใครเปลี่ยน] — ปิดดีลแล้วขอใบใหม่ไม่ได้ (quoteRequestBlockReason) แต่ธุรการยังออก Rev ต่อได้
+          flow: [
+            ['สร้างดีล', 'Sale ใส่มูลค่าที่ประเมิน', 'Sale'],
+            ['ระหว่างคุยกับลูกค้า', 'Sale แก้มูลค่าเองได้', 'Sale'],
+            ['ออกใบเสนอราคาใบแรก', 'ระบบเปลี่ยนเป็นยอดของใบ', 'ระบบ'],
+            ['ออก Rev ใหม่ / แก้ใบเดิม', 'ระบบใช้ยอด Rev ล่าสุด', 'ระบบ'],
+            ['เปิดใบเลข QT ใหม่ในดีล', 'ระบบบวกรวมกับใบเดิม', 'ระบบ'],
+            ['ปิดดีล', 'Sale ขอใบใหม่ไม่ได้แล้ว มูลค่าล่าสุด = ยอดขายของดีล', '—'],
+          ],
+          rows: [],   // ตารางรายละเอียด 7 ข้อเอาออก (ผู้ใช้สั่ง 2026-10-30) — timeline ด้านบนอธิบายครบแล้ว
+        },
+        // ชื่อโครงการไม่บังคับ (2026-10-23) — ใช้ในระบบนี้ + ส่งไปช่อง "ชื่อโครงการ" ของใบเสนอราคา (quotation.html)
+        title: { title: 'ชื่อโครงการ / รายการสินค้า', intro: 'ชื่อที่ใช้เรียกดีลนี้ — ไม่บังคับกรอก แต่ช่วยให้แยกดีลของลูกค้ารายเดียวกันออกจากกันได้', rows: [
+          ['ควรใส่อะไร', 'ชื่อโครงการของลูกค้า เช่น "ปรับปรุงห้องประชุมชั้น 5" หรือถ้าไม่มีชื่อโครงการ ใส่สินค้าและจำนวน เช่น "เก้าอี้สำนักงาน 50 ตัว"'],
+          ['ไม่ใส่', 'การ์ดและรายการดีลแสดงแค่รหัส PJ + ชื่อลูกค้า — ถ้าลูกค้ามีหลายดีลจะแยกกันยาก'],
+          ['ใบเสนอราคา', 'ตอนขอใบเสนอราคา ชื่อนี้ขึ้นในช่อง "ชื่อโครงการ" ของใบให้อัตโนมัติ (ไม่ใส่ = ช่องในใบว่าง) คนออกใบแก้ได้'],
+        ] },
+        // วันคาดปิดดีลไม่บังคับ (2026-10-23) — กติกานับยอดคาดการณ์ตาม api/pipeline_items.php getKanban()
+        expected_close: { title: 'วันคาดปิดดีล', intro: 'วันที่ Sale คาดว่าลูกค้าจะตกลงซื้อ (ปิดดีล) — ไม่บังคับกรอก แต่ระบบใช้แยกยอดคาดการณ์ (Weighted Pipeline) ตามช่วงเวลา', rows: [
+          ['ใส่วันคาดปิด', 'ภายใน 90 วันนับจากวันนี้ = นับใน "ภายใน 3 เดือน" / ไกลกว่านั้น = นับเป็นยอดระยะยาว'],
+          ['ไม่ใส่วันคาดปิด', 'ระบบนับรวมใน "ภายใน 3 เดือน" — ถ้าดีลแบบนี้มีเยอะ ยอด 3 เดือนจะสูงกว่าความจริง'],
+          ['ควรใส่เมื่อ', 'รู้กำหนดซื้อของลูกค้า เช่น งานวาง Spec ที่รองบประมาณ ให้ใส่วันคาดปิดตามจริง'],
+        ] },
         segment: { title: 'ประเภทลูกค้า', intro: 'ลูกค้าเป็นหน่วยงานรัฐหรือบริษัทเอกชน — ระบบเติมให้จากข้อมูลลูกค้าที่เลือกในกล่อง ① แก้ได้ถ้าไม่ตรง', rows: [
           ['ภาครัฐ (Gov)', 'หน่วยงานราชการ รัฐวิสาหกิจ โรงเรียน / โรงพยาบาลรัฐ'],
           ['เอกชน (Private)', 'บริษัท ห้างร้าน โรงพยาบาล / โรงเรียนเอกชน'],
@@ -1724,7 +1808,9 @@ createApp({
       spLoading: false,
       spImportReviewSaving: false,
       spDeliveredForm: { date: '', saving: false },   // หน้าต่างบันทึกส่งสินค้าแล้ว (2026-10-07)
-      spFormSaving: false,   // ฟอร์มสร้าง/แก้ไขดีลกำลังบันทึก — ล็อกปุ่มกันกดซ้ำ (2026-10-23)
+      spFormSaving: false,
+      // กันบันทึกทับ (Optimistic Locking — 2026-10-30): ค่าในฐานข้อมูลตอนเปิดหน้าต่าง (ส่งไปให้ API เทียบ) / สำเนาฟอร์มไว้ดูว่าแก้แล้วยังไม่บันทึก / ผลชนกันจาก API
+      spFormBase: null, spFormSnapshot: '', spConflict: null,   // ฟอร์มสร้าง/แก้ไขดีลกำลังบันทึก — ล็อกปุ่มกันกดซ้ำ (2026-10-23)
       spReviewTransferOpen: false,   // หน้าต่างตรวจดีลย้อนหลัง: เปิดส่วนโอนให้ sale คนอื่น (2026-10-01)
       spReviewTransferTo: '',
       reviewSales: [],               // รายชื่อ sale ให้เลือกโอน (โหลดครั้งแรกที่เปิดหน้าต่างตรวจ)
@@ -1767,6 +1853,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     };
   },
   computed: {
+    // แก้ช่องในแท็บรายละเอียดดีลแล้วยังไม่บันทึก — แท็บอื่นเตือน "กลับไปบันทึก" (2026-10-30)
+    spFormDirty() { return !!this.spFormSnapshot && JSON.stringify(this.spForm) !== this.spFormSnapshot; },
     // กล่อง "นัดติดตาม" บนหัวหน้าต่างดีล — ใช้กติกาเดียวกับป้ายบนการ์ด (spFollowupStatus) อ่านจากค่าที่บันทึกไว้ (2026-10-14)
     spHeadFollowup() {
       const card = this.modal.data;
@@ -2541,6 +2629,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
 
     async openSpForm(card) {
       this.spFormTab = 'deal';
+      this.spFormBase = null; this.spFormSnapshot = ''; this.spConflict = null;
       this.spQuoteSummary = null;
       this.spFormHistory = [];
       this.spSavedCompetitors = [];
@@ -2584,9 +2673,47 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
             this.spForm.competitor_ids = this.spSavedCompetitors.map(c => Number(c.competitor_id));
             // ผู้ติดต่อทั้งหมดของลูกค้า — คนที่อยู่ในดีลนี้ติ๊กไว้พร้อมบทบาท/คนหลัก (ผู้ติดต่อในดีล 2026-09-28)
             this.spContactRows = this.buildSpContactRows(res.item.account_contacts || [], res.item.deal_contacts || []);
+            // ค่าล่าสุดจากฐานข้อมูล = จุดตั้งต้นของการกันบันทึกทับ / การ์ดในรายการอาจเก่ากว่า (โหลดไว้ก่อน) → ช่องที่ยังไม่แตะใช้ค่าล่าสุด
+            for (const k of SP_LOCK_FIELDS) {
+              if (this.spForm[k] === this.spFormFieldFromItem(k, card)) this.spForm[k] = this.spFormFieldFromItem(k, res.item);
+            }
+            this.spFormBase = this.spBaseFromItem(res.item);
           }
         } catch {}
+        this.spFormSnapshot = JSON.stringify(this.spForm);
       }
+    },
+    // ── กันบันทึกทับ (Optimistic Locking — ยืนยันจากผู้ใช้ 2026-10-30) ──
+    // ค่าในฟอร์มของช่อง k จากแถวในฐานข้อมูล (โอกาสปิดดีลในฐานข้อมูลเป็น 0–1 ฟอร์มเป็น %)
+    spFormFieldFromItem(k, item) {
+      const v = item?.[k];
+      if (k === 'win_probability') return v != null && v !== '' ? Math.round(v * 100) : 20;
+      if (k === 'assigned_to') return item?.sale_id ?? item?.assigned_to ?? '';
+      if (k === 'deal_type_id') return v || 'normal';
+      if (k === 'priority') return v || 'Medium';
+      return v ?? '';
+    },
+    spBaseFromItem(item) {
+      return Object.fromEntries(SP_LOCK_FIELDS.map(k => [k, item?.[k] ?? null]));
+    },
+    spConflictValue(field, v) {
+      if (v === null || v === undefined || v === '') return '(ว่าง)';
+      if (field === 'value') return this.formatNumber(v) + ' บาท';
+      if (field === 'win_probability') return Math.round(Number(v) * 100) + '%';
+      if (field === 'stage') return this.spStageLabel(v, this.spForm.source_type);
+      return String(v);
+    },
+    // โหลดดีลล่าสุด: ช่องที่ชนกันใช้ค่าใหม่ / ช่องอื่นที่ผู้ใช้แก้ไว้ยังอยู่ / หัวสรุป ประวัติ อัปเดตตาม
+    async reloadSpFormAfterConflict() {
+      const res = await apiCall('GET', `api/pipeline_items.php?action=one&id=${this.spForm.id}`);
+      if (!res.success) { await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+      const item = res.item;
+      for (const c of (this.spConflict?.conflicts || [])) this.spForm[c.field] = this.spFormFieldFromItem(c.field, item);
+      this.spFormBase = this.spBaseFromItem(item);
+      this.modal.data = { ...this.modal.data, ...item };
+      this.spFormHistory = item.history || [];
+      this.spConflict = null;
+      this.loadSpKanban();
     },
 
     // คลิกช่องลูกค้า: ยังไม่พิมพ์ → ลูกค้าล่าสุด (Recent Items — ยืนยันจากผู้ใช้ 2026-09-29) / พิมพ์ไว้แล้ว → เปิดผลค้นหาเดิม
@@ -2722,7 +2849,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       for (const f of [
         { key: 'value',           label: 'มูลค่า (บาท)' },
         { key: 'win_probability', label: 'โอกาสปิดดีล (%)' },
-        { key: 'expected_close',  label: 'วันคาดปิดดีล' },
+        // วันคาดปิดดีลไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23) — ไม่ระบุ = นับเป็น "ภายใน 3 เดือน" ใน Weighted Pipeline (api/pipeline_items.php)
       ]) {
         if (isEmpty(this.spForm[f.key])) { await this.showAlert(`กรุณากรอก "${f.label}"`, 'error'); return; }
       }
@@ -2748,6 +2875,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       if (payload.account_id) payload.deal_contacts = this.spDealContactsPayload();
       if (!payload.assigned_to) payload.assigned_to = this.currentUser.id;
       payload.win_probability = Math.min(100, Math.max(0, Number(payload.win_probability) || 0)) / 100;
+      // ค่าตอนเปิดหน้าต่าง — API เทียบกับฐานข้อมูล ถ้ามีคนเปลี่ยนไปแล้วตอบ 409 ไม่บันทึกทับ (2026-10-30)
+      if (this.spForm.id && this.spFormBase) payload._base = this.spFormBase;
       // กดซ้ำระหว่างกำลังบันทึก → ไม่ส่งซ้ำ (ฝั่ง API กันอีกชั้น: ดีลเดิมภายใน 60 วินาที)
       if (this.spFormSaving) return;
       this.spFormSaving = true;
@@ -2761,6 +2890,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       } finally {
         this.spFormSaving = false;
       }
+      if (!res.success && res.data?.conflicts) { this.spConflict = res.data; return; }
       if (res.success) {
         this.closeModal();
         this.loadSpKanban();
@@ -2821,16 +2951,17 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     openSpNewContact() {
       this.spNewContact = { show: true, full_name: '', phone: '', position: '', saving: false, existing: null };
     },
-    async saveSpNewContact() {
+    // confirmNew = ผู้ใช้ยืนยันแล้วว่าเป็นคนละคนกับผู้ติดต่อชื่อเดียวกันที่มีอยู่ (2026-10-23)
+    async saveSpNewContact(confirmNew = false) {
       const f = this.spNewContact;
       if (!f.full_name.trim()) { await this.showAlert('กรุณากรอกชื่อผู้ติดต่อ', 'error'); return; }
-      if (!f.phone.trim())     { await this.showAlert('กรุณากรอกเบอร์มือถือ', 'error'); return; }
-      if (this.phoneInputProblem(f.phone)) { await this.showAlert('เบอร์มือถือ: ' + this.phoneInputProblem(f.phone), 'error'); return; }
+      // เบอร์ไม่บังคับ — ใส่มาต้องถูกรูปแบบ (มือถือ / เบอร์สำนักงาน 02… ได้) (ยืนยันจากผู้ใช้ 2026-10-23)
+      if (this.phoneInputProblem(f.phone)) { await this.showAlert('เบอร์โทร: ' + this.phoneInputProblem(f.phone), 'error'); return; }
       f.saving = true; f.existing = null;
       const res = await apiCall('POST', 'api/contacts.php?action=create',
-        { account_id: this.spForm.account_id, full_name: f.full_name.trim(), phone: f.phone.trim(), position: f.position.trim() });
+        { account_id: this.spForm.account_id, full_name: f.full_name.trim(), phone: f.phone.trim(), position: f.position.trim(), confirm_new_contact: confirmNew ? 1 : 0 });
       f.saving = false;
-      // เบอร์ตรงผู้ติดต่อเดิมแต่ชื่อต่าง → ให้เลือกใช้คนเดิม หรือแก้เบอร์ (ไม่แทนเงียบๆ)
+      // ชื่อตรงผู้ติดต่อเดิมของลูกค้านี้ → ให้เลือกใช้คนเดิม หรือยืนยันว่าคนละคน
       if (!res.success && res.data?.existing_contact) { f.existing = res.data.existing_contact; return; }
       if (!res.success) { await this.showAlert(res.message || 'บันทึกผู้ติดต่อไม่สำเร็จ', 'error'); return; }
       // สำเร็จ (หรือเป็นคนเดิมชื่อเดียวกัน — existing) → ติ๊กคนนั้นเข้าดีล

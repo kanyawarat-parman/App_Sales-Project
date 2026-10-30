@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ตรวจคุณภาพข้อมูล</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <app-nav :user="currentUser" page="data-quality" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          ตรวจคุณภาพข้อมูล
+        </h1>
+        <!-- Sale เห็นเฉพาะของตัวเอง (API บังคับ) จึงไม่มีช่องเลือก Sale -->
+        <select v-if="!isSale && saleOptions.length" v-model="saleFilter"
+          class="ml-auto border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-teal-500">
+          <option value="">Sale: ทุกคน</option>
+          <option v-for="s in saleOptions" :key="s" :value="s">{{ s }}</option>
+        </select>
+      </header>
+
+      <main class="flex-1 w-full max-w-[1200px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6">
+        <!-- ตรวจคุณภาพข้อมูล (Data Quality — ยืนยันจากผู้ใช้ 2026-10-30) การ์ด 1 ใบ = 1 หัวข้อตรวจ / ตอนนี้มีข้อเดียว ข้ออื่นเพิ่มทีหลัง -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
+          <div class="bg-white rounded-2xl ring-2 ring-teal-500 shadow-sm p-4">
+            <div class="text-sm text-slate-500">ดีล</div>
+            <div class="font-bold text-slate-800">มูลค่าไม่ตรงกับใบเสนอราคา</div>
+            <div class="text-2xl font-bold mt-1" :class="filtered.length ? 'text-rose-600' : 'text-emerald-600'">{{ loading ? '…' : filtered.length }}</div>
+          </div>
+          <div class="bg-white rounded-2xl ring-1 ring-slate-100 shadow-sm p-4">
+            <div class="text-sm text-slate-500">ข้ออื่น ๆ</div>
+            <div class="text-sm text-slate-400 mt-1">เพิ่มทีหลัง</div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 overflow-hidden">
+          <div class="px-5 py-3 border-b border-slate-100">
+            <div class="font-bold text-slate-800">มูลค่าไม่ตรงกับใบเสนอราคา</div>
+            <div class="text-sm text-slate-500">ควรเป็น = ยอดก่อน VAT รวมทุกเลข QT ที่ Rev ล่าสุด · ดีลขายตรงทุกสถานะ (รวมที่ปิดแล้ว) ยกเว้นไม่สำเร็จ</div>
+          </div>
+
+          <div v-if="loading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+          <div v-else-if="!filtered.length" class="text-center text-emerald-700 font-semibold py-14">✓ ไม่มีดีลที่มูลค่าไม่ตรง</div>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full border-collapse text-sm min-w-[860px]">
+              <thead>
+                <tr class="bg-slate-50 text-[.75rem] font-bold text-slate-500 text-left">
+                  <th class="px-4 py-2.5">ดีล</th>
+                  <th class="px-3 py-2.5">สถานะ</th>
+                  <th class="px-3 py-2.5 text-right">มูลค่าดีลตอนนี้</th>
+                  <th class="px-3 py-2.5 text-right">ยอดตามใบ</th>
+                  <th class="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in filtered" :key="r.project_code" class="border-t border-slate-100 align-top">
+                  <td class="px-4 py-3">
+                    <div class="font-semibold text-slate-800">{{ r.client_name || '-' }}</div>
+                    <div class="text-xs text-slate-500">
+                      <span class="font-mono font-bold text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ r.project_code }}</span>
+                      <span v-if="r.title"> · {{ r.title }}</span> · {{ r.sale_name }}
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 whitespace-nowrap">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-bold" :class="stageOf(r.stage).cls">{{ stageOf(r.stage).label }}</span>
+                  </td>
+                  <td class="px-3 py-3 text-right whitespace-nowrap font-semibold text-rose-600">{{ r.value !== null ? formatPrice(r.value) : '(ว่าง)' }}</td>
+                  <td class="px-3 py-3 text-right">
+                    <div class="font-bold text-emerald-700 whitespace-nowrap">{{ formatPrice(r.quote_total) }}</div>
+                    <div class="text-xs text-slate-500">{{ r.quote_parts.join(' + ') }}</div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="flex gap-2 justify-end">
+                      <button v-if="canFix" type="button" @click="applyQuoteValue(r)" :disabled="savingCode === r.project_code"
+                        class="px-3 py-2 rounded-xl text-sm font-bold bg-teal-700 text-white hover:bg-teal-800 border-0 cursor-pointer whitespace-nowrap disabled:opacity-50">
+                        {{ savingCode === r.project_code ? 'กำลังบันทึก…' : 'ใช้ยอดตามใบ' }}</button>
+                      <a :href="'sales-pipeline.html?code=' + encodeURIComponent(r.project_code)"
+                        class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 no-underline whitespace-nowrap">เปิดดีล</a>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=101"></script>
+<script>
+const { createApp } = Vue;
+const DQ_STAGES = {
+  'Interest':    { label: 'สนใจ/ติดต่อ',    cls: 'bg-slate-100 text-slate-600' },
+  'Send PI':     { label: 'ส่ง PI/ใบเสนอ',  cls: 'bg-sky-100 text-sky-700' },
+  'Negotiating': { label: 'ต่อรอง/เจรจา',   cls: 'bg-amber-100 text-amber-800' },
+  'Deal Signed': { label: 'ปิดดีลแล้ว',      cls: 'bg-emerald-100 text-emerald-800' },
+  'Delivered':   { label: 'ส่งสินค้าแล้ว',   cls: 'bg-teal-100 text-teal-800' },
+};
+createApp({
+  components: { AppNav, AppModal },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      items: [],
+      canFix: false,
+      saleFilter: '',
+      savingCode: null,
+    };
+  },
+  computed: {
+    isSale() { return this.currentUser?.role === 'sale'; },
+    saleOptions() { return [...new Set(this.items.map(r => r.sale_name))].sort(); },
+    filtered() { return this.saleFilter ? this.items.filter(r => r.sale_name === this.saleFilter) : this.items; },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    await this.load();
+  },
+  methods: {
+    ...SharedMethods,
+
+    async load() {
+      this.loading = true;
+      const res = await apiCall('GET', 'api/data_quality.php?action=deal_value');
+      if (res.success) { this.items = res.data.items; this.canFix = res.data.can_fix; }
+      else await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+      this.loading = false;
+    },
+
+    stageOf(stage) { return DQ_STAGES[stage] || { label: stage, cls: 'bg-slate-100 text-slate-600' }; },
+
+    // ส่งมูลค่าที่เห็นบนจอไปด้วย — server ตรวจว่ายังไม่มีใครเปลี่ยนก่อน แล้วคำนวณยอดตามใบใหม่เอง
+    async applyQuoteValue(r) {
+      const ok = await this.showConfirm('ใช้ยอดตามใบเสนอราคา',
+        `${r.project_code} มูลค่าดีล ${this.formatPrice(r.value)} → ${this.formatPrice(r.quote_total)} (${r.quote_parts.join(' + ')})`, 'ใช้ยอดตามใบ');
+      if (!ok) return;
+      this.savingCode = r.project_code;
+      const res = await apiCall('POST', 'api/data_quality.php?action=apply_quote_value', { project_code: r.project_code, value: r.value });
+      this.savingCode = null;
+      if (res.success) {
+        this.items = this.items.filter(x => x.project_code !== r.project_code);
+        await this.showAlert(res.message || 'ปรับมูลค่าดีลตามใบแล้ว', 'success');
+      } else {
+        await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error');
+        await this.load();   // มีคนเปลี่ยนมูลค่าไปแล้ว (409) ฯลฯ — โหลดตัวเลขล่าสุด
+      }
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

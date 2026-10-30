@@ -540,7 +540,7 @@
                 <input v-model="contactForm.full_name" placeholder="ชื่อผู้ติดต่อ *" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
                 <input v-model="contactForm.position" placeholder="ตำแหน่ง (ไม่บังคับ)" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
                 <div class="col-span-2 sm:col-span-1 flex flex-col gap-1">
-                  <input v-model="contactForm.phone" type="tel" placeholder="เบอร์หลัก (มือถือ) *" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                  <input v-model="contactForm.phone" type="tel" placeholder="เบอร์โทร — มือถือ หรือ 02… (ไม่บังคับ)" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
                   <p v-if="phoneInputProblem(contactForm.phone)" class="text-sm text-amber-700 m-0">{{ phoneInputProblem(contactForm.phone) }}</p>
                 </div>
                 <div class="col-span-2 sm:col-span-1 flex flex-col gap-1">
@@ -947,9 +947,16 @@ createApp({
 
     async submitContact() {
       if (!this.contactForm.full_name.trim()) { await this.showAlert('กรุณากรอกชื่อผู้ติดต่อ', 'error'); return; }
-      if (!this.contactForm.phone.trim())     { await this.showAlert('กรุณากรอกเบอร์โทร', 'error'); return; }
+      // เบอร์ไม่บังคับ / ผู้ติดต่อคนละชื่อใช้เบอร์เดียวกันได้ / กันซ้ำด้วยชื่อในลูกค้าเดียวกัน (ยืนยันจากผู้ใช้ 2026-10-23)
       const isEdit = !!this.contactForm.id;
-      const res = await apiCall('POST', `api/contacts.php?action=${isEdit ? 'update' : 'create'}`, { ...this.contactForm, account_id: this.accountForm.id });
+      const url = `api/contacts.php?action=${isEdit ? 'update' : 'create'}`;
+      let res = await apiCall('POST', url, { ...this.contactForm, account_id: this.accountForm.id });
+      if (!isEdit && !res.success && res.data?.existing_contact) {
+        const e = res.data.existing_contact;
+        const ok = await this.showConfirm('มีผู้ติดต่อชื่อนี้แล้ว', `"${e.full_name}"${e.phone ? ' (' + this.formatPhone(e.phone) + ')' : ''} อยู่ในลูกค้านี้แล้ว — ถ้าเป็นคนละคน กด "เพิ่มอีกคน"`, 'เพิ่มอีกคน');
+        if (!ok) return;
+        res = await apiCall('POST', url, { ...this.contactForm, account_id: this.accountForm.id, confirm_new_contact: 1 });
+      }
       if (res.success) {
         await this.loadAccountDetail(this.accountForm.id);   // โหลดใหม่ทั้งชุด ให้ข้อมูล "อยู่ในดีล" ของคนอื่นยังอยู่
         this.showContactForm = false;

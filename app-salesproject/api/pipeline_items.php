@@ -581,39 +581,22 @@ function createItem(PDO $db, array $user, array $body): void {
 // ใช้ร่วมกันทั้งตอนสร้างดีลใหม่ (createItem, บังคับกรอก) และแก้ไขดีลเก่า (updateItem, ไม่บังคับ — เรียกเฉพาะเมื่อมีข้อมูลส่งมา)
 // $userId = ผู้ใช้ที่ login — บันทึกเป็นผู้สร้าง/ผู้แก้ไขของผู้ติดต่อที่สร้างใหม่ (ยืนยันจากผู้ใช้ 2026-09-26)
 // ตรวจผู้ติดต่อใหม่ในดีลก่อนบันทึกอะไรลง DB — ชื่อ/เบอร์ครบ, รูปแบบเบอร์ถูก, เบอร์ไม่ชนคนเดิมที่ชื่อต่างกัน (ตอบ error ทันที)
+// เบอร์ไม่บังคับ + คนละชื่อใช้เบอร์เดียวกันได้ (ยืนยันจากผู้ใช้ 2026-10-23) — ตรวจแค่ชื่อครบ + รูปแบบเบอร์ถ้าใส่มา
 function precheckDealContacts(PDO $db, ?int $accountId, array $list): void {
-    $chk = $db->prepare('SELECT full_name FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
     foreach ($list as $item) {
         if (!empty($item['contact_id'])) continue;
         $nc = $item['new_contact'] ?? [];
-        $name = trim($nc['full_name'] ?? ''); $phone = trim($nc['phone'] ?? '');
-        if ($name === '')  jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');
-        if ($phone === '') jsonError(400, 'กรุณากรอกเบอร์โทรผู้ติดต่อ');
-        $phone = normalizePhone($phone, 'เบอร์โทรผู้ติดต่อ');
-        if (!$accountId) continue;
-        $chk->execute([$accountId, $phone]);
-        $owner = $chk->fetchColumn();
-        if ($owner !== false && contactNameKey($owner) !== contactNameKey($name)) {
-            jsonError(409, 'เบอร์ ' . $phone . ' เป็นของผู้ติดต่อ "' . $owner . '" อยู่แล้ว — ถ้าเป็นคนเดียวกันให้เลือกคนเดิม ถ้าไม่ใช่ให้แก้เบอร์');
-        }
+        if (trim($nc['full_name'] ?? '') === '') jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');
+        normalizePhone(trim($nc['phone'] ?? ''), 'เบอร์โทรผู้ติดต่อ');
     }
 }
 
+// ผู้ติดต่อใหม่ที่ส่งมากับดีล (รูปแบบเดิม — ฟอร์มปัจจุบันบันทึกผ่าน api/contacts.php ก่อนแล้วส่ง contact_id)
+// คนเดิม = ชื่อเดียวกัน (ตัดคำนำหน้า) ในลูกค้าเดียวกัน → ใช้คนเดิม / เบอร์ไม่บังคับ และไม่ใช้ระบุตัวคนแล้ว (ยืนยันจากผู้ใช้ 2026-10-23)
 function upsertDealContact(PDO $db, ?int $accountId, string $contactName, string $contactPhone, string $contactPosition, ?int $userId = null): ?int {
-    if (!$accountId || !$contactName || !$contactPhone) return null;
-    // เบอร์ตัวเลขล้วน + เทียบกับข้อมูลเก่าแบบตัดขีดออก (080-151-6361 = 0801516361 เป็นคนเดิม) — includes/phone_helper.php (2026-09-28)
+    if (!$accountId || !$contactName) return null;
     $contactPhone = normalizePhone($contactPhone, 'เบอร์โทรผู้ติดต่อ');
-    $existingContact = $db->prepare('SELECT id, full_name FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
-    $existingContact->execute([$accountId, $contactPhone]);
-    $existing = $existingContact->fetch();
-    if ($existing) {
-        // เบอร์ตรงคนเดิม: ชื่อตรงกัน = คนเดิม ใช้คนเดิม / ชื่อต่างกัน = ห้ามแทนเงียบๆ (เคยแทน B ด้วย A โดยผู้ใช้ไม่รู้ — 2026-09-29)
-        // ให้หน้าเว็บถามผู้ใช้: เลือกคนเดิม (ส่ง contact_id) หรือแก้เบอร์
-        if (contactNameKey($existing['full_name']) !== contactNameKey($contactName)) {
-            jsonError(409, 'เบอร์ ' . $contactPhone . ' เป็นของผู้ติดต่อ "' . $existing['full_name'] . '" อยู่แล้ว — ถ้าเป็นคนเดียวกันให้เลือกคนเดิม ถ้าไม่ใช่ให้แก้เบอร์');
-        }
-        return (int)$existing['id'];
-    }
+    if ($existing = findContactByName($db, $accountId, $contactName)) return (int)$existing['id'];
     $db->prepare('INSERT INTO contacts (account_id, full_name, phone, position, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)')
        ->execute([$accountId, $contactName, $contactPhone, $contactPosition ?: null, $userId, $userId]);
     return (int)$db->lastInsertId();
@@ -666,8 +649,7 @@ function saveDealContacts(PDO $db, int $itemId, ?string $projectCode, int $accou
         } else {
             $nc = $item['new_contact'] ?? [];
             $name = trim($nc['full_name'] ?? ''); $phone = trim($nc['phone'] ?? '');
-            if ($name === '')  jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');
-            if ($phone === '') jsonError(400, 'กรุณากรอกเบอร์โทรผู้ติดต่อ');
+            if ($name === '')  jsonError(400, 'กรุณากรอกชื่อผู้ติดต่อ');   // เบอร์ไม่บังคับ (2026-10-23)
             $cid = upsertDealContact($db, $accountId, $name, $phone, trim($nc['position'] ?? ''), (int)$user['id']);
         }
         $role = ($item['contact_role_id'] ?? '') !== '' ? (string)$item['contact_role_id'] : null;
@@ -742,11 +724,14 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
 
     // Ownership check
-    $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id, source_type, announcement_id, expected_delivery_date, delivered_date FROM pipeline_items WHERE id = ?");
+    $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id, source_type, announcement_id, expected_delivery_date, delivered_date,
+                                  value, win_probability, expected_close FROM pipeline_items WHERE id = ?");
     $owner->execute([$id]);
     $row = $owner->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
     if ($user['role'] === 'sale' && $row['assigned_to'] != $user['id']) jsonError(403, 'ไม่มีสิทธิ์');
+    // กันบันทึกทับ: ฟอร์มส่งค่าตอนเปิดหน้าต่างมา (_base) — มีช่องไหนในฐานข้อมูลเปลี่ยนไปแล้ว ตอบ 409 ไม่บันทึก (2026-10-30)
+    if (isset($body['_base']) && is_array($body['_base'])) guardDealConflict($db, $id, $body['_base']);
 
     $allowed = ['stage','priority','segment','product_category','brand','fee_structure',
                 'specialization','value','win_probability','expected_close',
@@ -854,6 +839,8 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     // เลื่อนวันคาดส่งมอบ (มีค่าเดิมแล้วเปลี่ยน) → บันทึกประวัติ ฝ่ายจัดส่งเห็นว่างานไหนเลื่อน (Field History — 2026-10-07)
     logExpectedDeliveryChange($db, $id, $row['project_code'], (int)$user['id'], $row['expected_delivery_date'], $newExpectedDelivery, $newStage ?? $row['stage']);
     logDeliveredDateChange($db, $id, $row['project_code'], (int)$user['id'], $row['delivered_date'], $newDelivered, $newStage ?? $row['stage']);
+    // ช่องที่กระทบยอดคาดการณ์ (มูลค่า / โอกาสปิดดีล / วันคาดปิดดีล) แก้แล้วบันทึกประวัติ (Field History Tracking — ยืนยันจากผู้ใช้ 2026-10-30)
+    logDealKeyFieldChanges($db, $id, $row, $body, (int)$user['id'], $newStage ?? $row['stage']);
     // แก้คู่แข่งเฉพาะเมื่อส่ง competitor_ids มา (ปุ่มเลื่อนขั้น/ปิดดีลที่ส่งแค่ stage จะไม่ล้างคู่แข่งทิ้ง)
     if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, $id, $row['project_code'], $user, $body['competitor_ids']);
 
@@ -1054,6 +1041,72 @@ function buildWhere(array $user, bool $includePeriod = true): array {
     }
     $where = $conds ? 'WHERE ' . implode(' AND ', $conds) : '';
     return [$where, $params];
+}
+
+/**
+ * ประวัติการแก้ช่องสำคัญของดีล (Field History Tracking แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-30 แบบ ข)
+ * มูลค่า / โอกาสปิดดีล / วันคาดปิดดีล — 3 ช่องที่ใช้คำนวณยอดคาดการณ์ (Weighted Pipeline) / ค่าเปลี่ยนจริงเท่านั้น (ส่งค่าเดิมมาไม่บันทึก)
+ * ที่มา: Sale แก้มูลค่าให้ตรงใบเสนอราคาแล้วไม่มีประวัติ (PJ-261027-002) / ระบบเปลี่ยนมูลค่าตามใบ บันทึกแยกใน applyQuoteIssued อยู่แล้ว
+ * 1 ช่อง = 1 แถวประวัติ (สถานะเดิม → เดิม + หมายเหตุ "แก้… X → Y")
+ */
+function logDealKeyFieldChanges(PDO $db, int $id, array $old, array $body, int $userId, string $stage): void {
+    $notes = [];
+    if (array_key_exists('value', $body)) {
+        $o = $old['value'] !== null ? (float)$old['value'] : null;
+        $n = ($body['value'] === '' || $body['value'] === null) ? null : (float)$body['value'];
+        if (($o === null) !== ($n === null) || ($o !== null && abs($o - $n) >= 0.01)) {
+            $notes[] = 'แก้มูลค่าดีล ' . ($o === null ? '(ว่าง)' : number_format($o, 2)) . ' → ' . ($n === null ? '(ว่าง)' : number_format($n, 2));
+        }
+    }
+    if (array_key_exists('win_probability', $body)) {
+        $o = $old['win_probability'] !== null ? (int)round((float)$old['win_probability'] * 100) : null;
+        $n = ($body['win_probability'] === '' || $body['win_probability'] === null) ? null : (int)round((float)$body['win_probability'] * 100);
+        if ($o !== $n) $notes[] = 'แก้โอกาสปิดดีล ' . ($o === null ? '(ว่าง)' : $o . '%') . ' → ' . ($n === null ? '(ว่าง)' : $n . '%');
+    }
+    if (array_key_exists('expected_close', $body)) {
+        $o = $old['expected_close'] ? substr((string)$old['expected_close'], 0, 10) : null;
+        $n = !empty($body['expected_close']) ? substr((string)$body['expected_close'], 0, 10) : null;
+        if ($o !== $n) $notes[] = 'แก้วันคาดปิดดีล ' . ($o ? thaiShortDate($o) : '(ว่าง)') . ' → ' . ($n ? thaiShortDate($n) : '(ว่าง)');
+    }
+    $ins = $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)');
+    foreach ($notes as $note) $ins->execute([$id, $old['project_code'], $userId, $stage, $stage, $note]);
+}
+
+/**
+ * กันบันทึกทับ (Optimistic Locking แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-10-30)
+ * ที่มา: Sale เปิดหน้าต่างดีลค้างไว้ ธุรการออกใบ (ระบบเปลี่ยนมูลค่า/สถานะ) แล้ว Sale กดบันทึก → ค่าเก่าในฟอร์มทับ (PJ-261027-002)
+ * $base = ค่าตอนเปิดหน้าต่าง (ช่องเดียวกับ SP_LOCK_FIELDS ใน sales-pipeline.html) — ช่องไหนในฐานข้อมูลไม่ตรง = มีคนเปลี่ยนไปแล้ว
+ * ตอบ 409 + conflicts[{field, label, opened, current}] + last_change (ประวัติล่าสุดของดีล) — หน้าเว็บให้โหลดข้อมูลล่าสุดก่อน
+ */
+function guardDealConflict(PDO $db, int $id, array $base): void {
+    $lockFields = ['title' => 'ชื่อโครงการ', 'stage' => 'สถานะ', 'value' => 'มูลค่า', 'win_probability' => 'โอกาสปิดดีล',
+                   'expected_close' => 'วันคาดปิดดีล', 'priority' => 'ความสำคัญ', 'segment' => 'ประเภทลูกค้า', 'product_category' => 'หมวดสินค้า',
+                   'brand' => 'แบรนด์', 'fee_structure' => 'Fee Structure', 'specialization' => 'กลุ่มลูกค้า', 'next_action' => 'สิ่งที่ต้องทำต่อ',
+                   'next_followup_date' => 'วันนัดติดตาม', 'notes' => 'หมายเหตุ', 'deal_type_id' => 'ประเภทดีล', 'assigned_to' => 'Sale', 'account_id' => 'ลูกค้า'];
+    $st = $db->prepare('SELECT ' . implode(', ', array_keys($lockFields)) . ' FROM pipeline_items WHERE id = ?');
+    $st->execute([$id]);
+    $cur = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$cur) return;
+    // เทียบแบบไม่สนรูปแบบ: ตัวเลขเทียบค่า (300000 = "300000.00") / ว่าง = null / วันที่ตัดเวลา
+    $norm = function (string $f, $v): string {
+        if ($v === null || $v === '') return '';
+        if (in_array($f, ['value', 'win_probability'], true)) return number_format((float)$v, 4, '.', '');
+        if (in_array($f, ['expected_close', 'next_followup_date'], true)) return substr((string)$v, 0, 10);
+        return trim((string)$v);
+    };
+    $conflicts = [];
+    foreach ($lockFields as $f => $label) {
+        if (!array_key_exists($f, $base)) continue;
+        if ($norm($f, $base[$f]) !== $norm($f, $cur[$f])) $conflicts[] = ['field' => $f, 'label' => $label, 'opened' => $base[$f], 'current' => $cur[$f]];
+    }
+    if (!$conflicts) return;
+    $h = $db->prepare('SELECT h.changed_at, h.note, u.full_name AS changed_by_name FROM pipeline_item_history h
+                       LEFT JOIN users u ON u.id = h.changed_by WHERE h.pipeline_item_id = ? ORDER BY h.changed_at DESC, h.id DESC LIMIT 1');
+    $h->execute([$id]);
+    http_response_code(409);
+    echo json_encode(['success' => false, 'message' => 'ดีลนี้มีการเปลี่ยนแปลงหลังคุณเปิดหน้าต่าง — โหลดข้อมูลล่าสุดก่อนบันทึก',
+                      'data' => ['conflicts' => $conflicts, 'last_change' => $h->fetch(PDO::FETCH_ASSOC) ?: null]], JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 function jsonError(int $code, string $msg): never {

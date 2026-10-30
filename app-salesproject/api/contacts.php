@@ -44,23 +44,16 @@ function createContact(PDO $db, array $user): void {
     if (!$accountId) jsonResponse(false, null, 'กรุณาระบุ account_id', 400);
     if ($fullName === '') jsonResponse(false, null, 'กรุณาระบุชื่อผู้ติดต่อ', 400);
     // เบอร์เก็บตัวเลขล้วน 1 ช่อง = 1 เบอร์ (includes/phone_helper.php — 2026-09-28)
+    // เบอร์ไม่บังคับ / ใส่เบอร์บ้าน-สำนักงาน (02…) ได้ / ผู้ติดต่อคนละชื่อในลูกค้าเดียวกันใช้เบอร์เดียวกันได้ (ยืนยันจากผู้ใช้ 2026-10-23)
     $phone = normalizePhone($body['phone'] ?? '', 'เบอร์โทร');
-    if ($phone === null) jsonResponse(false, null, 'กรุณาระบุเบอร์โทร', 400);
     $officePhone = normalizePhone($body['office_phone'] ?? '', 'เบอร์สำนักงาน');
     $officeExt   = normalizePhoneExt($body['office_phone_ext'] ?? '', 'เบอร์ต่อ');
 
-    // ผู้ติดต่อซ้ำ (เบอร์เดียวกันในลูกค้าเดียวกัน — เทียบตัวเลขล้วน) 2026-09-29:
-    //   ชื่อตรงกัน (ตัดคำนำหน้า) = คนเดิม → ไม่สร้างซ้ำ คืนคนเดิม (existing = true)
-    //   ชื่อต่างกัน → 409 + data.existing_contact ให้หน้าเว็บถาม "ใช้คนเดิมแทน" หรือแก้เบอร์ — ไม่แทนเงียบๆ
-    $dup = $db->prepare('SELECT id, full_name, phone FROM contacts WHERE account_id = ? AND ' . phoneDigitsSql('phone') . ' = ? LIMIT 1');
-    $dup->execute([$accountId, $phone]);
-    $existing = $dup->fetch();
-    if ($existing) {
-        if (contactNameKey($existing['full_name']) === contactNameKey($fullName)) {
-            jsonResponse(true, ['id' => (int)$existing['id'], 'existing' => true], 'มีผู้ติดต่อคนนี้อยู่แล้ว (เบอร์เดียวกัน) — ใช้คนเดิม');
-        }
+    // ผู้ติดต่อซ้ำ = ลูกค้าเดียวกัน + ชื่อเดียวกัน (ตัดคำนำหน้า — contactNameKey) แทนการดูเบอร์แบบเดิม (2026-10-23)
+    //   → 409 + data.existing_contact ให้หน้าเว็บถาม "ใช้คนเดิม" หรือ "คนละคน เพิ่มใหม่" (ส่งซ้ำพร้อม confirm_new_contact)
+    if (empty($body['confirm_new_contact']) && ($existing = findContactByName($db, $accountId, $fullName))) {
         jsonResponse(false, ['existing_contact' => ['id' => (int)$existing['id'], 'full_name' => $existing['full_name'], 'phone' => $existing['phone']]],
-            'เบอร์ ' . $phone . ' เป็นของผู้ติดต่อ "' . $existing['full_name'] . '" อยู่แล้ว — ถ้าเป็นคนเดียวกันให้ใช้คนเดิม ถ้าไม่ใช่ให้แก้เบอร์', 409);
+            'มีผู้ติดต่อชื่อ "' . $existing['full_name'] . '" ในลูกค้านี้อยู่แล้ว — ถ้าเป็นคนเดียวกันให้ใช้คนเดิม', 409);
     }
 
     // ผู้สร้าง/ผู้แก้ไข = ผู้ใช้ที่ login — กฎการสร้าง Database ข้อ 1 (ยืนยันจากผู้ใช้ 2026-09-26)
@@ -96,8 +89,7 @@ function updateContact(PDO $db, array $user): void {
     if (!$oldRow) jsonResponse(false, null, 'ไม่พบผู้ติดต่อ', 404);
 
     // ตรวจรูปแบบเฉพาะเบอร์ที่แก้ — เบอร์เก่าที่ยังไม่ได้แก้ไม่ขวางการแก้ชื่อ/ตำแหน่ง
-    $phone = phoneForUpdate($body['phone'] ?? '', $oldRow['phone'], 'เบอร์โทร');
-    if ($phone === null) jsonResponse(false, null, 'กรุณาระบุเบอร์โทร', 400);
+    $phone = phoneForUpdate($body['phone'] ?? '', $oldRow['phone'], 'เบอร์โทร');   // ไม่บังคับ (2026-10-23)
     $officePhone = phoneForUpdate($body['office_phone'] ?? '', $oldRow['office_phone'], 'เบอร์สำนักงาน');
     $officeExt   = normalizePhoneExt($body['office_phone_ext'] ?? '', 'เบอร์ต่อ');
 
