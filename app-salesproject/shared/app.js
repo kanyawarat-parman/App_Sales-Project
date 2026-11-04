@@ -76,6 +76,7 @@ const PAGE_LABELS = {
   'competitors.html': 'คู่แข่ง',
   'win-loss-reasons.html': 'เหตุผลปิดงาน',
   'usage-report.html': 'การใช้งานระบบ',
+  'meeting-topics.html': 'ระบบจัดการการประชุม (บันทึกวาระและมติ / งานที่ต้องติดตาม)',
   'delivery-forecast.html': 'คาดการณ์ส่งมอบ',
   'users.html': 'ผู้ใช้งาน',
   'notification-settings.html': 'ตั้งค่าการแจ้งเตือน',
@@ -607,6 +608,16 @@ const AppNav = {
         // ตรวจคุณภาพข้อมูล (Data Quality — ยืนยันจากผู้ใช้ 2026-10-30) — ทุก role ในหมวดนี้ / Sale เห็นเฉพาะดีลของตัวเอง (API บังคับ)
         g.push({ href:'data-quality.html', page:'data-quality', label:'ตรวจคุณภาพข้อมูล', icon:'data_quality' });
 
+        // หมวดระบบจัดการการประชุม (Meeting management + Action item tracking — ยืนยันจากผู้ใช้ 2026-11-03) — admin เท่านั้น
+        // ชื่อกลาง ไม่ผูกกับทีมหรือระบบงานขาย เพราะอนาคตอาจแยกเป็นระบบประชุมกลาง
+        // หน้าเดียวกัน (meeting-topics.html) แยกมุมมองด้วย ?view= : บันทึกวาระและมติ = ใช้วันประชุม / งานที่ต้องติดตาม = อัปเดตระหว่างสัปดาห์
+        if (this.isAdmin) {
+          g.push({ type:'section', label:'ระบบจัดการการประชุม' });
+          g.push({ href:'meeting-topics.html?view=meeting', page:'meeting-minutes', label:'บันทึกวาระและมติ', icon:'meeting_topics' });
+          g.push({ href:'meeting-topics.html?view=work', page:'meeting-actions', label:'งานที่ต้องติดตาม', icon:'meeting_actions' });
+          // ไทม์ไลน์ = แท็บในงานที่ต้องติดตาม ไม่ใช่เมนูแยก (ข้อมูลชุดเดียวกันคนละมุมมอง — ยืนยันจากผู้ใช้ 2026-11-03)
+        }
+
         g.push({ type:'section', label:'วิเคราะห์' });
         // เดิมชื่อ "รายงานวิเคราะห์" — เปลี่ยนให้บอกเนื้อหา + admin เห็นด้วย (ธุรการไม่ต้อง) (ยืนยันจากผู้ใช้ 2026-10-10)
         if (this.isManager || this.isSale || this.isAdmin || this.isViewer) {
@@ -742,6 +753,8 @@ const AppNav = {
         accounts:       '<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>',
         analytics:      '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
         // ตรวจคุณภาพข้อมูล — โล่ + เครื่องหมายถูก (2026-10-30)
+        meeting_topics: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+        meeting_actions: '<polyline points="4 6 6 8 9 5"/><polyline points="4 13 6 15 9 12"/><line x1="12" y1="7" x2="20" y2="7"/><line x1="12" y1="14" x2="20" y2="14"/><line x1="4" y1="20" x2="20" y2="20"/>',
         data_quality:   '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
         // การใช้งานระบบ — คน + เครื่องหมายถูก (เดิมใช้ analytics ซ้ำกับยอดขายและ Pipeline — 2026-10-10)
         usage:          '<path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>',

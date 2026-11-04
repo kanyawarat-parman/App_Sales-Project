@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>รายงานการประชุม</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<!-- รายงานการประชุมแบบอ่านอย่างเดียว เปิดจากลิงก์แชร์ ไม่ต้อง login (ยืนยันจากผู้ใช้ 2026-11-04)
+     ข้อมูลจาก api/meeting_view.php (GET อย่างเดียว) — ไม่มีเมนู ไม่มีช่องกรอก ไม่มีปุ่มแก้ไข / หน้าตาเดียวกับหน้าต่างสรุปการประชุมใน meeting-topics.html -->
+<div id="app" class="min-h-screen flex flex-col">
+  <header class="bg-white border-b border-slate-100 px-4 py-3 shadow-sm">
+    <div class="max-w-[880px] mx-auto flex items-center gap-2">
+      <span class="font-bold text-slate-700">{{ brand }}</span>
+      <span class="ml-auto text-xs font-semibold rounded-full px-2.5 py-0.5 bg-slate-100 text-slate-600">ดูอย่างเดียว</span>
+    </div>
+  </header>
+
+  <main class="flex-1 w-full max-w-[880px] mx-auto px-4 py-5">
+    <div v-if="loading" class="py-16 flex justify-center"><div class="spinner w-12 h-12"></div></div>
+    <div v-else-if="error" class="mt-10 rounded-2xl bg-white ring-1 ring-slate-200 px-6 py-10 text-center text-slate-600">{{ error }}</div>
+
+    <article v-else class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm px-5 sm:px-8 py-6 space-y-5 text-slate-700 leading-relaxed">
+      <header class="text-center">
+        <div class="text-xl font-bold text-slate-800">รายงานการประชุม<template v-if="meeting.title"> {{ meeting.title }}</template></div>
+        <div class="text-sm text-slate-500">ครั้งที่ {{ meeting.meeting_no }}/{{ Number(meeting.meeting_date.slice(0, 4)) + 543 }}</div>
+      </header>
+      <dl class="m-0 grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
+        <dt class="text-slate-500">เมื่อ</dt><dd class="m-0">{{ longThaiDate(meeting.meeting_date) }}</dd>
+        <template v-if="timeRange"><dt class="text-slate-500">เวลา</dt><dd class="m-0">{{ timeRange }}</dd></template>
+        <template v-if="meeting.location"><dt class="text-slate-500">ณ</dt><dd class="m-0">{{ meeting.location }}</dd></template>
+        <template v-if="roleNames('chair')"><dt class="text-slate-500">ประธาน</dt><dd class="m-0">{{ roleNames('chair') }}</dd></template>
+        <template v-if="roleNames('secretary')"><dt class="text-slate-500">ผู้จดรายงาน</dt><dd class="m-0">{{ roleNames('secretary') }}</dd></template>
+      </dl>
+
+      <section v-for="g in attendeeGroups" :key="g.key" class="border-t border-slate-100 pt-3">
+        <div class="font-bold text-slate-800 mb-1">{{ g.title }} ({{ g.list.length }} คน)</div>
+        <ol class="m-0 pl-6 list-decimal sm:columns-2 gap-8 text-sm">
+          <li v-for="(a, i) in g.list" :key="i" class="break-inside-avoid">{{ a.attendee_name }}<span v-if="a.note" class="text-slate-500"> — {{ a.note }}</span></li>
+        </ol>
+      </section>
+
+      <section class="border-t border-slate-100 pt-3">
+        <div class="font-bold text-slate-800 mb-1">ภาพรวม</div>
+        <div v-for="g in groups" :key="g.key" class="text-sm">
+          {{ g.title }} <b>{{ g.topics.length }}</b> เรื่อง<template v-if="g.counts.length">: {{ g.counts.map(c => c.label + ' ' + c.count).join(' · ') }}</template>
+        </div>
+      </section>
+
+      <section v-for="g in groups.filter(x => x.topics.length)" :key="'s' + g.key" class="border-t border-slate-100 pt-3">
+        <div class="font-bold text-slate-800 mb-2">{{ g.title }}</div>
+        <div v-for="(t, i) in g.topics" :key="i" class="rounded-lg ring-1 ring-slate-200 px-4 py-3 mb-2.5">
+          <div class="font-semibold text-slate-800">{{ topicLabel(t) }} {{ t.title }}</div>
+          <div class="text-sm text-slate-500 mt-0.5">
+            สถานะ: <span v-if="t.status_before && t.status_before !== t.status">{{ statusOf(t.status_before).label }} → </span><span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(t.status).cls">{{ statusOf(t.status).label }}</span>
+            <template v-if="ownerText(t)"> · ผู้รับผิดชอบ: {{ ownerText(t) }}</template>
+          </div>
+          <template v-if="!t.is_new && (t.note || '').trim()">
+            <div class="text-xs font-bold text-slate-500 mt-2.5 mb-0.5">ความคืบหน้า</div>
+            <div class="text-sm text-slate-700 whitespace-pre-wrap" v-html="mentionHtml(t.note.trim())"></div>
+          </template>
+          <template v-if="(t.decision || '').trim()">
+            <div class="text-xs font-bold text-slate-500 mt-2.5 mb-0.5">มติที่ประชุม</div>
+            <div class="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-950 whitespace-pre-wrap" v-html="mentionHtml(t.decision.trim())"></div>
+          </template>
+        </div>
+      </section>
+
+      <section v-if="owners.length" class="border-t border-slate-100 pt-3">
+        <div class="font-bold text-slate-800 mb-1">งานที่ต้องดำเนินการต่อ</div>
+        <table class="w-full text-sm border-collapse">
+          <thead><tr class="text-left text-xs text-slate-500"><th class="py-1.5 pr-3 font-semibold w-2/5">ผู้รับผิดชอบ</th><th class="py-1.5 font-semibold">เรื่อง</th></tr></thead>
+          <tbody><tr v-for="o in owners" :key="o.name" class="border-t border-slate-100 align-top"><td class="py-1.5 pr-3">{{ o.name }}</td><td class="py-1.5">{{ o.topics.map(t => topicLabel(t)).join(', ') }}</td></tr></tbody>
+        </table>
+      </section>
+
+      <section v-if="meeting.next_meeting_date || meeting.end_time" class="border-t border-slate-100 pt-3 text-sm space-y-1">
+        <div v-if="meeting.next_meeting_date"><span class="font-bold text-slate-800">กำหนดประชุมครั้งต่อไป (เบื้องต้น):</span> {{ nextMeetingText }}</div>
+        <div v-if="meeting.end_time"><span class="font-bold text-slate-800">เลิกประชุมเวลา</span> {{ timeLabel(meeting.end_time) }} น.</div>
+      </section>
+
+      <footer v-if="roleNames('secretary') || roleNames('chair')" class="grid grid-cols-2 gap-6 text-center text-sm pt-6">
+        <div v-if="roleNames('secretary')"><div class="border-t border-slate-300 mx-6 mb-1 mt-6"></div>{{ roleNames('secretary') }}<div class="text-slate-500">ผู้จดรายงานการประชุม</div></div>
+        <div v-if="roleNames('chair')" :class="roleNames('secretary') ? '' : 'col-start-2'"><div class="border-t border-slate-300 mx-6 mb-1 mt-6"></div>{{ roleNames('chair') }}<div class="text-slate-500">ประธาน / ผู้ตรวจรายงานการประชุม</div></div>
+      </footer>
+    </article>
+  </main>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=103"></script>
+<script>
+// ป้ายสถานะ / ทีม / การเข้าร่วม — ต้องตรงกับ meeting-topics.html
+const STATUSES = {
+  open:   { label: 'รอดำเนินการ',   cls: 'bg-amber-100 text-amber-800' },
+  doing:  { label: 'กำลังทำ',       cls: 'bg-sky-100 text-sky-800' },
+  host:   { label: 'รอขึ้นระบบจริง', cls: 'bg-violet-100 text-violet-800' },
+  ask:    { label: 'รอตัดสินใจ',    cls: 'bg-rose-100 text-rose-800' },
+  done:   { label: 'เสร็จแล้ว',     cls: 'bg-emerald-100 text-emerald-800' },
+  agreed: { label: 'ตกลงแล้ว ไม่ต้องดำเนินการ', cls: 'bg-teal-100 text-teal-800' },
+};
+const STATUS_ORDER = ['doing', 'open', 'host', 'ask', 'done', 'agreed'];
+const FINISHED = ['done', 'agreed'];
+const TEAMS = { sale: 'ทีม Sale', pm: 'Project Manager', dev: 'ทีม Dev', meeting: 'ที่ประชุมลงมติ' };
+const ATTENDANCE = { present: 'มา', excused: 'ลา', absent: 'ไม่มา' };
+const ROLES = { member: '', chair: 'ประธาน', secretary: 'ผู้จดบันทึก' };
+
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      token: new URLSearchParams(window.location.search).get('t') || '',
+      brand: (window.APP_CONFIG && window.APP_CONFIG.app_name) || 'Taiyo Sales Project',
+      loading: true,
+      error: '',
+      meeting: null,
+      attendees: [],
+      topics: [],
+    };
+  },
+  computed: {
+    timeRange() {
+      const m = this.meeting;
+      if (!m.start_time) return m.end_time ? `ถึง ${this.timeLabel(m.end_time)} น.` : '';
+      return m.end_time ? `${this.timeLabel(m.start_time)} – ${this.timeLabel(m.end_time)} น.` : `${this.timeLabel(m.start_time)} น.`;
+    },
+    attendeeGroups() {
+      const note = a => [a.attendance !== 'present' ? ATTENDANCE[a.attendance] : '', ROLES[a.meeting_role] || ''].filter(Boolean).join(' · ');
+      return [
+        { key: 'present', title: 'ผู้มาประชุม', list: this.attendees.filter(a => a.attendance === 'present' && !a.external) },
+        { key: 'absent', title: 'ผู้ไม่มาประชุม', list: this.attendees.filter(a => a.attendance !== 'present') },
+        { key: 'guest', title: 'ผู้เข้าร่วมประชุม', list: this.attendees.filter(a => a.attendance === 'present' && a.external) },
+      ].map(g => ({ ...g, list: g.list.map(a => ({ ...a, note: note(a) })) })).filter(g => g.list.length);
+    },
+    groups() {
+      return [[false, 'ระเบียบวาระที่ 1 เรื่องสืบเนื่องจากครั้งก่อน'], [true, 'ระเบียบวาระที่ 2 เรื่องใหม่ในการประชุมครั้งนี้']].map(([isNew, title]) => {
+        const topics = this.topics.filter(t => t.is_new === isNew).sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+        const counts = STATUS_ORDER.map(k => ({ label: STATUSES[k].label, count: topics.filter(t => t.status === k).length })).filter(c => c.count);
+        return { key: String(isNew), title, topics, counts };
+      });
+    },
+    owners() {
+      const map = {};
+      this.topics.filter(t => !FINISHED.includes(t.status)).forEach(t => {
+        const key = this.ownerText(t) || 'ยังไม่ระบุผู้รับผิดชอบ';
+        (map[key] = map[key] || []).push(t);
+      });
+      return Object.entries(map).map(([name, topics]) => ({ name, topics }));
+    },
+    nextMeetingText() {
+      const m = this.meeting;
+      let text = this.dateLabel(m.next_meeting_date);
+      if (m.next_meeting_time) text += ` เวลา ${this.timeLabel(m.next_meeting_time)} น.`;
+      if (m.next_meeting_note) text += ` · ${m.next_meeting_note}`;
+      return text;
+    },
+  },
+  async mounted() {
+    window.APP_CONFIG_READY?.then(cfg => { if (cfg?.app_name) this.brand = cfg.app_name; });
+    try {
+      const res = await apiCall('GET', 'api/meeting_view.php?action=view&t=' + encodeURIComponent(this.token));
+      if (res.success) {
+        this.meeting = res.data.meeting;
+        this.attendees = res.data.attendees;
+        this.topics = res.data.topics;
+        document.title = 'รายงานการประชุม ' + this.longThaiDate(this.meeting.meeting_date);
+      } else {
+        this.error = res.message || 'ลิงก์นี้หมดอายุ หรือถูกปิดการแชร์แล้ว';
+      }
+    } catch {
+      this.error = 'ลิงก์นี้หมดอายุ หรือถูกปิดการแชร์แล้ว';
+    }
+    this.loading = false;
+  },
+  methods: {
+    statusOf(k) { return STATUSES[k] || { label: k, cls: 'bg-slate-100 text-slate-600' }; },
+    topicLabel(t) { return t.topic_no ? `ข้อ ${t.topic_no}.` : t.topic_code; },
+    ownerText(t) {
+      const team = TEAMS[t.owner_team] || '';
+      const name = (t.owner_name || '').trim();
+      return team && name ? `${team} (${name})` : (team || name);
+    },
+    roleNames(role) { return this.attendees.filter(a => a.meeting_role === role && a.attendance === 'present').map(a => a.attendee_name).join(', '); },
+    timeLabel(t) { return t ? t.slice(0, 5).replace(':', '.') : ''; },
+    dateLabel(iso) {
+      const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+      const d = new Date(iso + 'T00:00:00');
+      return `วัน${days[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear() + 543}`;
+    },
+    longThaiDate(iso) {
+      const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+      const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+      const d = new Date(iso + 'T00:00:00');
+      return `วัน${days[d.getDay()]}ที่ ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+    },
+    // ทำ HTML ให้ปลอดภัยก่อน แล้วทำ @ชื่อ ของผู้เข้าร่วมเป็นตัวหนาสีเขียวเข้ม (เหมือนหน้า admin)
+    mentionHtml(text) {
+      const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      let html = esc(text);
+      this.attendees.map(a => a.attendee_name).sort((a, b) => b.length - a.length).forEach(name => {
+        const safe = esc('@' + name);
+        html = html.split(safe).join(`<span class="font-semibold text-teal-700">${safe}</span>`);
+      });
+      return html;
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

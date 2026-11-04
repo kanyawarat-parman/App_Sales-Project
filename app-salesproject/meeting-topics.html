@@ -1,0 +1,1899 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบจัดการการประชุม</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared/tailwind-config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/styles.css?v=16">
+</head>
+<body class="bg-slate-50 font-sans">
+<div id="app">
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center">
+    <div class="spinner w-12 h-12"></div>
+  </div>
+
+  <template v-else>
+    <!-- หมวดระบบจัดการการประชุม 2 เมนู ใช้หน้านี้หน้าเดียว แยกด้วย ?view= — เมนูซ้ายไฮไลต์ตามมุมมอง (ยืนยันจากผู้ใช้ 2026-11-03) -->
+    <app-nav :user="currentUser" :page="VIEW_INFO[view].page" ref="nav"></app-nav>
+
+    <div class="md:ml-60 min-h-screen flex flex-col">
+      <header class="bg-white border-b border-slate-100 px-5 py-2.5 flex items-center gap-3 shadow-sm min-h-[56px] flex-wrap">
+        <h1 class="text-base font-bold text-slate-700">{{ VIEW_INFO[view].title }}</h1>
+        <!-- งานที่ต้องติดตาม: ข้อมูลชุดเดียวกัน 2 มุมมอง = รายการงาน / ไทม์ไลน์ (แบบ List / Timeline ของ Jira, Asana — ยืนยันจากผู้ใช้ 2026-11-03) -->
+        <div v-if="view === 'work' || view === 'timeline'" role="tablist" aria-label="มุมมองงานที่ต้องติดตาม" class="flex gap-1 bg-slate-100 rounded-xl p-1">
+          <button v-for="tab in [['work', 'รายการงาน'], ['timeline', 'ไทม์ไลน์']]" :key="tab[0]" type="button" role="tab"
+                  :aria-selected="view === tab[0]" @click="switchWorkTab(tab[0])"
+                  class="border-0 rounded-lg px-4 py-1.5 text-sm font-semibold cursor-pointer"
+                  :class="view === tab[0] ? 'bg-white text-teal-800 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'">
+            {{ tab[1] }}
+          </button>
+        </div>
+        <span class="text-sm text-slate-500">{{ VIEW_INFO[view].subtitle }}</span>
+      </header>
+
+      <!-- งานที่ต้องติดตาม (Action items) — รายการแถวสั้น กดแถวขยายเพื่อดูมติและอัปเดต (แบบรายการงาน Jira / Planner — ยืนยันจากผู้ใช้ 2026-11-03)
+           หลังประชุม ผู้รับผิดชอบเปิดมาเจองานจากการประชุมล่าสุดของตัวเอง → ทำ → อัปเดตที่นี่ → ประชุมครั้งถัดไปขึ้นในวาระเรื่องสืบเนื่อง -->
+      <main v-if="view === 'work'" class="flex-1 w-full max-w-[1200px] mx-auto px-4 pb-24 pt-4 md:px-6 space-y-3">
+        <!-- วันนัดประชุมครั้งถัดไป (เบื้องต้น) จากการประชุมล่าสุด — บอกว่าควรอัปเดตงานก่อนวันไหน (ยืนยันจากผู้ใช้ 2026-11-03) -->
+        <div v-if="nextMeetingInfo" class="text-sm text-slate-600">
+          นัดประชุมครั้งถัดไป (เบื้องต้น) <b class="text-slate-800">{{ nextMeetingText(latestMeeting) }}</b>
+          <span class="text-slate-400"> · {{ nextMeetingInfo.daysText }}</span>
+          <span v-if="nextMeetingInfo.pending" class="text-amber-700 font-semibold"> · ยังไม่อัปเดต {{ nextMeetingInfo.pending }} เรื่อง</span>
+        </div>
+        <div class="flex flex-wrap gap-3 items-end">
+          <div>
+            <label for="fMeeting" class="block text-xs font-semibold text-slate-500 mb-1">จากการประชุม</label>
+            <select id="fMeeting" v-model="workFilter.meeting" @change="loadWorkMeetingTopics" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+              <option value="">ทุกครั้ง</option>
+              <option v-for="m in meetings" :key="m.id" :value="m.id">{{ dateLabel(m.meeting_date) }}</option>
+            </select>
+          </div>
+          <div>
+            <label for="fOwner" class="block text-xs font-semibold text-slate-500 mb-1">ผู้ดำเนินการ</label>
+            <select id="fOwner" v-model="workFilter.owner" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+              <option value="">ทุกคน</option>
+              <option v-for="o in workOwners" :key="o" :value="o">{{ o }}</option>
+            </select>
+          </div>
+          <div>
+            <label for="fTeam" class="block text-xs font-semibold text-slate-500 mb-1">ทีม</label>
+            <select id="fTeam" v-model="workFilter.team" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+              <option value="">ทุกทีม</option>
+              <option v-for="(label, key) in teams" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </div>
+          <div>
+            <div class="flex items-center gap-1 mb-1">
+              <label for="fStatus" class="text-xs font-semibold text-slate-500">สถานะ</label>
+              <button type="button" @click="statusHelpOpen = true" aria-label="สถานะแต่ละแบบใช้เมื่อไร" title="สถานะแต่ละแบบใช้เมื่อไร" class="bg-transparent border-0 p-0 cursor-pointer text-sm text-slate-400 hover:text-teal-700 leading-none">ⓘ</button>
+            </div>
+            <select id="fStatus" v-model="workFilter.status" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+              <option value="pending">ยังไม่จบ</option>
+              <option value="">ทั้งหมด</option>
+              <option v-for="(s, key) in statuses" :key="key" :value="key">{{ s.label }}</option>
+            </select>
+          </div>
+          <div class="text-sm text-slate-500 ml-auto">{{ visibleWork.length }} งาน</div>
+        </div>
+        <!-- จำนวนงานตามสถานะ (การประชุม / ผู้ดำเนินการ / ทีมที่เลือก) กดเพื่อกรอง -->
+        <div v-if="workStatusCounts.length" class="flex flex-wrap gap-2 items-center">
+          <button type="button" @click="workFilter.status = 'pending'" class="text-sm font-bold rounded-full px-3 py-1.5 bg-white text-slate-700 border-0 cursor-pointer"
+            :class="workFilter.status === 'pending' ? 'ring-2 ring-teal-600' : 'ring-1 ring-slate-300'">ยังไม่จบ {{ workPendingCount }}</button>
+          <button v-for="s in workStatusCounts" :key="s.key" type="button" @click="workFilter.status = workFilter.status === s.key ? 'pending' : s.key" class="text-sm font-bold rounded-full px-3 py-1.5 border-0 cursor-pointer"
+            :class="[s.cls, workFilter.status === s.key ? 'ring-2 ring-teal-600' : 'ring-1 ring-slate-300']">{{ s.label }} {{ s.count }}</button>
+        </div>
+        <div v-if="workLoading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+        <div v-else-if="!visibleWork.length" class="text-center text-slate-500 py-14">ไม่มีงานในมุมมองนี้</div>
+        <div v-else class="bg-white rounded-2xl ring-1 ring-slate-100 shadow-sm overflow-hidden">
+          <div class="hidden lg:grid grid-cols-[100px_minmax(0,1fr)_110px_160px_170px] gap-3 px-4 py-2 bg-slate-50 text-xs font-semibold text-slate-500">
+            <span>รหัส</span><span>เรื่อง</span><span>จากการประชุม</span><span>อัปเดตล่าสุด</span><span>{{ workPastPeriod ? 'สถานะ (' + shortRange(workPeriod) + ')' : 'สถานะปัจจุบัน' }}</span>
+          </div>
+          <div v-for="t in visibleWork" :key="t.id" :id="'work' + t.id" class="border-t border-slate-100 first:border-t-0 scroll-mt-4">
+            <!-- แถวสั้น — กดเพื่อขยาย / ไม่แสดงหมวด แสดงตามหัวข้อที่พิมพ์ (ยืนยันจากผู้ใช้ 2026-11-03) -->
+            <button type="button" @click="toggleWorkRow(t)" :aria-expanded="workExpanded === t.id"
+              class="w-full text-left grid grid-cols-1 lg:grid-cols-[100px_minmax(0,1fr)_110px_160px_170px] gap-x-3 gap-y-1 px-4 py-3 items-center border-0 cursor-pointer hover:bg-slate-50"
+              :class="workExpanded === t.id ? 'bg-teal-50' : 'bg-transparent'">
+              <span class="font-mono text-xs text-purple-700">{{ t.topic_code }}</span>
+              <span class="font-semibold text-slate-800"><template v-if="t.topic_no">ข้อ {{ t.topic_no }}. </template>{{ t.title }} <span class="text-teal-700">{{ workExpanded === t.id ? '▴' : '▾' }}</span></span>
+              <span class="text-sm text-slate-600"><span class="lg:hidden text-slate-400">จากการประชุม </span>{{ shortDate(t.first_meeting_date) }}</span>
+              <!-- วันที่บันทึกล่าสุดแสดงเสมอ + คำเตือนบรรทัดล่าง เทียบกับการประชุมที่เลือก (ทุกครั้ง = ล่าสุด) (ยืนยันจากผู้ใช้ 2026-11-03) -->
+              <span class="text-sm text-slate-600">
+                <span class="lg:hidden text-slate-400">อัปเดตล่าสุด </span>{{ lastLogDate(t) ? shortDate(lastLogDate(t)) : 'ยังไม่มีบันทึก' }}
+                <!-- ข้อความบันทึกล่าสุด 1 บรรทัด เห็นได้โดยไม่ต้องขยายแถว (ยืนยันจากผู้ใช้ 2026-11-03) -->
+                <span v-if="lastLog(t)" class="text-xs text-slate-500 line-clamp-1 break-all" :title="logPreview(lastLog(t))">{{ logPreview(lastLog(t)) }}</span>
+                <span v-if="needsUpdate(t)" class="block text-xs font-semibold text-amber-700">ยังไม่อัปเดตหลังประชุม {{ shortDayMonth(workCompareMeeting.meeting_date) }}</span>
+              </span>
+              <span class="flex flex-wrap items-center gap-1">
+                <!-- การประชุมที่ผ่านไปแล้ว = สถานะช่วงนั้น / ล่าสุด หรือทุกครั้ง = สถานะปัจจุบัน (ยืนยันจากผู้ใช้ 2026-11-03) -->
+                <span class="text-xs font-bold rounded-full px-2.5 py-1" :class="statusOf(viewStatus(t)).cls">{{ statusOf(viewStatus(t)).label }}</span>
+                <span v-if="periodNoData(t)" class="text-xs text-slate-400">(ไม่มีข้อมูลช่วงนั้น ใช้สถานะปัจจุบัน)</span>
+                <span v-if="hasWorkDraft(t)" class="text-xs font-bold text-amber-700">(ยังไม่บันทึก)</span>
+              </span>
+            </button>
+
+            <!-- ขยาย: มติ + อัปเดต (สถานะ + บันทึกการดำเนินการ บันทึกครั้งเดียว) + ประวัติ -->
+            <div v-if="workExpanded === t.id" class="px-4 pb-4 pt-1 space-y-3 bg-slate-50">
+              <div v-if="t.decision" class="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 px-4 py-3">
+                <div class="text-sm font-bold text-emerald-800 mb-1">มติที่ประชุม (สิ่งที่ต้องทำ)</div>
+                <div :data-decision="t.id" class="text-base leading-loose text-slate-900 whitespace-pre-wrap [text-wrap:pretty]" :class="decisionOpen[t.id] ? '' : 'line-clamp-3'">{{ t.decision }}</div>
+                <!-- "ดูทั้งหมด" เฉพาะมติที่ถูกตัดจริง (ยาวเกิน 3 บรรทัด — 2026-11-03) -->
+                <button v-if="decisionClamped[t.id] || decisionOpen[t.id]" type="button" @click="decisionOpen[t.id] = !decisionOpen[t.id]" class="mt-1 bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700">{{ decisionOpen[t.id] ? 'ย่อ' : 'ดูทั้งหมด' }}</button>
+              </div>
+              <div v-if="t.detail" class="text-sm text-slate-700"><span class="font-semibold text-slate-500">รายละเอียด:</span> <span class="whitespace-pre-wrap">{{ t.detail }}</span></div>
+
+              <!-- บันทึกการดำเนินการ (ใหม่สุดก่อน) กางไว้ตลอด อยู่ก่อนกล่องอัปเดต — เห็นว่าทำอะไรไปแล้วก่อนเขียนเพิ่ม (ยืนยันจากผู้ใช้ 2026-11-03) -->
+              <!-- ไม่แสดงฟอร์มตอนเปิดแถว (ดูเหมือนยังไม่ได้อัปเดต) — กดปุ่มจึงเปิด / ยังไม่มีบันทึกเลยเปิดให้เลย (ยืนยันจากผู้ใช้ 2026-11-03) -->
+              <div class="bg-white rounded-xl ring-1 ring-slate-200 p-3 space-y-2">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <div class="text-sm font-bold text-slate-700 mr-auto">บันทึกการดำเนินการ<template v-if="workPeriod"> ช่วง {{ workPastPeriod ? shortRange(workPeriod) : shortDayMonth(workPeriod.start) + ' – วันนี้' }}</template> ({{ viewLogs(t).length }})</div>
+                  <button v-if="!workFormVisible(t) && !workPastPeriod" type="button" @click="openWorkForm(t)" class="px-3 py-1.5 rounded-lg text-sm font-bold bg-white ring-1 ring-teal-500 text-teal-700 border-0 cursor-pointer">+ เพิ่มบันทึกความคืบหน้า</button>
+                </div>
+                <div v-if="workPastPeriod" class="text-xs text-slate-500">ช่วงนี้ปิดแล้ว (ประชุม {{ shortDate(workPeriod.end) }}) — แก้คำผิดได้ เพิ่มความคืบหน้าใหม่ที่การประชุมล่าสุด</div>
+                <div class="space-y-2">
+                  <div v-if="!viewLogs(t).length" class="text-sm text-slate-500">{{ workPeriod ? 'ยังไม่มีบันทึกในช่วงนี้' : 'ยังไม่มีบันทึก' }}</div>
+                  <div v-for="l in [...viewLogs(t)].reverse()" :key="l.id">
+                    <!-- แก้บันทึกที่ลงไปแล้ว (ยืนยันจากผู้ใช้ 2026-11-02) -->
+                    <div v-if="logEdit && logEdit.id === l.id" class="rounded-xl ring-1 ring-teal-300 bg-white p-3 space-y-2">
+                      <div class="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2">
+                        <div>
+                          <label :for="'ed' + l.id" class="block text-xs font-semibold text-slate-500 mb-1">วันที่</label>
+                          <input :id="'ed' + l.id" v-model="logEdit.log_date" type="date" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                          <div class="text-xs text-slate-500 mt-1">{{ thaiDate(logEdit.log_date) }}</div>
+                        </div>
+                        <div>
+                          <label :for="'ef' + l.id" class="block text-xs font-semibold text-slate-500 mb-1">ไฟล์หรือฟังก์ชันที่แก้</label>
+                          <input :id="'ef' + l.id" v-model="logEdit.files" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                        </div>
+                      </div>
+                      <div>
+                        <label :for="'en' + l.id" class="block text-xs font-semibold text-slate-500 mb-1">แก้ไขอะไร</label>
+                        <textarea :id="'en' + l.id" v-model="logEdit.note" rows="6" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-teal-500"></textarea>
+                      </div>
+                      <div class="flex gap-2">
+                        <button type="button" @click="saveLogEdit(l)" class="px-4 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">บันทึก</button>
+                        <button type="button" @click="logEdit = null" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ยกเลิก</button>
+                      </div>
+                    </div>
+                    <div v-else class="grid grid-cols-[96px_1fr_auto_auto] gap-2 text-sm">
+                      <span class="font-semibold text-slate-500">{{ shortDate(l.log_date) }}</span>
+                      <span class="min-w-0 text-slate-700 whitespace-pre-wrap"><span v-if="l.status_after" class="inline-flex items-center gap-1 mb-0.5 text-xs font-semibold"><span class="rounded-full px-2 py-0.5" :class="statusOf(l.status_before).cls">{{ statusOf(l.status_before).label }}</span>→<span class="rounded-full px-2 py-0.5" :class="statusOf(l.status_after).cls">{{ statusOf(l.status_after).label }}</span></span><span v-if="l.status_after && l.note" class="block"></span>{{ l.note }}<span v-if="l.files" class="block text-xs text-slate-500">ไฟล์: {{ l.files }}</span><span v-if="l.created_by_name" class="block text-xs text-slate-500">บันทึกโดย {{ l.created_by_name }}</span></span>
+                      <button type="button" @click="logEdit = { id: l.id, log_date: l.log_date, note: l.note, files: l.files || '' }" class="text-sm font-semibold text-teal-700 bg-transparent border-0 cursor-pointer self-start">แก้ไข</button>
+                      <button v-if="!workPastPeriod" type="button" @click="deleteLog(l)" class="text-sm text-slate-500 hover:text-rose-700 bg-transparent border-0 cursor-pointer self-start">ลบ</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- สถานะ + ผู้ดำเนินการแบบข้อความ (ฟอร์มปิดอยู่) -->
+              <div v-if="!workFormVisible(t)" class="flex items-center gap-3 flex-wrap text-sm text-slate-700 px-1">
+                <template v-if="workPastPeriod">
+                  <span>สถานะช่วงนี้: <span class="text-xs font-bold rounded-full px-2.5 py-1" :class="statusOf(viewStatus(t)).cls">{{ statusOf(viewStatus(t)).label }}</span></span>
+                  <span>· สถานะปัจจุบัน: <span class="text-xs font-bold rounded-full px-2.5 py-1" :class="statusOf(t.saved_status).cls">{{ statusOf(t.saved_status).label }}</span></span>
+                  <button type="button" @click="showLatestWork" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">ดูการประชุมล่าสุด</button>
+                </template>
+                <template v-else>
+                  <span>สถานะปัจจุบัน: <span class="text-xs font-bold rounded-full px-2.5 py-1" :class="statusOf(t.saved_status).cls">{{ statusOf(t.saved_status).label }}</span></span>
+                  <span v-if="ownerText(t)">· ผู้ดำเนินการ: {{ ownerText(t) }}</span>
+                  <button type="button" @click="openWorkForm(t)" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-300 text-slate-700 border-0 cursor-pointer">เปลี่ยนสถานะ</button>
+                </template>
+                <span v-if="savedText[t.id]" class="text-sm text-slate-500">{{ savedText[t.id] }}</span>
+                <button type="button" @click="goToMeeting(workFilter.meeting || t.first_meeting_id)" class="ml-auto bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">เปิดในบันทึกวาระและมติ ↗</button>
+              </div>
+
+              <div v-else class="bg-white rounded-xl ring-1 ring-teal-300 p-3 space-y-3">
+                <div class="text-sm font-bold text-slate-700">อัปเดตงานนี้</div>
+                <div class="grid grid-cols-1 sm:grid-cols-[200px_160px_minmax(0,1fr)] gap-3">
+                  <div>
+                    <div class="flex items-center gap-1 mb-1">
+                      <label :for="'wst' + t.id" class="text-xs font-semibold text-slate-500">สถานะ</label>
+                      <button type="button" @click="statusHelpOpen = true" aria-label="สถานะแต่ละแบบใช้เมื่อไร" title="สถานะแต่ละแบบใช้เมื่อไร" class="bg-transparent border-0 p-0 cursor-pointer text-sm text-slate-400 hover:text-teal-700 leading-none">ⓘ</button>
+                    </div>
+                    <select :id="'wst' + t.id" v-model="t.status" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                      <option v-for="(s, key) in statuses" :key="key" :value="key">{{ s.label }}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label :for="'ld' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">วันที่ทำ</label>
+                    <input :id="'ld' + t.id" v-model="logDraft(t).log_date" type="date" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                    <!-- ช่องวันที่แสดงตามภาษาเบราว์เซอร์ (เช่น 11/03/2026 = เดือน/วัน ค.ศ.) — บอกวันที่แบบไทยใต้ช่อง (2026-11-03) -->
+                    <div class="text-xs text-slate-500 mt-1">{{ thaiDate(logDraft(t).log_date) }}</div>
+                  </div>
+                  <div>
+                    <label :for="'lf' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">ไฟล์หรือฟังก์ชันที่แก้</label>
+                    <input :id="'lf' + t.id" v-model="logDraft(t).files" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white" placeholder="ไม่บังคับ">
+                  </div>
+                  <div class="sm:col-span-3">
+                    <label :for="'ln' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">แก้ไขอะไร</label>
+                    <textarea :id="'ln' + t.id" v-model="logDraft(t).note" rows="4" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-teal-500" placeholder="พิมพ์สิ่งที่ทำ — เว้นว่างได้ถ้าเปลี่ยนแค่สถานะ"></textarea>
+                  </div>
+                  <div>
+                    <label :for="'wtm' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">ทีมผู้ดำเนินการ</label>
+                    <select :id="'wtm' + t.id" v-model="t.owner_team" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                      <option value="">-- เลือก --</option>
+                      <option v-for="(label, key) in teams" :key="key" :value="key">{{ label }}</option>
+                    </select>
+                  </div>
+                  <div class="sm:col-span-2">
+                    <label :for="'wow' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">ชื่อผู้ดำเนินการ</label>
+                    <input :id="'wow' + t.id" v-model="t.owner_name" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                  </div>
+                </div>
+                <div class="flex items-center gap-3 flex-wrap">
+                  <button type="button" @click="saveWorkUpdate(t)" :disabled="savingId === t.id" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">{{ savingId === t.id ? 'กำลังบันทึก…' : 'บันทึก' }}</button>
+                  <button v-if="t.logs.length" type="button" @click="cancelWorkForm(t)" class="px-4 py-2.5 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ยกเลิก</button>
+                  <span v-if="hasWorkDraft(t)" class="text-sm font-semibold text-amber-700">มีการแก้ไขที่ยังไม่บันทึก</span>
+                  <button type="button" @click="goToMeeting(workFilter.meeting || t.first_meeting_id)" class="ml-auto bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">เปิดในบันทึกวาระและมติ ↗</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- ไทม์ไลน์งาน — แต่ละงานเริ่มเมื่อไร สถานะแต่ละช่วง จบที่ไหน ตามที่บันทึกจริง (ยืนยันจากผู้ใช้ 2026-11-03)
+           คอลัมน์ = วันประชุม (สถานะ ณ ประชุม) สลับกับช่วงระหว่างประชุม (บันทึกของ Dev) / กดชื่อเรื่องดูไทม์ไลน์ละเอียด -->
+      <main v-else-if="view === 'timeline'" class="flex-1 w-full max-w-[1400px] mx-auto px-4 pb-24 pt-4 md:px-6 space-y-3">
+        <div class="flex flex-wrap gap-3 items-end">
+          <div>
+            <label for="tlOwner" class="block text-xs font-semibold text-slate-500 mb-1">ผู้ดำเนินการ</label>
+            <select id="tlOwner" v-model="workFilter.owner" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+              <option value="">ทุกคน</option>
+              <option v-for="o in workOwners" :key="o" :value="o">{{ o }}</option>
+            </select>
+          </div>
+          <div>
+            <label for="tlTeam" class="block text-xs font-semibold text-slate-500 mb-1">ทีม</label>
+            <select id="tlTeam" v-model="workFilter.team" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+              <option value="">ทุกทีม</option>
+              <option v-for="(label, key) in teams" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </div>
+          <!-- ยังไม่จบ / จบแล้ว / ทั้งหมด — เปิดหน้ามาเห็นเฉพาะงานที่ยังไม่จบ (ยืนยันจากผู้ใช้ 2026-11-03) -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button v-for="sc in timelineScopes" :key="sc.key" type="button" @click="timelineFilter.scope = sc.key; timelineOpen = null"
+                    :aria-pressed="timelineFilter.scope === sc.key"
+                    class="rounded-full border px-4 py-2 text-sm font-semibold cursor-pointer"
+                    :class="timelineFilter.scope === sc.key ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-slate-300 text-slate-700 hover:border-teal-500'">
+              {{ sc.label }} {{ sc.count }}
+            </button>
+            <button type="button" @click="statusHelpOpen = true" aria-label="สถานะแต่ละแบบใช้เมื่อไร" title="สถานะแต่ละแบบใช้เมื่อไร" class="bg-transparent border-0 p-0 cursor-pointer text-sm text-slate-400 hover:text-teal-700 leading-none">ⓘ</button>
+          </div>
+        </div>
+
+        <div v-if="workLoading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+        <div v-else-if="!timelineRows.length" class="text-center text-slate-500 py-14">ไม่มีงานในมุมมองนี้</div>
+        <div v-else class="bg-white rounded-2xl ring-1 ring-slate-100 shadow-sm overflow-x-auto">
+          <table class="w-full text-sm border-collapse min-w-[900px]">
+            <thead>
+              <tr class="bg-slate-50 text-xs font-semibold text-slate-500 text-left">
+                <th class="sticky left-0 z-10 bg-slate-50 px-4 py-2 min-w-[240px] w-[260px]">เรื่อง</th>
+                <template v-for="(m, i) in timelineMeetings" :key="m.id">
+                  <th class="px-3 py-2 whitespace-nowrap text-teal-800">ประชุม {{ shortDayMonth(m.meeting_date) }}</th>
+                  <th class="px-3 py-2 whitespace-nowrap">{{ timelineMeetings[i + 1] ? 'ระหว่าง ' + shortDayMonth(m.meeting_date) + ' – ' + shortDayMonth(timelineMeetings[i + 1].meeting_date) : 'หลัง ' + shortDayMonth(m.meeting_date) + ' – วันนี้' }}</th>
+                </template>
+                <!-- กดเรียงตามสถานะ: ▲ → ▼ → ตามวันที่เปิดเรื่อง (ยืนยันจากผู้ใช้ 2026-11-03) -->
+                <th class="px-3 py-2 whitespace-nowrap" :aria-sort="timelineSort === 'asc' ? 'ascending' : timelineSort === 'desc' ? 'descending' : 'none'">
+                  <button type="button" @click="cycleTimelineSort" title="กดเพื่อเรียงตามสถานะ"
+                          class="bg-transparent border-0 p-0 cursor-pointer text-xs font-semibold hover:text-teal-700" :class="timelineSort ? 'text-teal-700' : 'text-slate-500'">
+                    ตอนนี้ {{ timelineSort === 'asc' ? '▲' : timelineSort === 'desc' ? '▼' : '⇅' }}
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- แบ่งกลุ่มเทียบกับการประชุมล่าสุด: เรื่องสืบเนื่อง / เรื่องใหม่ (ยืนยันจากผู้ใช้ 2026-11-03) -->
+              <template v-for="g in timelineGroups" :key="g.key">
+              <tr>
+                <td :colspan="timelineMeetings.length * 2 + 2" class="px-4 pt-4 pb-1.5 bg-white">
+                  <span class="sticky left-4 text-sm font-semibold text-slate-600">{{ g.label }}
+                    <span class="font-normal text-slate-400"> {{ g.rows.length }} เรื่อง · {{ g.hint }}</span>
+                  </span>
+                </td>
+              </tr>
+              <template v-for="row in g.rows" :key="row.t.id">
+                <!-- แถวละบรรทัดเดียว กดที่แถวเพื่อดูรายละเอียด (ยืนยันจากผู้ใช้ 2026-11-03) -->
+                <tr class="border-t border-slate-100 cursor-pointer group" :class="timelineOpen === row.t.id ? 'bg-teal-50' : 'hover:bg-slate-50'" @click="toggleTimeline(row.t)">
+                  <td class="sticky left-0 z-10 px-4 py-2 max-w-[340px]" :class="timelineOpen === row.t.id ? 'bg-teal-50' : 'bg-white group-hover:bg-slate-50'">
+                    <button type="button" @click.stop="toggleTimeline(row.t)" :aria-expanded="timelineOpen === row.t.id" :title="row.t.title"
+                            class="w-full flex items-center gap-1.5 text-left bg-transparent border-0 p-0 cursor-pointer">
+                      <span class="text-teal-700 text-xs shrink-0">{{ timelineOpen === row.t.id ? '▴' : '▾' }}</span>
+                      <span class="font-semibold text-slate-800 truncate"><template v-if="row.t.topic_no">ข้อ {{ row.t.topic_no }}. </template>{{ row.t.title }}</span>
+                    </button>
+                  </td>
+                  <template v-for="c in row.cols" :key="c.m.id">
+                    <!-- วันประชุม -->
+                    <!-- แสดงเฉพาะสถานะหลังประชุม (ก่อน → หลัง ดูในรายละเอียด) -->
+                    <td class="px-3 py-2 whitespace-nowrap bg-slate-50/70">
+                      <span v-if="c.mcell.kind === 'notyet'" class="text-slate-300">·</span>
+                      <span v-else-if="c.mcell.kind === 'none'" class="text-slate-300">—</span>
+                      <span v-else-if="c.mcell.kind === 'nodata'" class="text-xs text-slate-400">ไม่มีข้อมูล</span>
+                      <span v-else class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(c.mcell.after).cls">{{ statusOf(c.mcell.after).label }}</span>
+                    </td>
+                    <!-- ระหว่างประชุม -->
+                    <!-- แสดงแค่จำนวนบันทึก (รายการบันทึกดูในรายละเอียด) -->
+                    <td class="px-3 py-2 whitespace-nowrap">
+                      <span v-if="c.seg.blank"></span>
+                      <span v-else-if="c.seg.logs.length" class="text-xs text-slate-500" :title="'บันทึกความคืบหน้า ' + c.seg.logs.length + ' ครั้ง'">✎ {{ c.seg.logs.length }}</span>
+                      <span v-else-if="c.seg.warn" class="text-xs font-semibold text-amber-700">ยังไม่บันทึก</span>
+                      <span v-else class="text-slate-300">—</span>
+                    </td>
+                  </template>
+                  <!-- ตอนนี้ -->
+                  <td class="px-3 py-2 whitespace-nowrap">
+                    <span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(row.t.saved_status).cls">{{ statusOf(row.t.saved_status).label }}</span>
+                    <span class="text-xs text-slate-500 ml-1">{{ row.duration }}</span>
+                  </td>
+                </tr>
+
+                <!-- ไทม์ไลน์ละเอียด: จุดเขียว = การประชุม / จุดเทา = บันทึกของ Dev -->
+                <tr v-if="timelineOpen === row.t.id" class="bg-slate-50">
+                  <td :colspan="timelineMeetings.length * 2 + 2" class="px-4 py-4">
+                    <div class="sticky left-4 max-w-[860px] space-y-3">
+                      <div class="text-sm text-slate-500"><span class="font-mono text-xs text-purple-700">{{ row.t.topic_code }}</span> · เปิดเรื่อง {{ shortDate(row.t.first_meeting_date) }} · {{ row.duration }} · ผู้ดำเนินการ: {{ ownerText(row.t) || '-' }}</div>
+                      <div class="border-l-2 border-slate-300 ml-2 pl-5 space-y-3">
+                        <div v-for="(e, i) in timelineEvents(row)" :key="i" class="relative">
+                          <span class="absolute -left-[27px] top-1 w-3 h-3 rounded-full ring-2" :class="e.type === 'meeting' ? 'bg-teal-100 ring-teal-600' : 'bg-white ring-slate-400'"></span>
+                          <template v-if="e.type === 'meeting'">
+                            <div class="text-sm">
+                              <b class="text-slate-800">{{ shortDate(e.date) }} ประชุม</b>
+                              <span class="text-slate-500"> · {{ e.cell.isNew ? 'เรื่องใหม่' : 'เรื่องสืบเนื่อง' }} · </span>
+                              <template v-if="e.cell.kind === 'nodata'"><span class="text-slate-400">ไม่มีข้อมูลสถานะ</span></template>
+                              <template v-else>
+                                <template v-if="e.cell.before && e.cell.before !== e.cell.after"><span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(e.cell.before).cls">{{ statusOf(e.cell.before).label }}</span> → </template>
+                                <span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(e.cell.after).cls">{{ statusOf(e.cell.after).label }}</span>
+                              </template>
+                            </div>
+                            <div v-if="e.decision" class="text-sm text-slate-600 whitespace-pre-wrap line-clamp-3"><span class="font-semibold text-slate-500">มติ:</span> {{ e.decision }}</div>
+                            <div v-if="e.cell.note" class="text-sm text-slate-600 whitespace-pre-wrap line-clamp-3"><span class="font-semibold text-slate-500">ความคืบหน้า:</span> {{ e.cell.note }}</div>
+                          </template>
+                          <template v-else>
+                            <div class="text-sm">
+                              <b class="text-slate-800">{{ shortDate(e.date) }} บันทึกการดำเนินการ</b>
+                              <template v-if="e.log.status_after"> · <span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(e.log.status_before).cls">{{ statusOf(e.log.status_before).label }}</span> → <span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(e.log.status_after).cls">{{ statusOf(e.log.status_after).label }}</span></template>
+                            </div>
+                            <div v-if="e.log.note" class="text-sm text-slate-600 whitespace-pre-wrap line-clamp-3">{{ e.log.note }}</div>
+                          </template>
+                        </div>
+                        <div class="relative">
+                          <span class="absolute -left-[27px] top-1 w-3 h-3 rounded-full ring-2 bg-white ring-slate-400"></span>
+                          <div class="text-sm"><b class="text-slate-800">วันนี้</b> · <span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(row.t.saved_status).cls">{{ statusOf(row.t.saved_status).label }}</span>
+                            <span v-if="row.cols.length && row.cols[row.cols.length - 1].seg.warn" class="text-amber-700 font-semibold"> · ยังไม่อัปเดตหลังประชุม {{ shortDayMonth(row.cols[row.cols.length - 1].m.meeting_date) }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="flex gap-4">
+                        <button type="button" @click="goToMeeting(row.t.first_meeting_id)" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">เปิดในบันทึกวาระและมติ ↗</button>
+                        <button type="button" @click="goToWorkCard(row.t)" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">เปิดในงานที่ต้องติดตาม ↗</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </main>
+
+      <!-- การประชุม: ซ้าย = ครั้งประชุม / ขวา = หัวข้อของครั้งนั้น + บันทึกรายครั้ง -->
+      <main v-else-if="view === 'meeting'" class="flex-1 w-full max-w-[1200px] mx-auto px-4 pb-24 pt-5 md:px-6 md:py-6 grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
+        <aside class="space-y-2">
+          <div class="bg-white rounded-2xl ring-1 ring-slate-100 p-3 space-y-2">
+            <label for="newMeetingDate" class="block text-sm font-semibold text-slate-700">สร้างการประชุม</label>
+            <input id="newMeetingDate" v-model="newMeetingDate" type="date" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500 bg-white">
+            <button type="button" @click="createMeeting" class="w-full px-3 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">+ สร้างการประชุม</button>
+          </div>
+          <button v-for="m in meetings" :key="m.id" type="button" @click="openMeeting(m.id)"
+            class="block w-full text-left rounded-xl px-3 py-2.5 cursor-pointer border"
+            :class="m.id === meetingId ? 'bg-teal-50 border-teal-500 text-teal-800' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'">
+            <span class="block text-sm font-bold">{{ dateLabel(m.meeting_date) }}</span>
+            <span class="block text-xs text-slate-500">เรื่องใหม่ {{ m.new_count }} · บันทึก {{ m.note_count }}</span>
+          </button>
+        </aside>
+
+        <section class="min-w-0 space-y-3">
+          <div class="flex flex-wrap gap-2 items-center">
+            <div class="text-lg font-bold text-slate-800 mr-auto">{{ meeting ? dateLabel(meeting.meeting_date) : '' }}</div>
+            <!-- ปุ่มขึ้นเฉพาะการประชุมที่ว่าง — API ตรวจซ้ำ (2026-11-02) -->
+            <button v-if="selectedMeetingEmpty" type="button" @click="deleteMeeting" class="px-3 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-rose-300 text-rose-700 hover:bg-rose-50 border-0 cursor-pointer">ลบการประชุมที่ว่าง</button>
+            <button v-if="!readOnly" type="button" @click="showAdd = !showAdd" class="px-3 py-2 rounded-xl text-sm font-bold bg-white ring-1 ring-teal-500 text-teal-700 border-0 cursor-pointer">+ เพิ่มหัวข้อ</button>
+            <button v-if="topics.length" type="button" @click="summaryOpen = true" class="px-3 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">สรุปการประชุม</button>
+          </div>
+          <!-- หัวรายงานการประชุม: ชื่อการประชุม / เวลา / สถานที่ — อยู่ก่อนผู้เข้าร่วมตามโครงรายงาน (ยืนยันจากผู้ใช้ 2026-11-04) -->
+          <div v-if="meeting" class="-mt-1 text-sm text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <template v-if="meetingInfoText(meeting)">
+              <span class="text-slate-800">{{ meetingInfoText(meeting) }}</span>
+              <button type="button" @click="openInfoDialog" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">✎ แก้</button>
+            </template>
+            <button v-else type="button" @click="openInfoDialog" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">+ ระบุชื่อการประชุม เวลา สถานที่</button>
+          </div>
+          <!-- ผู้เข้าร่วมประชุม (มา / ลา / ไม่มา + ประธาน / ผู้จดบันทึก) เก็บที่การประชุมแต่ละครั้ง (ยืนยันจากผู้ใช้ 2026-11-04) — อยู่ก่อนนัดครั้งถัดไปตามโครงรายงานการประชุม -->
+          <div v-if="meeting" class="-mt-1 text-sm text-slate-600">
+            <!-- บรรทัดเดียว: จำนวน + ประธาน + ผู้จดบันทึก / รายชื่อเต็มกด "ดูรายชื่อ" (ยืนยันจากผู้ใช้ 2026-11-04 แบบ ก — ป้ายสีทุกคนลายตา) -->
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>ผู้เข้าร่วม:</span>
+              <template v-if="attendees.length">
+                <span class="text-slate-800">{{ attendeeCountText }}<template v-for="r in attendeeKeyRoles" :key="r.role"> · {{ r.label }} {{ r.names }}</template></span>
+                <button type="button" @click="attendeesOpen = !attendeesOpen" :aria-expanded="attendeesOpen" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">{{ attendeesOpen ? 'ซ่อนรายชื่อ ▴' : 'ดูรายชื่อ ▾' }}</button>
+              </template>
+              <span v-else class="text-slate-400">ยังไม่ระบุ</span>
+              <button type="button" @click="openAttendeeDialog" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">{{ attendees.length ? 'จัดการ' : '+ เพิ่มผู้เข้าร่วม' }}</button>
+            </div>
+            <div v-if="attendees.length && attendeesOpen" class="mt-1 space-y-0.5 text-slate-600">
+              <div v-for="g in attendeeGroups" :key="g.key"><span class="font-semibold text-slate-500">{{ g.label }} ({{ g.list.length }}):</span> <template v-for="(a, i) in g.list" :key="a.id"><span class="whitespace-nowrap">{{ a.attendee_name }}</span><template v-if="i < g.list.length - 1">, </template></template></div>
+            </div>
+          </div>
+          <!-- นัดประชุมครั้งถัดไป (เบื้องต้น) เป็นข้อมูลของการประชุม — กรอกที่หัวการประชุม สรุปแสดงอย่างเดียว (ยืนยันจากผู้ใช้ 2026-11-03) -->
+          <div v-if="meeting" class="-mt-1 text-sm text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <template v-if="meeting.next_meeting_date">
+              <span>นัดครั้งถัดไป (เบื้องต้น): <b class="text-slate-800">{{ nextMeetingText(meeting) }}</b></span>
+              <button type="button" @click="openNextDialog" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">✎ แก้</button>
+            </template>
+            <button v-else type="button" @click="openNextDialog" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">+ นัดประชุมครั้งถัดไป</button>
+          </div>
+          <!-- การประชุมที่ผ่านไปแล้ว = รายงานที่ปิดแล้ว อ่านอย่างเดียว (ยืนยันจากผู้ใช้ 2026-11-03) — งานระหว่างสัปดาห์อัปเดตที่แท็บงานทั้งหมด -->
+          <div v-if="meeting && !meeting.is_latest" class="rounded-xl px-4 py-3 flex flex-wrap items-center gap-3 text-sm"
+            :class="editingPast ? 'bg-amber-50 ring-1 ring-amber-300 text-amber-800' : 'bg-slate-100 ring-1 ring-slate-200 text-slate-700'">
+            <span v-if="!editingPast" class="mr-auto">การประชุมที่ผ่านไปแล้ว แสดงสถานะและบันทึก ณ วันนั้น (อ่านอย่างเดียว) — อัปเดตงานระหว่างสัปดาห์ที่เมนู <b>งานที่ต้องติดตาม</b></span>
+            <span v-else class="mr-auto font-semibold">กำลังแก้ไขบันทึกของการประชุมที่ผ่านไปแล้ว — กดบันทึกการ์ดจะเปลี่ยนสถานะหลังประชุมของวันนั้น</span>
+            <button v-if="!editingPast" type="button" @click="startEditPast" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-300 text-slate-700 border-0 cursor-pointer">แก้ไขบันทึกการประชุมนี้</button>
+            <button v-else type="button" @click="openMeeting(meetingId)" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-amber-300 text-amber-800 border-0 cursor-pointer">เลิกแก้ไข</button>
+          </div>
+
+          <!-- แท็บวาระ = ระดับหลัก (เรื่องสืบเนื่อง → เรื่องใหม่ → ทำเสร็จ) / สถานะ = ระดับย่อยในแท็บ (ยืนยันจากผู้ใช้ 2026-11-03)
+               หน้าตาแบบแฟ้มเอกสารเดียวกับ AppRecordTabs แต่แสดง (0) และจุดส้มเมื่อมีการ์ดแก้ค้างในแท็บนั้น -->
+          <div v-if="topics.length" class="flex flex-wrap gap-1 border-b border-slate-300" role="tablist">
+            <button v-for="g in meetingTabs" :key="g.section" type="button" role="tab" :aria-selected="meetingTab === g.section" @click="switchMeetingTab(g.section)"
+              class="inline-flex items-center gap-1.5 px-4 py-2.5 text-[.95rem] whitespace-nowrap rounded-t-lg border border-b-0 cursor-pointer -mb-px"
+              :class="meetingTab === g.section ? 'bg-white text-teal-700 font-bold border-slate-300 border-t-[3px] border-t-teal-600' : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-white hover:text-slate-800'">
+              {{ g.label }} ({{ g.count }})
+              <span v-if="g.dirty" class="w-2 h-2 rounded-full bg-amber-500" title="มีการแก้ไขที่ยังไม่บันทึกในแท็บนี้" aria-label="มีการแก้ไขที่ยังไม่บันทึก"></span>
+            </button>
+          </div>
+          <!-- จำนวนเรื่องแยกตามสถานะในแท็บที่เปิด กดเพื่อกรองรายการ (ยืนยันจากผู้ใช้ 2026-11-02) -->
+          <div v-if="tabTopics.length" class="flex flex-wrap gap-2 items-center">
+            <button type="button" @click="topicFilter = ''" class="text-sm font-bold rounded-full px-3 py-1.5 bg-white text-slate-700 border-0 cursor-pointer ring-1"
+              :class="topicFilter ? 'ring-slate-300' : 'ring-2 ring-teal-600'">ทั้งหมด {{ tabTopics.length }} เรื่อง</button>
+            <button v-for="s in statusCounts" :key="s.key" type="button" @click="topicFilter = topicFilter === s.key ? '' : s.key" class="text-sm font-bold rounded-full px-3 py-1.5 border-0 cursor-pointer"
+              :class="[s.cls, topicFilter === s.key ? 'ring-2 ring-teal-600' : 'ring-1 ring-slate-300']">{{ s.label }} {{ s.count }}</button>
+          </div>
+
+          <!-- ไม่มีช่องหมวดแล้ว — หมวดไม่แสดงที่ไหน หัวข้อแสดงตามที่พิมพ์ (ยืนยันจากผู้ใช้ 2026-11-03) -->
+          <form v-if="showAdd && !readOnly" class="bg-white rounded-2xl ring-1 ring-slate-200 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3" @submit.prevent="createTopic">
+            <div>
+              <label for="tNo" class="block text-sm font-semibold text-slate-700 mb-1">ข้อ</label>
+              <input id="tNo" v-model="topicForm.topic_no" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500" placeholder="เช่น 1 หรือ 1.1">
+            </div>
+            <div>
+              <label for="tTeam" class="block text-sm font-semibold text-slate-700 mb-1">ทีมผู้ดำเนินการ</label>
+              <select id="tTeam" v-model="topicForm.owner_team" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                <option value="">-- เลือก --</option>
+                <option v-for="(label, key) in teams" :key="key" :value="key">{{ label }}</option>
+              </select>
+            </div>
+            <div>
+              <label for="tOwner" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อผู้ดำเนินการ</label>
+              <input id="tOwner" v-model="topicForm.owner_name" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500">
+            </div>
+            <div class="sm:col-span-2">
+              <label for="tTitle" class="block text-sm font-semibold text-slate-700 mb-1">เรื่องที่คุย <span class="text-red-500">*</span></label>
+              <input id="tTitle" v-model="topicForm.title" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500">
+            </div>
+            <div class="sm:col-span-2">
+              <label for="tDetail" class="block text-sm font-semibold text-slate-700 mb-1">รายละเอียด</label>
+              <textarea id="tDetail" v-model="topicForm.detail" rows="2" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500"></textarea>
+            </div>
+            <div class="sm:col-span-2">
+              <label for="tDecision" class="block text-sm font-semibold text-slate-700 mb-1">สรุปในที่ประชุม</label>
+              <textarea id="tDecision" v-model="topicForm.decision" rows="2" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500"></textarea>
+            </div>
+            <div class="sm:col-span-2 flex gap-2 justify-end">
+              <button type="button" @click="showAdd = false" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer">ยกเลิก</button>
+              <button type="submit" class="px-4 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">บันทึกหัวข้อ</button>
+            </div>
+          </form>
+
+          <div v-if="loading" class="flex justify-center py-16"><div class="spinner w-10 h-10"></div></div>
+          <div v-else-if="!meetingId" class="text-center text-slate-500 py-14">สร้างการประชุมครั้งแรกจากช่องด้านซ้าย</div>
+          <div v-else-if="!topics.length" class="text-center text-slate-500 py-14">ยังไม่มีหัวข้อ กด "+ เพิ่มหัวข้อ" เพื่อเริ่มบันทึก</div>
+          <div v-else-if="!visibleTopics.length" class="text-center text-slate-500 py-14">ไม่มีเรื่องในแท็บนี้</div>
+
+          <template v-else>
+            <article v-for="t in visibleTopics" :key="t.id" :id="'card' + t.id" class="bg-white rounded-2xl ring-1 ring-slate-100 shadow-sm p-4 space-y-3 scroll-mt-4">
+              <div class="flex gap-2 items-start flex-wrap">
+                <div class="flex-1 min-w-[220px]">
+                  <span class="font-mono text-xs text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ t.topic_code }}</span>
+                  <div v-if="!editingTitle[t.id]" class="text-base font-bold text-slate-800 mt-1"><template v-if="t.topic_no">ข้อ {{ t.topic_no }}. </template>{{ t.title }}</div>
+                  <div v-else class="mt-2">
+                    <label :for="'ti' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">เรื่องที่คุย <span class="text-red-500">*</span></label>
+                    <input :id="'ti' + t.id" v-model="t.title" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500">
+                  </div>
+                </div>
+                <span v-if="t.first_meeting_id !== meetingId" class="text-xs font-semibold text-amber-700 bg-amber-50 rounded-full px-2 py-1">ค้างจาก {{ dateLabel(t.first_meeting_date) }}</span>
+                <span v-else class="text-xs font-semibold text-teal-800 bg-teal-50 ring-1 ring-teal-200 rounded-full px-2 py-1">เรื่องใหม่</span>
+                <!-- สถานะ ณ การประชุมนี้ (เปลี่ยนในครั้งนี้แสดง เดิม → ใหม่) / สถานะปัจจุบันต่างจากวันประชุม แสดง "ตอนนี้" -->
+                <span v-if="statusChanged(t)" class="text-xs font-semibold text-slate-500">{{ statusOf(t.status_before).label }} →</span>
+                <span class="text-xs font-bold rounded-full px-2.5 py-1" :class="statusOf(meetingStatus(t)).cls">{{ statusOf(meetingStatus(t)).label }}</span>
+                <span v-if="t.saved_status !== meetingStatus(t)" class="text-xs font-semibold text-slate-600 bg-slate-100 rounded-full px-2 py-1">ตอนนี้: {{ statusOf(t.saved_status).label }}</span>
+                <span v-if="t.status !== baseStatus(t)" class="text-xs font-bold text-amber-700">→ {{ statusOf(t.status).label }} (ยังไม่บันทึก)</span>
+              </div>
+              <div v-if="editingTitle[t.id]">
+                <label :for="'dt' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">รายละเอียด</label>
+                <textarea :id="'dt' + t.id" v-model="t.detail" rows="4" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500"></textarea>
+              </div>
+              <div v-else-if="t.detail">
+                <div class="text-xs font-bold text-slate-500 mb-0.5">รายละเอียด</div>
+                <div class="text-sm text-slate-700 whitespace-pre-wrap">{{ t.detail }}</div>
+              </div>
+              <!-- แก้ไขชื่อเรื่องและรายละเอียด บันทึกด้วยปุ่มบันทึกของการ์ด (ยืนยันจากผู้ใช้ 2026-11-02) -->
+              <div v-if="!readOnly">
+                <button type="button" @click="editingTitle[t.id] = !editingTitle[t.id]" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-400 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">{{ editingTitle[t.id] ? 'ปิดการแก้ไข' : 'แก้ไขชื่อเรื่องและรายละเอียด' }}</button>
+              </div>
+              <!-- ลิงก์ไปงานนี้ในเมนูงานที่ต้องติดตาม — ลงบันทึกการดำเนินการ / ดูบันทึกทั้งหมด (2026-11-03) -->
+              <button type="button" @click="goToWorkCard(t)" class="bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">ดูในงานที่ต้องติดตาม ↗</button>
+              <!-- หน้าที่เกี่ยวข้อง ซ่อนไว้ก่อน (ผู้ใช้สั่ง 2026-11-03) -->
+              <!-- <topic-pages :topic="t" :readonly="readOnly"></topic-pages> -->
+              <!-- สรุปในที่ประชุม — ใช้อ่านแจ้งในที่ประชุม จึงแสดงเป็นข้อความอ่านง่าย ไม่ใช่ช่องกรอก / กด "แก้ไข" จึงเปิดช่องกรอก (ยืนยันจากผู้ใช้ 2026-11-02) -->
+              <div class="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 px-4 py-3">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-sm font-bold text-emerald-800">สรุปในที่ประชุม</span>
+                  <button v-if="!readOnly" type="button" @click="toggleDecision(t)" class="ml-auto px-2.5 py-1 rounded-lg text-sm font-semibold bg-white ring-1 ring-emerald-300 text-emerald-800 border-0 cursor-pointer">{{ editingDecision[t.id] ? 'เสร็จ' : (t.decision ? 'แก้ไข' : 'เพิ่มสรุป') }}</button>
+                </div>
+                <template v-if="editingDecision[t.id]">
+                  <!-- ชั้นหลังช่องพิมพ์ทาพื้นสีชื่อที่ @แท็ก ให้เห็นตั้งแต่ตอนพิมพ์ (ยืนยันจากผู้ใช้ 2026-11-04) — ตัวอักษร / ระยะ / แถบเลื่อน ต้องตรงกับช่องพิมพ์ -->
+                  <div class="relative rounded-xl bg-white">
+                    <div aria-hidden="true" class="absolute inset-0 overflow-y-scroll border border-transparent rounded-xl px-3 py-2 text-base whitespace-pre-wrap break-words text-transparent pointer-events-none" v-html="mentionBackdrop(t.decision)"></div>
+                    <textarea :id="'de' + t.id" v-model="t.decision" rows="3" aria-label="สรุปในที่ประชุม" class="relative block w-full overflow-y-scroll border border-emerald-300 rounded-xl px-3 py-2 text-base bg-transparent outline-none focus:border-teal-500"
+                              @input="onMentionInput($event, 'de' + t.id); syncBackdrop($event)" @click="onMentionInput($event, 'de' + t.id)" @scroll="syncBackdrop" @keydown="onMentionKeydown($event, t, 'decision', 'de' + t.id)" @blur="closeMention"></textarea>
+                  </div>
+                  <!-- @แท็กผู้เข้าร่วมประชุม — รายชื่อเฉพาะคนที่มาประชุมครั้งนี้ (ยืนยันจากผู้ใช้ 2026-11-04) -->
+                  <div v-if="mention.key === 'de' + t.id" role="listbox" class="mt-1 max-w-sm rounded-xl border border-slate-300 bg-white shadow-lg overflow-hidden">
+                    <div v-for="(n, i) in mention.items" :key="n" role="option" :aria-selected="i === mention.sel" @mousedown.prevent="pickMention(i, t, 'decision', 'de' + t.id)"
+                         class="px-3 py-2 text-sm cursor-pointer" :class="i === mention.sel ? 'bg-teal-50 text-teal-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'">@ {{ n }}</div>
+                    <div v-if="!mention.items.length" class="px-3 py-2 text-sm text-slate-400">ไม่พบชื่อในผู้เข้าร่วมประชุม</div>
+                  </div>
+                  <div v-if="mentionNames.length" class="mt-1 text-xs text-slate-500">พิมพ์ @ เพื่อแท็กผู้เข้าร่วมประชุม</div>
+                </template>
+                <div v-else-if="t.decision" class="text-base sm:text-lg leading-loose text-slate-900 whitespace-pre-wrap [text-wrap:pretty]" v-html="mentionHtml(t.decision)"></div>
+                <div v-else class="text-sm text-slate-500">ยังไม่มีสรุป</div>
+              </div>
+              <div v-if="mentionedIn(t).length" class="text-sm text-slate-600"><span class="font-semibold text-slate-500">เกี่ยวข้อง:</span> {{ mentionedIn(t).join(', ') }}</div>
+              <!-- อ่านอย่างเดียว: สถานะ ณ การประชุมนี้ + ผู้ดำเนินการ (ป้ายด้านบนบอกสถานะตอนนี้ถ้าต่างกัน) -->
+              <div v-if="readOnly" class="text-sm text-slate-700">
+                สถานะ ณ การประชุมนี้: <b>{{ statusChangeText(t) }}</b><template v-if="ownerText(t)"> · ผู้ดำเนินการ: {{ ownerText(t) }}</template>
+              </div>
+              <div v-else class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <div class="flex items-center gap-1 mb-1">
+                    <label :for="'st' + t.id" class="text-xs font-semibold text-slate-500">สถานะ</label>
+                    <button type="button" @click="statusHelpOpen = true" aria-label="สถานะแต่ละแบบใช้เมื่อไร" title="สถานะแต่ละแบบใช้เมื่อไร" class="bg-transparent border-0 p-0 cursor-pointer text-sm text-slate-400 hover:text-teal-700 leading-none">ⓘ</button>
+                  </div>
+                  <select :id="'st' + t.id" v-model="t.status" @change="onStatusChange(t)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                    <option v-for="(s, key) in statuses" :key="key" :value="key">{{ s.label }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label :for="'tm' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">ทีมผู้ดำเนินการ</label>
+                  <select :id="'tm' + t.id" v-model="t.owner_team" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+                    <option value="">-- เลือก --</option>
+                    <option v-for="(label, key) in teams" :key="key" :value="key">{{ label }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label :for="'ow' + t.id" class="block text-xs font-semibold text-slate-500 mb-1">ชื่อผู้ดำเนินการ</label>
+                  <input :id="'ow' + t.id" v-model="t.owner_name" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                </div>
+              </div>
+              <!-- งานที่ทำระหว่างสัปดาห์ — ไม่ต้องพิมพ์ซ้ำในที่ประชุม -->
+              <div v-if="logsSincePrev(t).length" class="border-t border-slate-100 pt-3 space-y-1">
+                <div class="text-xs font-bold text-slate-500">ทำไปตั้งแต่ประชุมครั้งก่อน</div>
+                <div v-for="l in logsSincePrev(t)" :key="l.id" class="grid grid-cols-[96px_1fr] gap-2 text-sm">
+                  <span class="font-semibold text-slate-500">{{ shortDate(l.log_date) }}</span>
+                  <span class="min-w-0 text-slate-700 whitespace-pre-wrap"><span v-if="l.status_after" class="inline-flex items-center gap-1 mb-0.5 text-xs font-semibold"><span class="rounded-full px-2 py-0.5" :class="statusOf(l.status_before).cls">{{ statusOf(l.status_before).label }}</span>→<span class="rounded-full px-2 py-0.5" :class="statusOf(l.status_after).cls">{{ statusOf(l.status_after).label }}</span></span><span v-if="l.status_after && l.note" class="block"></span>{{ l.note }}<span v-if="l.files" class="block text-xs text-slate-500">ไฟล์: {{ l.files }}</span></span>
+                </div>
+              </div>
+              <!-- อ่านอย่างเดียวและไม่มีอัปเดต (เช่น การประชุมครั้งแรก) ไม่แสดงหัวข้อเปล่า (2026-11-03) -->
+              <div v-if="!readOnly || noteHistory(t).length" class="border-t border-slate-100 pt-3 space-y-2">
+                <div class="text-xs font-bold text-slate-500">อัปเดตความคืบหน้า</div>
+                <div v-for="n in noteHistory(t)" :key="n.meeting_id" class="grid grid-cols-[96px_1fr] gap-2 text-sm">
+                  <span class="font-semibold text-slate-500">{{ shortDate(n.meeting_date) }}</span>
+                  <span class="text-slate-700 whitespace-pre-wrap min-w-0" v-html="mentionHtml(n.note)"></span>
+                </div>
+                <div v-if="!readOnly && !noteHistory(t).length && t.first_meeting_id === meetingId" class="text-sm text-slate-500">เปิดเรื่องในการประชุมครั้งนี้ อัปเดตได้ในการประชุมครั้งถัดไป</div>
+                <!-- ช่องอัปเดตเฉพาะเรื่องที่ตามมาจากครั้งก่อน — ครั้งแรกใช้สรุปผล (ยืนยันจากผู้ใช้ 2026-11-02) -->
+                <template v-if="!readOnly && t.first_meeting_id !== meetingId">
+                  <!-- บันทึกแล้ว = แสดงเป็นข้อความ (ชื่อที่แท็กตัวหนาสีเขียว) กด "แก้ไข" จึงเปิดช่องพิมพ์ — แบบเดียวกับสรุปในที่ประชุม (ยืนยันจากผู้ใช้ 2026-11-04) -->
+                  <div class="flex items-center gap-2">
+                    <label :for="'no' + t.id" class="text-sm font-semibold text-slate-700">ครั้งนี้ ({{ meeting ? shortDate(meeting.meeting_date) : '' }})</label>
+                    <button v-if="(noteDrafts[t.id] || '').trim()" type="button" @click="toggleNote(t)" class="ml-auto px-2.5 py-1 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-300 text-slate-700 border-0 cursor-pointer">{{ noteEditing(t) ? 'เสร็จ' : 'แก้ไข' }}</button>
+                  </div>
+                  <div v-if="!noteEditing(t)" class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed [text-wrap:pretty]" v-html="mentionHtml(noteDrafts[t.id])"></div>
+                  <template v-else>
+                  <div class="relative rounded-xl bg-white">
+                    <div aria-hidden="true" class="absolute inset-0 overflow-y-scroll border border-transparent rounded-xl px-3 py-2 text-sm whitespace-pre-wrap break-words text-transparent pointer-events-none" v-html="mentionBackdrop(noteDrafts[t.id])"></div>
+                    <textarea :id="'no' + t.id" v-model="noteDrafts[t.id]" rows="12" class="relative block w-full overflow-y-scroll border border-slate-300 rounded-xl px-3 py-2 text-sm bg-transparent outline-none focus:border-teal-500" placeholder="พิมพ์ว่าดำเนินการถึงไหน — พิมพ์ @ เพื่อแท็กผู้เข้าร่วมประชุม"
+                              @input="onMentionInput($event, 'no' + t.id); syncBackdrop($event)" @click="onMentionInput($event, 'no' + t.id)" @scroll="syncBackdrop" @keydown="onMentionKeydown($event, noteDrafts, t.id, 'no' + t.id)" @blur="closeMention"></textarea>
+                  </div>
+                  <!-- @แท็กผู้เข้าร่วมประชุม — รายชื่อเฉพาะคนที่มาประชุมครั้งนี้ (ยืนยันจากผู้ใช้ 2026-11-04) -->
+                  <div v-if="mention.key === 'no' + t.id" role="listbox" class="mt-1 max-w-sm rounded-xl border border-slate-300 bg-white shadow-lg overflow-hidden">
+                    <div v-for="(n, i) in mention.items" :key="n" role="option" :aria-selected="i === mention.sel" @mousedown.prevent="pickMention(i, noteDrafts, t.id, 'no' + t.id)"
+                         class="px-3 py-2 text-sm cursor-pointer" :class="i === mention.sel ? 'bg-teal-50 text-teal-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'">@ {{ n }}</div>
+                    <div v-if="!mention.items.length" class="px-3 py-2 text-sm text-slate-400">ไม่พบชื่อในผู้เข้าร่วมประชุม</div>
+                  </div>
+                  </template>
+                </template>
+              </div>
+              <!-- ปุ่มบันทึกเดียวต่อการ์ด บันทึกทุกช่องพร้อมกัน ไม่บันทึกเองแล้ว เพื่อไม่ให้งงว่าช่องไหนบันทึกหรือยัง (ยืนยันจากผู้ใช้ 2026-11-02) -->
+              <div v-if="!readOnly" class="flex items-center gap-3 flex-wrap border-t border-slate-100 pt-3">
+                <button type="button" @click="saveTopic(t)" :disabled="savingId === t.id" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">{{ savingId === t.id ? 'กำลังบันทึก…' : 'บันทึก' }}</button>
+                <span v-if="isDirty(t)" class="text-sm font-semibold text-amber-700">มีการแก้ไขที่ยังไม่บันทึก</span>
+                <span v-else class="text-sm text-slate-500">{{ savedText[t.id] || '' }}</span>
+              </div>
+            </article>
+          </template>
+        </section>
+      </main>
+    </div>
+
+    <!-- คำอธิบายสถานะ (ไอคอน ⓘ ข้างช่องสถานะ — 2026-11-03) ซ้อนบนหน้าเดิม ค่าที่กำลังแก้ในการ์ดไม่หาย -->
+    <div v-if="statusHelpOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1100] p-4" @click.self="statusHelpOpen = false">
+      <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl flex flex-col overflow-hidden" style="max-height:85vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">สถานะแต่ละแบบใช้เมื่อไร</h3>
+          <button type="button" class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" aria-label="ปิด" @click="statusHelpOpen = false">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4 text-[.95rem] text-slate-700 leading-relaxed">
+          <div v-for="h in statusHelp" :key="h[0]" class="grid grid-cols-[200px_1fr] gap-3 items-center py-2.5 border-t border-slate-100 first:border-t-0">
+            <div><span class="inline-block px-2.5 py-1 rounded-full text-sm font-semibold" :class="statusOf(h[0]).cls">{{ statusOf(h[0]).label }}</span></div>
+            <div>{{ h[1] }}</div>
+          </div>
+          <p class="mt-3 mb-0 text-sm text-slate-500">ได้ข้อสรุปในที่ประชุมแล้ว อย่าลืมเปลี่ยนจาก "รอตัดสินใจ" เป็นสถานะถัดไป แล้วกดบันทึก</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- สรุปการประชุม (Minutes + งานที่ต้องทำต่อ — ยืนยันจากผู้ใช้ 2026-11-03): ตรวจก่อนส่ง → คัดลอกไปวางกลุ่ม LINE / อีเมล หรือพิมพ์ -->
+    <div v-if="summaryOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1100] p-4" @click.self="summaryOpen = false">
+      <div class="bg-white rounded-2xl w-full max-w-[880px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
+        <div class="px-6 py-4 flex items-center gap-3 border-b border-slate-100 flex-wrap">
+          <h3 class="font-bold text-lg text-slate-800 m-0 mr-auto">สรุปการประชุม {{ meeting ? dateLabel(meeting.meeting_date) : '' }}</h3>
+          <!-- แชร์ลิงก์อ่านอย่างเดียว (ยืนยันจากผู้ใช้ 2026-11-04) — ป้าย "แชร์อยู่" ให้รู้ว่ามีลิงก์เปิดได้อยู่ -->
+          <button type="button" @click="openShareDialog" class="px-4 py-2 rounded-xl text-sm font-bold bg-white ring-1 ring-teal-500 text-teal-700 border-0 cursor-pointer">
+            แชร์ลิงก์<span v-if="shareActive" class="ml-1.5 text-xs font-semibold rounded-full px-2 py-0.5 bg-teal-100 text-teal-800">แชร์อยู่</span>
+          </button>
+          <button type="button" @click="copySummary" class="px-4 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">คัดลอกสรุป</button>
+          <button type="button" @click="printSummary" class="px-4 py-2 rounded-xl text-sm font-bold bg-white ring-1 ring-teal-500 text-teal-700 border-0 cursor-pointer">พิมพ์</button>
+          <button type="button" class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" aria-label="ปิด" @click="summaryOpen = false">×</button>
+        </div>
+        <div class="overflow-y-auto px-6 py-4 space-y-4 text-[.95rem] text-slate-700 leading-relaxed">
+          <!-- ตรวจก่อนส่ง — เตือนอย่างเดียว ไม่บล็อกการคัดลอก / พิมพ์ -->
+          <div v-if="meetingSummary.checks.length" class="rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3">
+            <div class="font-bold text-amber-800 mb-1">ตรวจก่อนส่ง — {{ meetingSummary.checks.length }} เรื่องยังไม่ครบ</div>
+            <div v-for="c in meetingSummary.checks" :key="c.t.id" class="text-sm py-0.5">
+              <button type="button" @click="goToCard(c.t)" class="bg-transparent border-0 p-0 cursor-pointer font-semibold text-teal-700 underline underline-offset-2 text-left">{{ topicLabel(c.t) }} {{ c.t.title }}</button>
+              <span class="text-amber-800"> — {{ c.problems.join(' · ') }}</span>
+            </div>
+          </div>
+          <div v-else class="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 px-4 py-3 text-sm font-semibold text-emerald-800">ข้อมูลครบ พร้อมส่งสรุป</div>
+
+          <!-- รายงานการประชุมตามโครงระเบียบงานสารบรรณ จัดให้อ่านง่าย (ยืนยันจากผู้ใช้ 2026-11-04) -->
+          <article v-if="meeting" class="rounded-xl ring-1 ring-slate-200 px-5 sm:px-7 py-5 space-y-5">
+            <header class="text-center">
+              <div class="text-lg font-bold text-slate-800">{{ reportTitle }}</div>
+              <div class="text-sm text-slate-500">ครั้งที่ {{ meetingNoText }}</div>
+            </header>
+            <dl class="m-0 grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
+              <dt class="text-slate-500">เมื่อ</dt><dd class="m-0">{{ longThaiDate(meeting.meeting_date) }}</dd>
+              <template v-if="meetingTimeRange(meeting)"><dt class="text-slate-500">เวลา</dt><dd class="m-0">{{ meetingTimeRange(meeting) }}</dd></template>
+              <template v-if="meeting.location"><dt class="text-slate-500">ณ</dt><dd class="m-0">{{ meeting.location }}</dd></template>
+              <template v-if="roleNames('chair')"><dt class="text-slate-500">ประธาน</dt><dd class="m-0">{{ roleNames('chair') }}</dd></template>
+              <template v-if="roleNames('secretary')"><dt class="text-slate-500">ผู้จดรายงาน</dt><dd class="m-0">{{ roleNames('secretary') }}</dd></template>
+            </dl>
+
+            <section v-for="g in minutesAttendeeGroups" :key="g.key" class="border-t border-slate-100 pt-3">
+              <div class="font-bold text-slate-800 mb-1">{{ g.title }} ({{ g.list.length }} คน)</div>
+              <ol class="m-0 pl-6 list-decimal sm:columns-2 gap-8 text-sm">
+                <li v-for="a in g.list" :key="a.id" class="break-inside-avoid">{{ a.attendee_name }}<span v-if="a.note" class="text-slate-500"> — {{ a.note }}</span></li>
+              </ol>
+            </section>
+            <div v-if="!attendees.length" class="border-t border-slate-100 pt-3 text-sm text-slate-500">ยังไม่ระบุผู้เข้าร่วมประชุม</div>
+
+            <section class="border-t border-slate-100 pt-3">
+              <div class="font-bold text-slate-800 mb-1">ภาพรวม</div>
+              <div v-for="g in meetingSummary.groups" :key="g.section" class="text-sm">
+                {{ agendaTitle(g.section) }} <b>{{ g.topics.length }}</b> เรื่อง<template v-if="g.counts.length">: {{ g.counts.map(c => c.label + ' ' + c.count).join(' · ') }}</template>
+              </div>
+            </section>
+
+            <section v-for="g in meetingSummary.groups.filter(x => x.topics.length)" :key="'s' + g.section" class="border-t border-slate-100 pt-3">
+              <div class="font-bold text-slate-800 mb-2">{{ agendaTitle(g.section) }}</div>
+              <div v-for="t in g.topics" :key="t.id" class="rounded-lg ring-1 ring-slate-200 px-4 py-3 mb-2.5">
+                <div class="font-semibold text-slate-800">{{ topicLabel(t) }} {{ t.title }}</div>
+                <div class="text-sm text-slate-500 mt-0.5">
+                  สถานะ: <span v-if="statusChanged(t)">{{ statusOf(t.status_before).label }} → </span><span class="text-xs font-bold rounded-full px-2 py-0.5" :class="statusOf(meetingStatus(t)).cls">{{ statusOf(meetingStatus(t)).label }}</span>
+                  <template v-if="ownerText(t)"> · ผู้รับผิดชอบ: {{ ownerText(t) }}</template>
+                </div>
+                <template v-if="g.section === groupCarried && (noteDrafts[t.id] || '').trim()">
+                  <div class="text-xs font-bold text-slate-500 mt-2.5 mb-0.5">ความคืบหน้า</div>
+                  <div class="text-sm text-slate-700 whitespace-pre-wrap" v-html="mentionHtml(noteDrafts[t.id].trim())"></div>
+                </template>
+                <template v-if="t.decision.trim()">
+                  <div class="text-xs font-bold text-slate-500 mt-2.5 mb-0.5">มติที่ประชุม</div>
+                  <div class="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-950 whitespace-pre-wrap" v-html="mentionHtml(t.decision.trim())"></div>
+                </template>
+              </div>
+            </section>
+
+            <section v-if="meetingSummary.owners.length" class="border-t border-slate-100 pt-3">
+              <div class="font-bold text-slate-800 mb-1">งานที่ต้องดำเนินการต่อ</div>
+              <table class="w-full text-sm border-collapse">
+                <thead><tr class="text-left text-xs text-slate-500"><th class="py-1.5 pr-3 font-semibold w-2/5">ผู้รับผิดชอบ</th><th class="py-1.5 font-semibold">เรื่อง</th></tr></thead>
+                <tbody>
+                  <tr v-for="o in meetingSummary.owners" :key="o.name" class="border-t border-slate-100 align-top"><td class="py-1.5 pr-3">{{ o.name }}</td><td class="py-1.5">{{ o.topics.map(t => topicLabel(t)).join(', ') }}</td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <!-- กำหนดประชุมครั้งต่อไป (เบื้องต้น) — เก็บกับการประชุมครั้งนี้ ไม่สร้างการประชุมล่วงหน้า (ยืนยันจากผู้ใช้ 2026-11-03) -->
+            <section class="border-t border-slate-100 pt-3 text-sm space-y-1">
+              <div><span class="font-bold text-slate-800">กำหนดประชุมครั้งต่อไป (เบื้องต้น):</span>
+                <template v-if="meeting.next_meeting_date"> {{ nextMeetingText(meeting) }}</template>
+                <span v-else class="text-slate-500"> ยังไม่ได้นัด (ไม่แสดงในข้อความสรุป)</span>
+                <button type="button" @click="openNextDialog" class="ml-2 bg-transparent border-0 p-0 cursor-pointer text-sm font-semibold text-teal-700 underline underline-offset-2">{{ meeting.next_meeting_date ? 'แก้' : '+ นัด' }}</button>
+              </div>
+              <div v-if="meeting.end_time"><span class="font-bold text-slate-800">เลิกประชุมเวลา</span> {{ timeLabel(meeting.end_time) }} น.</div>
+            </section>
+
+            <footer v-if="roleNames('secretary') || roleNames('chair')" class="grid grid-cols-2 gap-6 text-center text-sm pt-6">
+              <div v-if="roleNames('secretary')"><div class="border-t border-slate-300 mx-6 mb-1 mt-6"></div>{{ roleNames('secretary') }}<div class="text-slate-500">ผู้จดรายงานการประชุม</div></div>
+              <div v-if="roleNames('chair')" :class="roleNames('secretary') ? '' : 'col-start-2'"><div class="border-t border-slate-300 mx-6 mb-1 mt-6"></div>{{ roleNames('chair') }}<div class="text-slate-500">ประธาน / ผู้ตรวจรายงานการประชุม</div></div>
+            </footer>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่างแชร์ลิงก์อ่านอย่างเดียว — ทุกคนที่มีลิงก์เปิดได้ ไม่ต้อง login / อายุค่าเริ่ม 30 วัน / ปิดการแชร์ได้ (ยืนยันจากผู้ใช้ 2026-11-04) -->
+    <div v-if="shareDialog.open && meeting" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1200] p-4" @click.self="shareDialog.open = false">
+      <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl p-6" role="dialog" aria-modal="true" aria-labelledby="shareDialogTitle">
+        <h3 id="shareDialogTitle" class="font-bold text-lg text-slate-800 m-0">แชร์รายงานการประชุม {{ dateLabel(meeting.meeting_date) }}</h3>
+        <p class="mt-1 mb-4 text-sm text-slate-500">ทุกคนที่มีลิงก์เปิดดูได้โดยไม่ต้อง login — <b class="text-slate-700">ดูได้อย่างเดียว แก้ไขไม่ได้</b> และเห็นข้อมูลล่าสุดที่บันทึกไว้เสมอ</p>
+        <template v-if="meeting.share_token">
+          <label for="shareUrl" class="block text-sm font-semibold text-slate-600 mb-1">ลิงก์</label>
+          <div class="flex gap-2">
+            <input id="shareUrl" :value="shareUrl" readonly @focus="$event.target.select()" class="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700">
+            <button type="button" @click="copyShareUrl" class="px-4 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer whitespace-nowrap">คัดลอกลิงก์</button>
+          </div>
+          <p class="mt-2 mb-0 text-sm" :class="shareActive ? 'text-slate-600' : 'text-rose-700 font-semibold'">
+            {{ shareActive ? 'ใช้ได้ถึง' : 'หมดอายุแล้วเมื่อ' }} {{ shareExpiryText }}
+          </p>
+        </template>
+        <p v-else class="text-sm text-slate-600 mb-0">ยังไม่ได้แชร์</p>
+        <div class="flex flex-wrap items-end gap-2 mt-4">
+          <div>
+            <label for="shareDays" class="block text-sm font-semibold text-slate-600 mb-1">อายุลิงก์</label>
+            <select id="shareDays" v-model.number="shareDialog.days" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+              <option v-for="d in [7, 30, 90, 180, 365]" :key="d" :value="d">{{ d }} วัน</option>
+            </select>
+          </div>
+          <button type="button" @click="shareMeeting" :disabled="shareDialog.saving" class="px-4 py-2 rounded-xl text-sm font-bold bg-white ring-1 ring-teal-500 text-teal-700 border-0 cursor-pointer disabled:opacity-50">{{ meeting.share_token ? 'ต่ออายุลิงก์' : 'สร้างลิงก์' }}</button>
+          <button v-if="meeting.share_token" type="button" @click="unshareMeeting" :disabled="shareDialog.saving" class="ml-auto px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-rose-300 text-rose-700 hover:bg-rose-50 border-0 cursor-pointer disabled:opacity-50">ปิดการแชร์</button>
+          <button type="button" @click="shareDialog.open = false" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-300 text-slate-700 border-0 cursor-pointer" :class="meeting.share_token ? '' : 'ml-auto'">ปิด</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่างชื่อการประชุม / เวลา / สถานที่ -->
+    <div v-if="infoDialog.open && meeting" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1200] p-4" @click.self="infoDialog.open = false">
+      <div class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl p-6" role="dialog" aria-modal="true" aria-labelledby="infoDialogTitle">
+        <h3 id="infoDialogTitle" class="font-bold text-lg text-slate-800 m-0">ข้อมูลการประชุม {{ dateLabel(meeting.meeting_date) }}</h3>
+        <p class="mt-1 mb-3 text-sm text-slate-500">ใช้เป็นหัวรายงานการประชุม — ว่างได้ทุกช่อง</p>
+        <label for="infoTitle" class="block text-sm font-semibold text-slate-600 mb-1">ชื่อการประชุม</label>
+        <input id="infoTitle" v-model="infoDialog.title" type="text" maxlength="255" placeholder="ประชุมติดตามระบบงานขาย" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label for="infoStart" class="block text-sm font-semibold text-slate-600 mb-1">เวลาเริ่ม</label>
+            <input id="infoStart" v-model="infoDialog.start" type="time" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+          </div>
+          <div>
+            <label for="infoEnd" class="block text-sm font-semibold text-slate-600 mb-1">เวลาเลิก</label>
+            <input id="infoEnd" v-model="infoDialog.end" type="time" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+          </div>
+        </div>
+        <label for="infoLocation" class="block text-sm font-semibold text-slate-600 mt-3 mb-1">สถานที่ (ณ)</label>
+        <input id="infoLocation" v-model="infoDialog.location" type="text" maxlength="255" placeholder="ห้องประชุมชั้น 2 / ออนไลน์" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+        <div class="flex justify-end gap-2 mt-5">
+          <button type="button" @click="infoDialog.open = false" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-300 text-slate-700 border-0 cursor-pointer">ยกเลิก</button>
+          <button type="button" @click="saveMeetingInfo" :disabled="infoDialog.saving" class="px-4 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">{{ infoDialog.saving ? 'กำลังบันทึก…' : 'บันทึก' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่างผู้เข้าร่วมประชุม — เลือกจากผู้ใช้ระบบ หรือพิมพ์ชื่อคนนอกระบบ (ยืนยันจากผู้ใช้ 2026-11-04) -->
+    <div v-if="attendeeDialog.open && meeting" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1200] p-4" @click.self="attendeeDialog.open = false">
+      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh" role="dialog" aria-modal="true" aria-labelledby="attendeeDialogTitle">
+        <div class="px-6 pt-5 pb-3 border-b border-slate-100">
+          <h3 id="attendeeDialogTitle" class="font-bold text-lg text-slate-800 m-0">ผู้เข้าร่วมประชุม {{ dateLabel(meeting.meeting_date) }}</h3>
+          <input v-model="attendeeDialog.search" type="search" placeholder="ค้นหาชื่อผู้ใช้" aria-label="ค้นหาชื่อผู้ใช้" class="mt-3 w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+        </div>
+        <div class="overflow-y-auto px-6 py-2">
+          <div v-for="r in attendeeDialog.rows.filter(x => !attendeeDialog.search.trim() || x.name.toLowerCase().includes(attendeeDialog.search.trim().toLowerCase()))" :key="(r.user_id || 'n') + r.name"
+               class="grid grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-3 gap-y-1 items-center py-2 border-b border-slate-100">
+            <input type="checkbox" v-model="r.checked" :aria-label="'เลือก ' + r.name" class="w-5 h-5">
+            <span class="text-sm" :class="r.checked ? 'font-semibold text-slate-800' : 'text-slate-600'">{{ r.name }}<span v-if="!r.user_id" class="text-xs font-normal text-slate-400"> (คนนอกระบบ)</span></span>
+            <div v-if="r.checked" class="col-start-2 sm:col-start-auto flex rounded-lg ring-1 ring-slate-300 overflow-hidden w-fit" role="group" :aria-label="'การเข้าร่วมของ ' + r.name">
+              <button v-for="(info, key) in attendanceTypes" :key="key" type="button" @click="r.attendance = key" :aria-pressed="r.attendance === key"
+                      class="px-3 py-1 text-sm border-0 cursor-pointer" :class="r.attendance === key ? info.cls + ' font-semibold' : 'bg-white text-slate-500'">{{ info.label }}</button>
+            </div>
+            <select v-if="r.checked" v-model="r.role" :aria-label="'บทบาทของ ' + r.name" class="col-start-2 sm:col-start-auto border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white w-fit">
+              <option v-for="(label, key) in meetingRoles" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-100 space-y-3">
+          <div class="flex gap-2">
+            <input v-model="attendeeDialog.extName" @keydown.enter.prevent="addExternalAttendee" type="text" maxlength="200" placeholder="ชื่อคนนอกระบบ เช่น ผู้บริหาร แขก" aria-label="ชื่อคนนอกระบบ"
+                   class="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+            <button type="button" @click="addExternalAttendee" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-teal-500 text-teal-700 border-0 cursor-pointer whitespace-nowrap">+ เพิ่ม</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="mr-auto text-sm text-slate-500">เลือกแล้ว {{ attendeeDialog.rows.filter(r => r.checked).length }} คน</span>
+            <button type="button" @click="attendeeDialog.open = false" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-300 text-slate-700 border-0 cursor-pointer">ยกเลิก</button>
+            <button type="button" @click="saveAttendees" :disabled="attendeeDialog.saving" class="px-4 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-50">{{ attendeeDialog.saving ? 'กำลังบันทึก…' : 'บันทึก' }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่างนัดประชุมครั้งถัดไป (เบื้องต้น) — เปิดจากหัวการประชุม หรือจากสรุปการประชุม -->
+    <div v-if="nextDialogOpen && meeting" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1200] p-4" @click.self="closeNextDialog">
+      <div class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl p-6" role="dialog" aria-modal="true" aria-labelledby="nextDialogTitle">
+        <h3 id="nextDialogTitle" class="font-bold text-lg text-slate-800 m-0">นัดประชุมครั้งถัดไป (เบื้องต้น)</h3>
+        <p class="mt-1 mb-3 text-sm text-slate-500">วันคร่าวๆ ยังไม่สร้างการประชุม วันประชุมจริงสร้างเองตามปกติ</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="nextMeetingDate" class="block text-sm font-semibold text-slate-600 mb-1">วันที่</label>
+            <input id="nextMeetingDate" v-model="nextDraft.date" type="date" :min="meeting.meeting_date" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+          </div>
+          <div>
+            <label for="nextMeetingTime" class="block text-sm font-semibold text-slate-600 mb-1">เวลา <span class="font-normal text-slate-400">(ว่างได้)</span></label>
+            <input id="nextMeetingTime" v-model="nextDraft.time" type="time" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+          </div>
+        </div>
+        <label for="nextMeetingNote" class="block text-sm font-semibold text-slate-600 mt-3 mb-1">สถานที่ / หมายเหตุ <span class="font-normal text-slate-400">(ว่างได้)</span></label>
+        <input id="nextMeetingNote" v-model="nextDraft.note" type="text" maxlength="255" placeholder="ห้องประชุม รอตรวจสอบห้องว่าง" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+        <div class="flex items-center gap-2 mt-5">
+          <button v-if="meeting.next_meeting_date" type="button" @click="saveNextDate(true)" class="mr-auto bg-transparent border-0 p-0 cursor-pointer text-sm text-slate-500 underline underline-offset-2">ล้างวันนัด</button>
+          <button type="button" @click="closeNextDialog" class="ml-auto px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-300 text-slate-700 border-0 cursor-pointer">ยกเลิก</button>
+          <button type="button" @click="saveNextDate(false)" :disabled="!nextDraft.date || !nextDraftChanged"
+                  class="px-4 py-2 rounded-xl text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">บันทึก</button>
+        </div>
+      </div>
+    </div>
+
+    <app-modal ref="appModal"></app-modal>
+  </template>
+</div>
+
+<script src="shared/vue.global.prod.js"></script>
+<script src="shared/app.js?v=103"></script>
+<script>
+const { createApp } = Vue;
+const MEETING_STATUSES = {
+  open:  { label: 'รอดำเนินการ',   cls: 'bg-amber-100 text-amber-800' },
+  doing: { label: 'กำลังทำ',       cls: 'bg-sky-100 text-sky-800' },
+  host:  { label: 'รอขึ้นระบบจริง', cls: 'bg-violet-100 text-violet-800' },
+  ask:   { label: 'รอตัดสินใจ',    cls: 'bg-rose-100 text-rose-800' },
+  done:  { label: 'เสร็จแล้ว',     cls: 'bg-emerald-100 text-emerald-800' },
+  // ได้ข้อสรุปแล้ว ไม่มีงานต้องทำต่อ (ยืนยันจากผู้ใช้ 2026-11-02)
+  agreed: { label: 'ตกลงแล้ว ไม่ต้องดำเนินการ', cls: 'bg-teal-100 text-teal-800' },
+};
+// สถานะที่ถือว่าจบแล้ว / ลำดับงานที่ต้องทำในแท็บงานทั้งหมด (2026-11-03)
+const FINISHED_STATUSES = ['done', 'agreed'];
+const WORK_STATUS_ORDER = ['doing', 'open', 'host', 'ask', 'done', 'agreed'];
+// วาระในแท็บการประชุม: เรื่องสืบเนื่อง → เรื่องใหม่ / "เสร็จแล้ว" เป็นสถานะในวาระ ไม่ใช่วาระแยก (ยืนยันจากผู้ใช้ 2026-11-03)
+// มุมมองของหน้านี้ (?view=) — เมนูซ้าย / หัวหน้า (ยืนยันจากผู้ใช้ 2026-11-03)
+const VIEW_INFO = {
+  meeting:  { page: 'meeting-minutes',  title: 'บันทึกวาระและมติ', subtitle: 'ประชุมทุกวันศุกร์ · เรื่องที่ยังไม่จบตามไปครั้งล่าสุดเอง' },
+  work:     { page: 'meeting-actions',  title: 'งานที่ต้องติดตาม', subtitle: 'อัปเดตระหว่างสัปดาห์ · บันทึกการดำเนินการและสถานะของแต่ละงาน' },
+  timeline: { page: 'meeting-actions',  title: 'งานที่ต้องติดตาม', subtitle: 'แต่ละงานเริ่มเมื่อไร สถานะแต่ละช่วงเป็นอย่างไร จบที่ไหน ตามที่บันทึกจริง' },
+};
+// ผู้เข้าร่วมประชุม — การเข้าร่วม / บทบาท (ยืนยันจากผู้ใช้ 2026-11-04)
+const ATTENDANCE = {
+  present: { label: 'มา',     cls: 'bg-emerald-100 text-emerald-800' },
+  excused: { label: 'ลา',     cls: 'bg-amber-100 text-amber-800' },
+  absent:  { label: 'ไม่มา',  cls: 'bg-slate-100 text-slate-600' },
+};
+const MEETING_ROLES = { member: 'ผู้เข้าร่วม', chair: 'ประธาน', secretary: 'ผู้จดบันทึก' };
+const GROUP_CARRIED = 'เรื่องสืบเนื่องจากครั้งก่อน';
+const GROUP_NEW = 'เรื่องใหม่ในการประชุมครั้งนี้';
+// คำอธิบายสถานะ (ไอคอน ⓘ ข้างช่องสถานะ — ข้อความจากผู้ใช้ 2026-11-03) เรียงตามลำดับงานจริง
+const STATUS_HELP = [
+  ['ask',    'ยังต้องคุยหรือรอคำตอบ'],
+  ['open',   'ได้ข้อสรุปแล้ว มีงานต้องทำ แต่ยังไม่เริ่ม'],
+  ['doing',  'ผู้ดำเนินการลงมือแล้ว'],
+  ['host',   'ทำเสร็จบน dev แล้ว รอขึ้น host'],
+  ['done',   'ขึ้นระบบจริงและใช้งานได้'],
+  ['agreed', 'ได้ข้อสรุปว่าไม่ต้องทำอะไร'],
+];
+// หน้าที่ไม่ใช่หน้าทำงาน จึงไม่ให้เลือกเป็นหน้าที่เกี่ยวข้อง
+const NOT_RELATED_PAGES = ['login.html', 'notify-view.html', 'meeting-topics.html'];
+// หน้าที่เกี่ยวข้องของการ์ด เลือกจากรายการเมนู เปิดแท็บใหม่ให้หน้าประชุมยังอยู่ — บันทึกด้วยปุ่มบันทึกของการ์ด (ยืนยันจากผู้ใช้ 2026-11-02)
+const TopicPages = {
+  props: { topic: { type: Object, required: true }, readonly: { type: Boolean, default: false } },
+  computed: {
+    options() {
+      return Object.keys(PAGE_LABELS).filter(p => !NOT_RELATED_PAGES.includes(p) && !this.topic.related_pages.includes(p));
+    },
+  },
+  methods: {
+    label(page) { return PAGE_LABELS[page] || page; },
+    addPage(event) {
+      if (event.target.value) this.topic.related_pages = [...this.topic.related_pages, event.target.value];
+      event.target.value = '';
+    },
+    removePage(page) { this.topic.related_pages = this.topic.related_pages.filter(p => p !== page); },
+  },
+  template: `
+    <div v-if="!readonly || topic.related_pages.length" class="flex flex-wrap items-center gap-2">
+      <span class="text-xs font-bold text-slate-500">หน้าที่เกี่ยวข้อง</span>
+      <span v-for="p in topic.related_pages" :key="p" class="inline-flex items-center rounded-lg ring-1 ring-teal-400 bg-white">
+        <a :href="p" target="_blank" rel="noopener" class="px-3 py-1.5 text-sm font-semibold text-teal-700 no-underline hover:underline">{{ label(p) }} ↗</a>
+        <button v-if="!readonly" type="button" @click="removePage(p)" :aria-label="'เอา ' + label(p) + ' ออก'" class="px-2 py-1.5 text-sm text-slate-500 hover:text-rose-700 bg-transparent border-0 cursor-pointer">×</button>
+      </span>
+      <select v-if="!readonly" @change="addPage" aria-label="เลือกหน้าที่เกี่ยวข้อง" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white text-slate-600">
+        <option value="">+ เลือกหน้า</option>
+        <option v-for="p in options" :key="p" :value="p">{{ label(p) }}</option>
+      </select>
+    </div>`,
+};
+createApp({
+  components: { AppNav, AppModal, TopicPages },
+  data() {
+    return {
+      authReady: false,
+      currentUser: null,
+      loading: false,
+      meetings: [],
+      meetingId: null,
+      meeting: null,
+      topics: [],
+      noteDrafts: {},
+      savedText: {},
+      view: 'meeting',   // meeting = บันทึกวาระและมติ / work = งานที่ต้องติดตาม (อ่านจาก ?view= ตอนเปิดหน้า)
+      workTopics: [],
+      workLoading: false,
+      // เปิดหน้ามาเจองานทีม Dev ที่ยังไม่จบ — Dev ใช้ตามงานตัวเอง (ยืนยันจากผู้ใช้ 2026-11-03)
+      // ค่าตั้งต้นตั้งตอนเปิดหน้า: การประชุมล่าสุด + ชื่อผู้ใช้ที่ login (ถ้าตรงกับผู้ดำเนินการ) ไม่ตรง = ทีม Dev (ยืนยันจากผู้ใช้ 2026-11-03)
+      workFilter: { meeting: '', team: '', status: 'pending', owner: '' },
+      workMeetingTopicIds: null,   // id หัวข้อของการประชุมที่เลือกในตัวกรอง (null = ทุกครั้ง)
+      workExpanded: null,          // แถวที่ขยายอยู่
+      decisionOpen: {},            // มติที่กด "ดูทั้งหมด"
+      decisionClamped: {},         // มติที่ยาวเกิน 3 บรรทัด (ถูกตัด) — วัดตอนขยายแถว
+      workFormOpen: {},            // แถวที่กดเปิดฟอร์มอัปเดต (+ เพิ่มบันทึก / เปลี่ยนสถานะ)
+      summaryOpen: false,
+      nextDialogOpen: false,
+      attendees: [],                // ผู้เข้าร่วมของการประชุมที่เปิดอยู่
+      attendeesOpen: false,         // กางรายชื่อผู้เข้าร่วมที่หัวการประชุม
+      shareDialog: { open: false, days: 30, saving: false },   // แชร์ลิงก์อ่านอย่างเดียว
+      infoDialog: { open: false, title: '', start: '', end: '', location: '', saving: false },   // ชื่อการประชุม / เวลา / สถานที่
+      attendeeOptions: null,        // ผู้ใช้ระบบที่ใช้งานอยู่ (โหลดครั้งแรกที่เปิดหน้าต่าง)
+      attendeeDialog: { open: false, search: '', rows: [], extName: '', saving: false },
+      mention: { key: null, items: [], sel: 0 },   // รายชื่อ @แท็ก ที่กำลังเปิดอยู่ใต้ช่องพิมพ์
+      nextDraft: { date: '', time: '', note: '' },   // วันนัดประชุมครั้งถัดไป (เบื้องต้น) ที่กำลังแก้ในหน้าสรุป
+      meetingTab: GROUP_CARRIED,   // แท็บวาระที่เปิดอยู่ในแท็บการประชุม
+      editingPast: false,          // กด "แก้ไขบันทึกการประชุมนี้" ในการประชุมที่ผ่านไปแล้ว
+      groupCarried: GROUP_CARRIED,
+      workSaved: {},
+      logDrafts: {},
+      logEdit: null,
+      savedState: {},   // ค่าล่าสุดที่บันทึกแล้วของแต่ละการ์ด ใช้บอกว่ามีการแก้ไขค้าง
+      savingId: null,
+      editingDecision: {},
+      editingNote: {},     // ความคืบหน้าครั้งนี้ที่เปิดช่องพิมพ์อยู่ (บันทึกแล้ว = แสดงเป็นข้อความ)
+      editingTitle: {},
+      statuses: MEETING_STATUSES,
+      VIEW_INFO,
+      attendanceTypes: ATTENDANCE,
+      meetingRoles: MEETING_ROLES,
+      timelineFilter: { scope: 'pending' }, // ไทม์ไลน์: pending = ยังไม่จบ, finished = จบแล้ว, all = ทั้งหมด (ผู้ดำเนินการ/ทีม ใช้ workFilter ร่วมกับแท็บรายการงาน)
+      timelineOpen: null,                                     // งานที่เปิดดูไทม์ไลน์ละเอียด
+      timelineSort: '',                                       // เรียงตามสถานะปัจจุบัน: asc / desc / '' = ตามวันที่เปิดเรื่อง
+      statusHelp: STATUS_HELP,
+      statusHelpOpen: false,
+      teams: { sale: 'ทีม Sale', pm: 'Project Manager', dev: 'ทีม Dev', meeting: 'ที่ประชุมลงมติ' },
+      topicFilter: '',   // '' = ทุกเรื่อง, ค่าอื่น = สถานะที่กดเลือก
+      showAdd: false,
+      newMeetingDate: '',
+      topicForm: { topic_no: '', title: '', detail: '', decision: '', owner_team: '', owner_name: '' },
+    };
+  },
+  computed: {
+    selectedMeetingEmpty() {
+      const m = this.meetings.find(x => x.id === this.meetingId);
+      return !!m && Number(m.new_count) === 0 && Number(m.note_count) === 0;
+    },
+    workOwners() { return [...new Set(this.workTopics.map(t => t.owner_name).filter(Boolean))].sort(); },
+    // ตัวกรอง / ตัวเลข / กลุ่ม / ป้ายสถานะ ใช้สถานะที่บันทึกแล้ว (saved_status) — เลือกในช่องแล้วยังไม่กดบันทึก การ์ดอยู่ที่เดิม (ยืนยันจากผู้ใช้ 2026-11-03)
+    // งานตามการประชุม / ทีม / ผู้ดำเนินการที่เลือก (ยังไม่กรองสถานะ) — ใช้นับตัวเลขสถานะ
+    // "จากการประชุม X" = เรื่องที่อยู่ในการประชุม X (เรื่องใหม่ + เรื่องสืบเนื่อง) เหมือนหน้าบันทึกวาระและมติ
+    workInScope() {
+      const f = this.workFilter;
+      return this.workTopics.filter(t => (!f.team || t.owner_team === f.team) && (!f.owner || t.owner_name === f.owner)
+        && (!f.meeting || !this.workMeetingTopicIds || this.workMeetingTopicIds.includes(t.id)));
+    },
+    // การประชุมล่าสุดที่มีเรื่องแล้ว (การประชุมล่วงหน้าที่ยังว่างไม่นับ) — ใช้ตัดสิน "ยังไม่อัปเดตหลังประชุม"
+    latestMeeting() { return this.meetings.find(m => Number(m.new_count) > 0 || Number(m.note_count) > 0) || this.meetings[0] || null; },
+    // การประชุมที่ใช้เทียบ "ยังไม่อัปเดตหลังประชุม" = ที่เลือกในตัวกรอง / ทุกครั้ง = ล่าสุด
+    workCompareMeeting() { return this.meetings.find(m => m.id === Number(this.workFilter.meeting)) || this.latestMeeting; },
+    // ===== ไทม์ไลน์งาน (ยืนยันจากผู้ใช้ 2026-11-03) =====
+    // คอลัมน์ = การประชุมที่มีเรื่องแล้ว เรียงจากเก่าไปใหม่ (การประชุมล่วงหน้าที่ยังว่างไม่นับ)
+    timelineMeetings() { return [...this.meetings].filter(m => Number(m.new_count) > 0 || Number(m.note_count) > 0).reverse(); },
+    // ชื่อที่แท็กได้ = ผู้มาประชุมครั้งนี้
+    mentionNames() { return this.attendees.filter(a => a.attendance === 'present').map(a => a.attendee_name); },
+    attendeeCountText() {
+      return Object.keys(ATTENDANCE).map(k => [k, this.attendees.filter(a => a.attendance === k).length])
+        .filter(([, n]) => n).map(([k, n]) => `${ATTENDANCE[k].label} ${n} คน`).join(' · ');
+    },
+    // ประธาน / ผู้จดบันทึก ในบรรทัดย่อที่หัวการประชุม
+    attendeeKeyRoles() {
+      return ['chair', 'secretary'].map(role => ({ role, label: MEETING_ROLES[role], names: this.attendees.filter(a => a.meeting_role === role).map(a => a.attendee_name).join(', ') }))
+        .filter(r => r.names);
+    },
+    // รายชื่อเต็มแยก มา / ลา / ไม่มา
+    attendeeGroups() {
+      return Object.keys(ATTENDANCE).map(key => ({ key, label: ATTENDANCE[key].label, list: this.attendees.filter(a => a.attendance === key) })).filter(g => g.list.length);
+    },
+    // บรรทัดผู้เข้าร่วมในสรุปการประชุม: ผู้มาประชุม / ผู้ลา / ผู้ไม่มาประชุม (บทบาทต่อท้ายชื่อ)
+    // รายชื่อในรายงาน: ผู้มาประชุม (ผู้ใช้ระบบ) / ผู้ไม่มาประชุม (ลา, ไม่มา) / ผู้เข้าร่วมประชุม (คนนอกระบบที่มา) — บทบาทต่อท้ายชื่อ
+    minutesAttendeeGroups() {
+      const role = a => a.meeting_role !== 'member' ? MEETING_ROLES[a.meeting_role] : '';
+      return [
+        { key: 'present', title: 'ผู้มาประชุม', list: this.attendees.filter(a => a.attendance === 'present' && a.user_id).map(a => ({ ...a, note: role(a) })) },
+        { key: 'absent', title: 'ผู้ไม่มาประชุม', list: this.attendees.filter(a => a.attendance !== 'present').map(a => ({ ...a, note: [ATTENDANCE[a.attendance].label, role(a)].filter(Boolean).join(' · ') })) },
+        { key: 'guest', title: 'ผู้เข้าร่วมประชุม', list: this.attendees.filter(a => a.attendance === 'present' && !a.user_id).map(a => ({ ...a, note: role(a) })) },
+      ].filter(g => g.list.length);
+    },
+    // ลิงก์แชร์ยังเปิดได้ (มีรหัส + ยังไม่หมดอายุ)
+    shareActive() {
+      const m = this.meeting;
+      return !!m?.share_token && (!m.share_expires_at || new Date(m.share_expires_at.replace(' ', 'T')) > new Date());
+    },
+    shareUrl() { return this.meeting?.share_token ? new URL('meeting-view.html?t=' + this.meeting.share_token, window.location.href).href : ''; },
+    shareExpiryText() {
+      const v = this.meeting?.share_expires_at;
+      return v ? `${this.dateLabel(v.slice(0, 10))} เวลา ${this.timeLabel(v.slice(11, 16))} น.` : 'ไม่หมดอายุ';
+    },
+    reportTitle() { return 'รายงานการประชุม' + (this.meeting?.title ? ' ' + this.meeting.title : ''); },
+    // ครั้งที่ = ลำดับวันประชุมในปีเดียวกัน (ไม่เก็บในฐานข้อมูล)
+    meetingNoText() {
+      if (!this.meeting) return '';
+      const d = this.meeting.meeting_date, year = d.slice(0, 4);
+      const n = this.meetings.filter(m => m.meeting_date.slice(0, 4) === year && m.meeting_date <= d).length;
+      return `${n}/${Number(year) + 543}`;
+    },
+    // งานตามทีม/ผู้ดำเนินการ (ก่อนแยกยังไม่จบ/จบแล้ว) — ใช้นับจำนวนบนปุ่ม
+    timelineBaseTopics() {
+      const f = this.workFilter;
+      return this.workTopics.filter(t => (!f.team || t.owner_team === f.team) && (!f.owner || t.owner_name === f.owner));
+    },
+    timelineScopes() {
+      const finished = this.timelineBaseTopics.filter(t => FINISHED_STATUSES.includes(t.saved_status)).length;
+      const all = this.timelineBaseTopics.length;
+      return [
+        { key: 'pending', label: 'ยังไม่จบ', count: all - finished },
+        { key: 'finished', label: 'จบแล้ว', count: finished },
+        { key: 'all', label: 'ทั้งหมด', count: all },
+      ];
+    },
+    // วันนัดครั้งถัดไปจากการประชุมล่าสุด + จำนวนงานที่ยังไม่อัปเดตหลังประชุม (ตามตัวกรองผู้ดำเนินการ/ทีม)
+    nextDraftChanged() {
+      const m = this.meeting || {};
+      return this.nextDraft.date !== (m.next_meeting_date || '') || this.nextDraft.time !== (m.next_meeting_time || '').slice(0, 5)
+        || this.nextDraft.note.trim() !== (m.next_meeting_note || '');
+    },
+    nextMeetingInfo() {
+      const date = this.latestMeeting?.next_meeting_date;
+      if (!date) return null;
+      const days = Math.round((new Date(date + 'T00:00:00') - new Date(this.todayDate() + 'T00:00:00')) / 86400000);
+      const daysText = days > 0 ? `อีก ${days} วัน` : days === 0 ? 'วันนี้' : `เลยวันนัดมา ${-days} วัน`;
+      const pending = this.timelineBaseTopics.filter(t => this.needsUpdate(t)).length;
+      return { date, daysText, pending };
+    },
+    timelineGroups() { return this.timelineGroupsOf(this.timelineRows); },
+    timelineRows() {
+      const scope = this.timelineFilter.scope;
+      return this.timelineBaseTopics
+        .filter(t => scope === 'all' || (scope === 'finished') === FINISHED_STATUSES.includes(t.saved_status))
+        .sort((a, b) => {
+          // สถานะเดียวกัน = เรียงตามวันที่เปิดเรื่อง แล้วเลขข้อ
+          const byDate = a.first_meeting_date.localeCompare(b.first_meeting_date) || (Number(a.topic_no) || 999) - (Number(b.topic_no) || 999);
+          if (!this.timelineSort) return byDate;
+          const byStatus = WORK_STATUS_ORDER.indexOf(a.saved_status) - WORK_STATUS_ORDER.indexOf(b.saved_status);
+          return (this.timelineSort === 'desc' ? -byStatus : byStatus) || byDate;
+        })
+        .map(t => ({ t, ...this.buildTimeline(t) }));
+    },
+    // ช่วงเวลาที่ดู = จากการประชุมที่เลือก ถึงก่อนการประชุมครั้งถัดไป (ครั้งล่าสุด = ถึงวันนี้) / ทุกครั้ง = null (ยืนยันจากผู้ใช้ 2026-11-03)
+    workPeriod() {
+      const m = this.meetings.find(x => x.id === Number(this.workFilter.meeting));
+      if (!m) return null;
+      const next = [...this.meetings].reverse()
+        .find(x => x.meeting_date > m.meeting_date && (Number(x.new_count) > 0 || Number(x.note_count) > 0));
+      return { meeting: m, start: m.meeting_date, end: next ? next.meeting_date : null, next: next || null };
+    },
+    // ช่วงของการประชุมที่ผ่านไปแล้ว (มีการประชุมครั้งถัดไป) — สถานะแสดงเป็นของช่วงนั้น ไม่ใช่ปัจจุบัน
+    workPastPeriod() { return !!this.workPeriod?.end; },
+    // เรียงตามลำดับที่ต้องทำ: กำลังทำ → รอดำเนินการ → รอขึ้นระบบจริง → รอตัดสินใจ → จบแล้ว (2026-11-03) — ใช้สถานะของช่วงที่ดู
+    visibleWork() {
+      const f = this.workFilter;
+      return this.workInScope
+        .filter(t => f.status === 'pending' ? !FINISHED_STATUSES.includes(this.viewStatus(t)) : (!f.status || this.viewStatus(t) === f.status))
+        .sort((a, b) => WORK_STATUS_ORDER.indexOf(this.viewStatus(a)) - WORK_STATUS_ORDER.indexOf(this.viewStatus(b)));
+    },
+    workPendingCount() { return this.workInScope.filter(t => !FINISHED_STATUSES.includes(this.viewStatus(t))).length; },
+    workStatusCounts() {
+      return WORK_STATUS_ORDER
+        .map(key => ({ key, ...this.statuses[key], count: this.workInScope.filter(t => this.viewStatus(t) === key).length }))
+        .filter(s => s.count > 0);
+    },
+    // การประชุมที่ไม่ใช่ครั้งล่าสุด = อ่านอย่างเดียว จนกว่าจะกดแก้ไข
+    readOnly() { return !!this.meeting && !this.meeting.is_latest && !this.editingPast; },
+    // แท็บวาระของการประชุมที่เปิด + จำนวนเรื่อง + มีการ์ดแก้ค้างไหม
+    meetingTabs() {
+      return [[GROUP_CARRIED, 'ระเบียบวาระที่ 1 เรื่องสืบเนื่อง'], [GROUP_NEW, 'ระเบียบวาระที่ 2 เรื่องใหม่']].map(([section, label]) => {
+        const topics = this.topics.filter(t => this.topicGroup(t) === section);
+        return { section, label, count: topics.length, dirty: topics.some(t => this.isDirty(t)) };
+      });
+    },
+    // เรื่องในแท็บที่เปิด เรียงงานที่ยังไม่จบขึ้นก่อน ตามด้วยเรื่องที่เสร็จแล้ว
+    tabTopics() {
+      return this.topics.filter(t => this.topicGroup(t) === this.meetingTab)
+        .sort((a, b) => WORK_STATUS_ORDER.indexOf(this.meetingStatus(a)) - WORK_STATUS_ORDER.indexOf(this.meetingStatus(b)));
+    },
+    statusCounts() {
+      return Object.entries(this.statuses)
+        .map(([key, s]) => ({ key, ...s, count: this.tabTopics.filter(t => this.meetingStatus(t) === key).length }))
+        .filter(s => s.count > 0);
+    },
+    visibleTopics() { return this.topicFilter ? this.tabTopics.filter(t => this.meetingStatus(t) === this.topicFilter) : this.tabTopics; },
+    // สรุปการประชุม: ภาพรวม + รายการแต่ละกลุ่ม + งานแยกตามผู้ดำเนินการ + รายการตรวจก่อนส่ง (2026-11-03)
+    meetingSummary() {
+      const groups = [GROUP_CARRIED, GROUP_NEW].map(section => {
+        const topics = this.topics.filter(t => this.topicGroup(t) === section)
+          .sort((a, b) => WORK_STATUS_ORDER.indexOf(this.meetingStatus(a)) - WORK_STATUS_ORDER.indexOf(this.meetingStatus(b)));
+        const counts = WORK_STATUS_ORDER
+          .map(key => ({ label: this.statusOf(key).label, count: topics.filter(t => this.meetingStatus(t) === key).length }))
+          .filter(c => c.count);
+        return { section, topics, counts };
+      });
+      // งานที่ยังไม่จบ แยกตามทีม + ชื่อผู้ดำเนินการ
+      const owners = {};
+      this.topics.filter(t => !FINISHED_STATUSES.includes(this.meetingStatus(t))).forEach(t => {
+        const key = this.ownerText(t) || 'ยังไม่ระบุผู้ดำเนินการ';
+        (owners[key] = owners[key] || []).push(t);
+      });
+      const checks = [];
+      this.topics.forEach(t => {
+        const finished = FINISHED_STATUSES.includes(this.meetingStatus(t));
+        const problems = [];
+        if (this.isDirty(t)) problems.push('มีการแก้ไขที่ยังไม่บันทึก');
+        if (!finished && !t.decision.trim()) problems.push('ยังไม่มีสรุปในที่ประชุม');
+        if (!finished && (!t.owner_team || (t.owner_team !== 'meeting' && !t.owner_name.trim()))) problems.push('ยังไม่ระบุทีมหรือชื่อผู้ดำเนินการ');
+        if (!finished && this.topicGroup(t) === GROUP_CARRIED && !(this.noteDrafts[t.id] || '').trim()) problems.push('ยังไม่มีอัปเดตความคืบหน้าของครั้งนี้');
+        if (problems.length) checks.push({ t, problems });
+      });
+      return { groups, owners: Object.entries(owners).map(([name, topics]) => ({ name, topics })), checks };
+    },
+    // ข้อความสรุปสำหรับคัดลอกไปวางในกลุ่ม LINE / อีเมล
+    summaryText() {
+      const s = this.meetingSummary;
+      const m = this.meeting;
+      if (!m) return '';
+      // หัวรายงานตามโครงรายงานการประชุม (ยืนยันจากผู้ใช้ 2026-11-04)
+      const lines = [this.reportTitle, `ครั้งที่ ${this.meetingNoText}`, `เมื่อ ${this.longThaiDate(m.meeting_date)}`];
+      if (this.meetingTimeRange(m)) lines.push(`เวลา ${this.meetingTimeRange(m)}`);
+      if (m.location) lines.push(`ณ ${m.location}`);
+      this.minutesAttendeeGroups.forEach(g => {
+        lines.push('', `${g.title} (${g.list.length} คน)`);
+        g.list.forEach((a, i) => lines.push(`${i + 1}. ${a.attendee_name}${a.note ? ' — ' + a.note : ''}`));
+      });
+      lines.push('', 'ภาพรวม');
+      s.groups.forEach(g => lines.push(`- ${this.agendaTitle(g.section)} ${g.topics.length} เรื่อง${g.counts.length ? ': ' + g.counts.map(c => `${c.label} ${c.count}`).join(' · ') : ''}`));
+      s.groups.filter(g => g.topics.length).forEach(g => {
+        lines.push('', `■ ${this.agendaTitle(g.section)}`);
+        g.topics.forEach(t => {
+          lines.push(`${this.topicLabel(t)} ${t.title}`);   // ไม่แสดงหมวด — แสดงตามหัวข้อที่พิมพ์ (ยืนยันจากผู้ใช้ 2026-11-03)
+          lines.push(`   สถานะ: ${this.statusChangeText(t)}${this.ownerText(t) ? ' · ผู้รับผิดชอบ: ' + this.ownerText(t) : ''}`);
+          if (g.section === GROUP_CARRIED && (this.noteDrafts[t.id] || '').trim()) lines.push('   ความคืบหน้า: ' + this.indentText(this.noteDrafts[t.id]));
+          if (t.decision.trim()) lines.push('   มติที่ประชุม: ' + this.indentText(t.decision));
+        });
+      });
+      if (s.owners.length) {
+        lines.push('', '■ งานที่ต้องดำเนินการต่อ (ผู้รับผิดชอบ: เรื่อง)');
+        s.owners.forEach(o => lines.push(`- ${o.name}: ${o.topics.map(t => this.topicLabel(t)).join(', ')}`));
+      }
+      if (m.next_meeting_date) lines.push('', `กำหนดประชุมครั้งต่อไป (เบื้องต้น): ${this.nextMeetingText(m)}`);
+      if (m.end_time) lines.push(`เลิกประชุมเวลา ${this.timeLabel(m.end_time)} น.`);
+      if (this.roleNames('secretary') || this.roleNames('chair')) lines.push('');
+      if (this.roleNames('secretary')) lines.push(`ผู้จดรายงานการประชุม: ${this.roleNames('secretary')}`);
+      if (this.roleNames('chair')) lines.push(`ผู้ตรวจรายงานการประชุม: ${this.roleNames('chair')} (ประธาน)`);
+      return lines.join('\n');
+    },
+  },
+  async mounted() {
+    try {
+      const res = await apiCall('GET', 'api/auth.php?action=me');
+      if (!res.success) { window.location.href = 'login.html'; return; }
+      this.currentUser = res.data;
+      if (this.currentUser.role !== 'admin') { window.location.href = 'dashboard.html'; return; }
+    } catch { window.location.href = 'login.html'; return; }
+    this.authReady = true;
+    this.newMeetingDate = this.todayDate();
+    // ?view=work = งานที่ต้องติดตาม / อื่นๆ = บันทึกวาระและมติ (&meeting=id เปิดการประชุมนั้น)
+    const params = new URLSearchParams(window.location.search);
+    this.view = ['work', 'timeline'].includes(params.get('view')) ? params.get('view') : 'meeting';
+    await this.loadMeetings();
+    if (this.view === 'work' || this.view === 'timeline') { await this.loadWork(); await this.applyWorkDefaults(); }
+    else if (this.meetings.length) {
+      const wanted = Number(params.get('meeting'));
+      await this.openMeeting(this.meetings.some(m => m.id === wanted) ? wanted : this.meetings[0].id);
+    }
+    // สลับเมนูซ้ายจะโหลดหน้าใหม่ — กันลืมบันทึก
+    window.addEventListener('beforeunload', e => {
+      if (this.topics.some(t => this.isDirty(t)) || this.workTopics.some(t => this.hasWorkDraft(t))) { e.preventDefault(); e.returnValue = ''; }
+    });
+  },
+  methods: {
+    ...SharedMethods,
+
+    todayDate() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+    async setView(v) {
+      this.view = v;
+      history.replaceState(null, '', 'meeting-topics.html?view=' + v);
+      if (v === 'work' || v === 'timeline') await this.loadWork();
+      else if (this.meetings.length) await this.openMeeting(this.meetingId || this.meetings[0].id);
+    },
+    // สลับแท็บรายการงาน / ไทม์ไลน์ — ข้อมูลชุดเดียวกัน ไม่โหลดใหม่ (บันทึกที่พิมพ์ค้างในรายการงานไม่หาย) ตัวกรองผู้ดำเนินการ/ทีมคงไว้
+    switchWorkTab(v) {
+      if (this.view === v) return;
+      this.view = v;
+      history.replaceState(null, '', 'meeting-topics.html?view=' + v);
+    },
+    // ลิงก์ข้ามหน้า: การ์ดในบันทึกวาระและมติ → งานนั้นในงานที่ต้องติดตาม (ล้างตัวกรองให้เห็นแน่นอน)
+    async goToWorkCard(t) {
+      if (this.topics.some(x => this.isDirty(x))) {
+        const ok = await this.showConfirm('มีการแก้ไขที่ยังไม่บันทึก', 'ไปหน้างานที่ต้องติดตามแล้วการแก้ไขที่ยังไม่กดบันทึกจะหาย', 'ไปต่อ');
+        if (!ok) return;
+      }
+      await this.setView('work');
+      this.workFilter = { meeting: '', team: '', status: '', owner: '' };
+      this.workMeetingTopicIds = null;
+      this.workExpanded = t.id;
+      this.measureDecision(t.id);
+      // รอหน้าวาดรายการเสร็จก่อนเลื่อน ไม่งั้นตำแหน่งคลาดเมื่อเนื้อหาด้านบนเปลี่ยนขนาด
+      await this.$nextTick();
+      setTimeout(() => document.getElementById('work' + t.id)?.scrollIntoView({ block: 'start' }), 50);
+    },
+    // การ์ดในงานที่ต้องติดตาม → การประชุมที่เปิดเรื่องนี้
+    async goToMeeting(meetingId) {
+      if (this.workTopics.some(x => this.hasWorkDraft(x))) {
+        const ok = await this.showConfirm('มีการแก้ไขที่ยังไม่บันทึก', 'ไปหน้าบันทึกวาระและมติแล้วการแก้ไขที่ยังไม่กดบันทึกจะหาย', 'ไปต่อ');
+        if (!ok) return;
+        await this.loadWork();
+      }
+      this.view = 'meeting';
+      history.replaceState(null, '', 'meeting-topics.html?view=meeting&meeting=' + meetingId);
+      await this.openMeeting(Number(meetingId));
+      window.scrollTo(0, 0);
+    },
+    async loadWork() {
+      this.workLoading = true;
+      const res = await apiCall('GET', 'api/meetings.php?action=all_topics');
+      this.workLoading = false;
+      if (!res.success) { await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+      this.workTopics = res.data.map(t => ({ ...t, id: Number(t.id), saved_status: t.status, owner_team: t.owner_team || '', owner_name: t.owner_name || '', related_pages: t.related_pages ? t.related_pages.split(',') : [], logs: t.logs || [] }));
+      this.workSaved = Object.fromEntries(this.workTopics.map(t => [t.id, this.workState(t)]));
+    },
+    workState(t) { return JSON.stringify([t.status, t.owner_team, t.owner_name, t.related_pages]); },
+    isWorkDirty(t) { return this.workSaved[t.id] !== this.workState(t); },
+    // แก้สถานะ / ผู้ดำเนินการ หรือพิมพ์บันทึกค้างไว้ = ยังไม่บันทึก
+    hasWorkDraft(t) { return this.isWorkDirty(t) || !!(this.logDrafts[t.id]?.note || '').trim(); },
+    // เปิดหน้างานที่ต้องติดตาม: การประชุมล่าสุด + งานของผู้ใช้ที่ login (ถ้าชื่อตรงผู้ดำเนินการ) / ทีม = ทุกทีม (ใช้ร่วมกับแท็บไทม์ไลน์ — ยืนยันจากผู้ใช้ 2026-11-03)
+    async applyWorkDefaults() {
+      const mine = this.workOwners.includes((this.currentUser?.full_name || '').trim()) ? this.currentUser.full_name.trim() : '';
+      this.workFilter = { meeting: this.latestMeeting ? this.latestMeeting.id : '', team: '', status: 'pending', owner: mine };
+      await this.loadWorkMeetingTopics();
+    },
+    async loadWorkMeetingTopics() {
+      if (!this.workFilter.meeting) { this.workMeetingTopicIds = null; return; }
+      const res = await apiCall('GET', `api/meetings.php?action=detail&id=${this.workFilter.meeting}`);
+      this.workMeetingTopicIds = res.success ? res.data.topics.map(t => Number(t.id)) : null;
+    },
+    toggleWorkRow(t) {
+      this.workExpanded = this.workExpanded === t.id ? null : t.id;
+      if (this.workExpanded) this.measureDecision(t.id);
+    },
+    // วัดว่ามติยาวเกิน 3 บรรทัดไหม (ถูกตัดด้วย line-clamp) — แสดงปุ่ม "ดูทั้งหมด" เฉพาะที่ถูกตัดจริง
+    measureDecision(id) {
+      this.$nextTick(() => {
+        const el = document.querySelector(`[data-decision="${id}"]`);
+        this.decisionClamped[id] = !!el && el.scrollHeight > el.clientHeight + 2;
+      });
+    },
+    // "2026-11-03" → "3 พ.ย. 2569"
+    thaiDate(iso) {
+      if (!iso) return '';
+      const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+      const [y, m, d] = String(iso).split('-').map(Number);
+      return `${d} ${months[m - 1]} ${y + 543}`;
+    },
+    // บันทึกในช่วงที่ดู (ทุกครั้ง = ทั้งหมด) — logs เรียงตามวันที่ + id จาก API
+    viewLogs(t) {
+      const p = this.workPeriod, logs = t.logs || [];
+      return p ? logs.filter(l => l.log_date >= p.start && (!p.end || l.log_date < p.end)) : logs;
+    },
+    // สถานะช่วงนั้น (การประชุมที่ผ่านไปแล้ว) ไล่ตามลำดับ: บันทึกล่าสุดในช่วงที่เปลี่ยนสถานะ
+    // → สถานะตอนเข้าประชุมครั้งถัดไป (= ตอนจบช่วง) → สถานะตอนจบประชุมนั้น → ไม่มีข้อมูล (null)
+    periodStatus(t) {
+      const p = this.workPeriod;
+      if (!p?.end) return null;
+      const changed = this.viewLogs(t).filter(l => l.status_after);
+      if (changed.length) return changed[changed.length - 1].status_after;
+      const snaps = t.meeting_statuses || [];
+      return snaps.find(n => Number(n.meeting_id) === p.next.id)?.status_before
+        || snaps.find(n => Number(n.meeting_id) === p.meeting.id)?.status_after || null;
+    },
+    // สถานะที่ใช้แสดง / กรอง / นับ: ช่วงที่ผ่านไปแล้ว = สถานะช่วงนั้น (ไม่มีข้อมูล = ปัจจุบัน) / อื่นๆ = ปัจจุบัน
+    viewStatus(t) { return this.periodStatus(t) || t.saved_status; },
+    periodNoData(t) { return this.workPastPeriod && !this.periodStatus(t); },
+    shortRange(p) {
+      const end = new Date(p.end + 'T00:00:00'); end.setDate(end.getDate() - 1);
+      const iso = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+      return `${this.shortDayMonth(p.start)} – ${this.shortDayMonth(iso)}`;
+    },
+    // ไทม์ไลน์ของงาน 1 เรื่อง — เดินตามวันที่จริง: วันประชุม (สถานะ ณ ประชุม) สลับกับช่วงระหว่างประชุม (บันทึกของ Dev)
+    // ไม่มีสถานะ ณ วันประชุมที่บันทึกไว้ = ใช้สถานะล่าสุดที่รู้ก่อนหน้า (ไม่เดา) / ยังไม่รู้เลย = "ไม่มีข้อมูล" (การประชุมล่าสุดใช้สถานะปัจจุบัน)
+    // งานจบแล้ว (เสร็จแล้ว / ตกลงแล้ว) แสดงในการประชุมที่รายงานว่าจบ แล้วช่องถัดไปเป็น —
+    buildTimeline(t) {
+      const meetings = this.timelineMeetings, snaps = t.meeting_statuses || [], logs = t.logs || [];
+      let cur = null, closed = false, finishDate = null, finishAtMeeting = false;
+      const markFinish = (status, date, atMeeting) => { if (!finishDate && FINISHED_STATUSES.includes(status)) { finishDate = date; finishAtMeeting = atMeeting; } };
+      const cols = meetings.map((m, i) => {
+        const next = meetings[i + 1];
+        const isNew = m.id === Number(t.first_meeting_id);
+        let mcell;
+        if (m.meeting_date < t.first_meeting_date) mcell = { kind: 'notyet' };
+        else if (closed) mcell = { kind: 'none' };
+        else {
+          const s = snaps.find(n => Number(n.meeting_id) === m.id);
+          if (s?.status_after) { cur = s.status_after; mcell = { kind: 'status', before: s.status_before, after: cur, isNew, note: s.note }; }
+          else if (cur) mcell = { kind: 'status', after: cur, inferred: true, isNew, note: s?.note };
+          else if (!next) { cur = t.saved_status; mcell = { kind: 'status', after: cur, inferred: true, isNew, note: s?.note }; }
+          else mcell = { kind: 'nodata', isNew, note: s?.note };
+          if (cur) markFinish(cur, m.meeting_date, true);
+          if (cur && FINISHED_STATUSES.includes(cur)) closed = true;
+        }
+        const segLogs = mcell.kind === 'notyet' || (closed && mcell.kind === 'none') ? []
+          : logs.filter(l => l.log_date >= m.meeting_date && (!next || l.log_date < next.meeting_date));
+        segLogs.forEach(l => { if (l.status_after) { cur = l.status_after; markFinish(cur, l.log_date, false); } });
+        // ช่องระหว่างประชุม: blank = ยังไม่เปิดเรื่อง / dash = จบไปแล้ว / warn = ช่วงปัจจุบัน ยังไม่จบ แต่ยังไม่มีบันทึก
+        const seg = { logs: segLogs, blank: mcell.kind === 'notyet', dash: mcell.kind === 'none' || (!segLogs.length && closed),
+                      warn: !segLogs.length && !next && !closed };
+        return { m, mcell, seg };
+      });
+      const finished = FINISHED_STATUSES.includes(t.saved_status);
+      const days = (from, to) => Math.round((new Date(to + 'T00:00:00') - new Date(from + 'T00:00:00')) / 86400000);
+      // จบวันเดียวกับที่เปิดเรื่อง: ที่ประชุมสรุปจบ = "จบในที่ประชุม" / Dev ทำเสร็จหลังประชุมวันนั้น = "เสร็จวันที่เปิดเรื่อง"
+      const used = finishDate ? days(t.first_meeting_date, finishDate) : null;
+      const duration = finished
+        ? (used === null ? '' : used > 0 ? `ใช้ ${used} วัน` : (finishAtMeeting ? 'จบในที่ประชุม' : 'จบวันเดียว'))
+        : `${days(t.first_meeting_date, this.todayDate())} วัน`;
+      return { cols, duration };
+    },
+    // เหตุการณ์ของงานเรียงตามวันที่ (ไทม์ไลน์ละเอียด) — วันเดียวกัน ประชุมก่อน แล้วค่อยงานที่ทำหลังประชุม
+    timelineEvents(row) {
+      const ev = [];
+      row.cols.forEach(c => {
+        if (c.mcell.kind === 'status' || c.mcell.kind === 'nodata') ev.push({ type: 'meeting', date: c.m.meeting_date, cell: c.mcell, decision: c.mcell.isNew ? row.t.decision : '' });
+        c.seg.logs.forEach(l => ev.push({ type: 'log', date: l.log_date, log: l }));
+      });
+      return ev;
+    },
+    // หัวกลุ่ม: เปิดเรื่องในการประชุมล่าสุด = เรื่องใหม่ / เปิดก่อนหน้า = เรื่องสืบเนื่อง (กลุ่มที่ว่างไม่แสดง)
+    timelineGroupsOf(rows) {
+      const latest = this.timelineMeetings[this.timelineMeetings.length - 1];
+      const isNew = row => !!latest && Number(row.t.first_meeting_id) === latest.id;
+      const when = latest ? this.shortDayMonth(latest.meeting_date) : '';
+      return [
+        { key: 'carried', label: 'ระเบียบวาระที่ 1 เรื่องสืบเนื่อง', hint: `เปิดก่อนประชุม ${when}`, rows: rows.filter(r => !isNew(r)) },
+        { key: 'new', label: 'ระเบียบวาระที่ 2 เรื่องใหม่', hint: `เปิดในประชุม ${when}`, rows: rows.filter(isNew) },
+      ].filter(g => g.rows.length);
+    },
+    cycleTimelineSort() { this.timelineSort = this.timelineSort === '' ? 'asc' : this.timelineSort === 'asc' ? 'desc' : ''; },
+    toggleTimeline(t) { this.timelineOpen = this.timelineOpen === t.id ? null : t.id; },
+    // ไปดูการประชุมล่าสุด (สถานะปัจจุบัน) ในหน้างานที่ต้องติดตาม
+    async showLatestWork() {
+      this.workFilter.meeting = this.latestMeeting ? this.latestMeeting.id : '';
+      await this.loadWorkMeetingTopics();
+    },
+    lastLogDate(t) { return this.viewLogs(t).reduce((max, l) => (l.log_date > max ? l.log_date : max), ''); },
+    lastLog(t) { const logs = this.viewLogs(t); return logs.length ? logs[logs.length - 1] : null; },
+    // ข้อความย่อของบันทึก: เปลี่ยนสถานะนำหน้า แล้วตามด้วยข้อความ
+    logPreview(l) {
+      const change = l.status_after ? `[${this.statusOf(l.status_before).label} → ${this.statusOf(l.status_after).label}] ` : '';
+      return (change + (l.note || '')).trim();
+    },
+    // งานที่ยังไม่จบ และยังไม่มีบันทึกการดำเนินการตั้งแต่วันประชุมที่ใช้เทียบ — ก่อนประชุมครั้งถัดไปจะรู้ว่ายังไม่คืบหน้า
+    needsUpdate(t) {
+      const since = this.workCompareMeeting?.meeting_date, end = this.workPeriod?.end;
+      return !!since && !FINISHED_STATUSES.includes(this.viewStatus(t))
+        && !(t.logs || []).some(l => l.log_date >= since && (!end || l.log_date < end));
+    },
+    // ฟอร์มอัปเดต: เปิดเมื่อกดปุ่ม หรือยังไม่มีบันทึกเลย (ต้องลงบันทึกแรก) หรือมีค่าที่แก้ค้างอยู่ / ช่วงที่ผ่านไปแล้วเปิดเมื่อกดเท่านั้น
+    // ช่วงที่ปิดแล้ว (การประชุมที่ผ่านไปแล้ว) ไม่มีฟอร์ม — แก้คำผิดในบันทึกเดิมได้อย่างเดียว (ยืนยันจากผู้ใช้ 2026-11-03)
+    workFormVisible(t) {
+      if (this.workPastPeriod) return false;
+      return !!this.workFormOpen[t.id] || !t.logs.length || this.hasWorkDraft(t);
+    },
+    openWorkForm(t) { this.workFormOpen[t.id] = true; this.savedText[t.id] = ''; },
+    // ยกเลิก: คืนสถานะ / ผู้ดำเนินการเป็นค่าที่บันทึกไว้ ล้างข้อความที่พิมพ์ แล้วปิดฟอร์ม
+    cancelWorkForm(t) {
+      const [status, team, owner] = JSON.parse(this.workSaved[t.id]);
+      Object.assign(t, { status, owner_team: team, owner_name: owner });
+      this.logDrafts[t.id] = null;
+      this.workFormOpen[t.id] = false;
+    },
+    // ปุ่มบันทึกเดียวของแถว: สถานะ / ผู้ดำเนินการ (ถ้าเปลี่ยน) + บันทึกการดำเนินการ (ถ้าพิมพ์) — เดิมแยก 2 ปุ่ม (2026-11-03)
+    async saveWorkUpdate(t) {
+      const changed = this.isWorkDirty(t);
+      const hasNote = !!(this.logDraft(t).note || '').trim();
+      if (!changed && !hasNote) { await this.showAlert('ยังไม่มีอะไรเปลี่ยน — เลือกสถานะใหม่ หรือพิมพ์สิ่งที่ทำ', 'error'); return; }
+      // เปลี่ยนสถานะ = เก็บลงบันทึกด้วย (ก่อน → หลัง) แม้ไม่ได้พิมพ์ข้อความ — เป็นประวัติว่าเปลี่ยนเมื่อไร (ยืนยันจากผู้ใช้ 2026-11-03)
+      const statusBefore = t.saved_status;
+      const statusChanged = t.status !== statusBefore;
+      if (changed && !(await this.saveWorkTopic(t))) return;
+      if ((hasNote || statusChanged) && !(await this.addLog(t, statusChanged ? { status_before: statusBefore, status_after: t.status } : {}))) return;
+      this.workFormOpen[t.id] = false;   // บันทึกแล้วปิดฟอร์ม บันทึกใหม่ขึ้นบนสุดของรายการ
+      this.savedText[t.id] = 'บันทึกแล้ว';
+    },
+    async saveWorkTopic(t) {
+      this.savingId = t.id;
+      const res = await apiCall('POST', 'api/meetings.php?action=update_topic', { id: t.id, title: t.title, detail: t.detail, status: t.status, owner_team: t.owner_team, owner_name: t.owner_name, related_pages: t.related_pages, decision: t.decision });
+      this.savingId = null;
+      if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return false; }
+      this.workSaved[t.id] = this.workState(t);
+      t.saved_status = t.status;
+      this.savedText[t.id] = 'บันทึกแล้ว';
+      return true;
+    },
+    logDraft(t) {
+      if (!this.logDrafts[t.id]) this.logDrafts[t.id] = { log_date: this.todayDate(), note: '', files: '' };
+      return this.logDrafts[t.id];
+    },
+    async addLog(t, statusChange = {}) {
+      const d = this.logDraft(t);
+      this.savingId = t.id;
+      const res = await apiCall('POST', 'api/meetings.php?action=add_log', { topic_id: t.id, ...d, ...statusChange });
+      this.savingId = null;
+      if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return false; }
+      this.logDrafts[t.id] = null;
+      const list = await apiCall('GET', 'api/meetings.php?action=all_topics');
+      if (list.success) t.logs = list.data.find(x => Number(x.id) === t.id)?.logs || [];
+      return true;
+    },
+    async saveLogEdit(l) {
+      const res = await apiCall('POST', 'api/meetings.php?action=update_log', this.logEdit);
+      if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
+      Object.assign(l, { log_date: this.logEdit.log_date, note: this.logEdit.note, files: this.logEdit.files });
+      this.logEdit = null;
+    },
+    async deleteLog(l) {
+      const ok = await this.showConfirm('ลบบันทึกการดำเนินการ', `ลบบันทึกวันที่ ${this.shortDate(l.log_date)}`, 'ลบ');
+      if (!ok) return;
+      const res = await apiCall('POST', 'api/meetings.php?action=delete_log', { id: l.id });
+      if (!res.success) { await this.showAlert(res.message || 'ลบไม่สำเร็จ', 'error'); return; }
+      const t = this.workTopics.find(x => x.logs.includes(l));
+      if (t) t.logs = t.logs.filter(x => x !== l);
+    },
+    // บันทึกการดำเนินการตั้งแต่วันประชุมครั้งก่อน (รวมงานที่แก้หลังประชุมวันนั้น) จนถึงวันประชุมครั้งนี้
+    // ตั้งแต่วันประชุมครั้งก่อน ถึงก่อนวันประชุมนี้ — บันทึกที่ลงวันประชุม = ทำหลังประชุม ไปขึ้นครั้งถัดไป / ครั้งแรกไม่มี (ยืนยันจากผู้ใช้ 2026-11-03)
+    logsSincePrev(t) {
+      const prev = this.meeting?.prev_meeting_date, cur = this.meeting?.meeting_date;
+      if (!prev) return [];
+      return (t.logs || []).filter(l => l.log_date >= prev && l.log_date < cur);
+    },
+
+    // ค่าเริ่มต้นวันที่ประชุม = วันนี้ เพราะประชุมวันศุกร์มีเลื่อนได้ ถ้าไม่ตรงผู้ใช้เลือกเอง (ยืนยันจากผู้ใช้ 2026-11-02)
+    todayDate() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+    // "2026-11-02" → "02/11" (คำเตือนสั้นในรายการงาน)
+    shortDayMonth(iso) {
+      const [, m, d] = String(iso).split('-');
+      return `${d}/${m}`;
+    },
+    shortDate(iso) {
+      const [y, m, d] = String(iso).split('-');
+      return `${d}/${m}/${Number(y) + 543}`;
+    },
+    addDays(iso, n) {
+      const d = new Date(iso + 'T00:00:00');
+      d.setDate(d.getDate() + n);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+    // ช่องแก้วันนัด: ค่าที่บันทึกไว้ / ยังไม่นัด = เสนออีก 7 วัน
+    resetNextDraft() {
+      const m = this.meeting;
+      this.nextDraft = {
+        date: m.next_meeting_date || this.addDays(m.meeting_date, 7),
+        time: (m.next_meeting_time || '').slice(0, 5),
+        note: m.next_meeting_note || '',
+      };
+    },
+    // "วันศุกร์ 20/11/2569 เวลา 13.30 น. · ห้องประชุม รอตรวจสอบห้องว่าง" (เวลา/สถานที่ ไม่มีก็ไม่แสดง)
+    nextMeetingText(m) {
+      if (!m?.next_meeting_date) return '';
+      let text = this.dateLabel(m.next_meeting_date);
+      if (m.next_meeting_time) text += ` เวลา ${m.next_meeting_time.slice(0, 5).replace(':', '.')} น.`;
+      if (m.next_meeting_note) text += ` · ${m.next_meeting_note}`;
+      return text;
+    },
+    // ===== หัวรายงานการประชุม (ยืนยันจากผู้ใช้ 2026-11-04) =====
+    timeLabel(t) { return t ? t.slice(0, 5).replace(':', '.') : ''; },
+    meetingTimeRange(m) {
+      if (!m?.start_time) return m?.end_time ? `ถึง ${this.timeLabel(m.end_time)} น.` : '';
+      return m.end_time ? `${this.timeLabel(m.start_time)} – ${this.timeLabel(m.end_time)} น.` : `${this.timeLabel(m.start_time)} น.`;
+    },
+    meetingInfoText(m) {
+      return [m.title, this.meetingTimeRange(m) && 'เวลา ' + this.meetingTimeRange(m), m.location && 'ณ ' + m.location].filter(Boolean).join(' · ');
+    },
+    longThaiDate(iso) {
+      const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+      const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+      const d = new Date(iso + 'T00:00:00');
+      return `วัน${days[d.getDay()]}ที่ ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+    },
+    roleNames(role) { return this.attendees.filter(a => a.meeting_role === role && a.attendance === 'present').map(a => a.attendee_name).join(', '); },
+    openInfoDialog() {
+      const m = this.meeting;
+      this.infoDialog = { open: true, title: m.title || '', start: (m.start_time || '').slice(0, 5), end: (m.end_time || '').slice(0, 5), location: m.location || '', saving: false };
+    },
+    async saveMeetingInfo() {
+      const d = this.infoDialog;
+      d.saving = true;
+      let res;
+      try { res = await apiCall('POST', 'api/meetings.php?action=save_meeting_info', { id: this.meeting.id, title: d.title, start_time: d.start, end_time: d.end, location: d.location }); }
+      catch { res = { success: false }; }
+      d.saving = false;
+      if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
+      const listed = this.meetings.find(x => x.id === Number(this.meeting.id));
+      [this.meeting, listed].filter(Boolean).forEach(x => Object.assign(x, res.data));
+      d.open = false;
+    },
+    // ===== ผู้เข้าร่วมประชุม + @แท็ก (ยืนยันจากผู้ใช้ 2026-11-04) =====
+    attendanceInfo(key) { return ATTENDANCE[key] || ATTENDANCE.present; },
+    roleLabel(key) { return MEETING_ROLES[key] || ''; },
+    async openAttendeeDialog() {
+      if (!this.attendeeOptions) {
+        const res = await apiCall('GET', 'api/meetings.php?action=attendee_options');
+        if (!res.success) { await this.showAlert(res.message || 'โหลดรายชื่อไม่สำเร็จ', 'error'); return; }
+        this.attendeeOptions = res.data.map(u => ({ ...u, id: Number(u.id) }));
+      }
+      // รายชื่อที่บันทึกไว้ขึ้นก่อน (ตามลำดับเดิม) แล้วตามด้วยผู้ใช้ที่ยังไม่ได้เลือก
+      const rows = this.attendees.map(a => ({ user_id: a.user_id ? Number(a.user_id) : null, name: a.attendee_name, checked: true, attendance: a.attendance, role: a.meeting_role }));
+      this.attendeeOptions.filter(u => !rows.some(r => r.user_id === u.id))
+        .forEach(u => rows.push({ user_id: u.id, name: u.full_name, checked: false, attendance: 'present', role: 'member' }));
+      this.attendeeDialog = { open: true, search: '', rows, extName: '', saving: false };
+    },
+    addExternalAttendee() {
+      const name = this.attendeeDialog.extName.trim();
+      if (!name) return;
+      if (this.attendeeDialog.rows.some(r => r.name === name)) { this.showAlert(`มีชื่อ "${name}" อยู่แล้ว`, 'error'); return; }
+      this.attendeeDialog.rows.push({ user_id: null, name, checked: true, attendance: 'present', role: 'member' });
+      this.attendeeDialog.extName = '';
+    },
+    async saveAttendees() {
+      const list = this.attendeeDialog.rows.filter(r => r.checked)
+        .map(r => ({ user_id: r.user_id, attendee_name: r.name, attendance: r.attendance, meeting_role: r.role }));
+      this.attendeeDialog.saving = true;
+      let res;
+      try { res = await apiCall('POST', 'api/meetings.php?action=save_attendees', { meeting_id: this.meetingId, attendees: list }); }
+      catch { res = { success: false }; }
+      this.attendeeDialog.saving = false;
+      if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
+      this.attendees = res.data;
+      this.attendeeDialog.open = false;
+    },
+    // พิมพ์ @ ในช่องสรุป / ความคืบหน้า → รายชื่อผู้มาประชุมที่ตรงกับคำที่พิมพ์ต่อจาก @
+    onMentionInput(e, key) {
+      const el = e.target;
+      const m = el.value.slice(0, el.selectionStart).match(/@([^\s@]*)$/);
+      if (!m || !this.mentionNames.length) { this.closeMention(); return; }
+      const q = m[1].toLowerCase();
+      this.mention = { key, items: this.mentionNames.filter(n => n.toLowerCase().includes(q)), sel: 0 };
+    },
+    onMentionKeydown(e, obj, prop, key) {
+      if (this.mention.key !== key) return;
+      const n = this.mention.items.length;
+      if (e.key === 'Escape') { this.closeMention(); return; }
+      if (!n) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.mention.sel = (this.mention.sel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        this.pickMention(this.mention.sel, obj, prop, key);
+      }
+    },
+    // แทนคำที่พิมพ์ต่อจาก @ ด้วยชื่อเต็ม แล้ววางเคอร์เซอร์ต่อท้ายชื่อ
+    pickMention(i, obj, prop, key) {
+      const el = document.getElementById(key);
+      const name = this.mention.items[i];
+      if (!el || !name) return;
+      const pos = el.selectionStart;
+      const before = el.value.slice(0, pos).replace(/@([^\s@]*)$/, '@' + name + ' ');
+      obj[prop] = before + el.value.slice(pos);
+      this.closeMention();
+      this.$nextTick(() => { el.focus(); el.selectionStart = el.selectionEnd = before.length; });
+    },
+    closeMention() { this.mention = { key: null, items: [], sel: 0 }; },
+    // แสดงข้อความ: ทำ HTML ให้ปลอดภัยก่อน แล้วทำ @ชื่อ เป็นตัวหนาสีเขียวเข้ม ไม่มีพื้น (แบบ Facebook / Teams — ยืนยันจากผู้ใช้ 2026-11-04) ของผู้เข้าร่วมการประชุมนี้ (ชื่อยาวก่อน กันชื่อสั้นตัดชื่อยาว)
+    mentionHtml(text) {
+      let html = String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      [...this.attendees].map(a => a.attendee_name).sort((a, b) => b.length - a.length).forEach(name => {
+        const safe = ('@' + name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        html = html.split(safe).join(`<span class="font-semibold text-teal-700">${safe}</span>`);
+      });
+      return html;
+    },
+    // ชั้นหลังช่องพิมพ์: ข้อความเดียวกันแต่ตัวอักษรโปร่งใส ทาพื้นเฉพาะ @ชื่อ ของผู้เข้าร่วม / ขึ้นบรรทัดท้ายเผื่อช่องพิมพ์ที่ลงท้ายด้วยบรรทัดว่าง
+    mentionBackdrop(text) {
+      return this.mentionHtml(text).split('<span class="font-semibold text-teal-700">').join('<mark class="rounded bg-slate-200/70 text-transparent">')
+        .split('</span>').join('</mark>') + '\n ';
+    },
+    // ให้ชั้นหลังเลื่อนตามช่องพิมพ์
+    syncBackdrop(e) {
+      const el = e.target;
+      this.$nextTick(() => { if (el.previousElementSibling) el.previousElementSibling.scrollTop = el.scrollTop; });
+    },
+    // ผู้เข้าร่วมที่ถูกแท็กในสรุป / ความคืบหน้าครั้งนี้ของเรื่องนี้
+    mentionedIn(t) {
+      const text = `${t.decision || ''}\n${this.noteDrafts[t.id] || ''}`;
+      return this.attendees.map(a => a.attendee_name).filter(name => text.includes('@' + name));
+    },
+    openNextDialog() { this.resetNextDraft(); this.nextDialogOpen = true; },
+    closeNextDialog() { this.nextDialogOpen = false; this.resetNextDraft(); },
+    // บันทึก / ล้างวันนัดประชุมครั้งถัดไป (เบื้องต้น) ของการประชุมที่เปิดอยู่
+    async saveNextDate(clear) {
+      const body = clear ? { id: this.meeting.id, next_meeting_date: '' }
+        : { id: this.meeting.id, next_meeting_date: this.nextDraft.date, next_meeting_time: this.nextDraft.time, next_meeting_note: this.nextDraft.note.trim() };
+      const res = await apiCall('POST', 'api/meetings.php?action=set_next_date', body);
+      if (!res.success) { await this.showAlert(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
+      const m = this.meetings.find(x => x.id === Number(this.meeting.id));
+      [this.meeting, m].filter(Boolean).forEach(x => Object.assign(x, res.data));
+      this.resetNextDraft();
+      this.nextDialogOpen = false;
+      await this.showAlert(res.message, 'success');
+    },
+    dateLabel(iso) {
+      const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+      return `วัน${days[new Date(iso + 'T00:00:00').getDay()]} ${this.shortDate(iso)}`;
+    },
+    statusOf(status) { return MEETING_STATUSES[status] || { label: status, cls: 'bg-slate-100 text-slate-600' }; },
+    // กลุ่มของเรื่องในการประชุมที่เปิดอยู่ (ใช้สถานะที่บันทึกแล้ว)
+    topicGroup(t) { return t.first_meeting_id === this.meetingId ? GROUP_NEW : GROUP_CARRIED; },
+    // สถานะ ณ การประชุมที่เปิด (snapshot — 2026-11-03) / ยังไม่มีบันทึกของการประชุมนี้ (ข้อมูลเก่า) ใช้สถานะปัจจุบัน
+    meetingStatus(t) { return t.status_after || t.saved_status; },
+    statusChanged(t) { return !!t.status_before && !!t.status_after && t.status_before !== t.status_after; },
+    statusChangeText(t) {
+      const now = this.statusOf(this.meetingStatus(t)).label;
+      return this.statusChanged(t) ? `${this.statusOf(t.status_before).label} → ${now}` : now;
+    },
+    topicLabel(t) { return t.topic_no ? `ข้อ ${t.topic_no}.` : t.topic_code; },
+    // หัววาระแบบรายงานการประชุม — เรื่องในวาระยังเป็น "ข้อ" (ยืนยันจากผู้ใช้ 2026-11-03)
+    agendaTitle(section) { return `ระเบียบวาระที่ ${section === GROUP_CARRIED ? 1 : 2} ${section}`; },
+    ownerText(t) {
+      const team = this.teams[t.owner_team] || '';
+      const name = (t.owner_name || '').trim();
+      return team && name ? `${team} (${name})` : (team || name);
+    },
+    // ข้อความหลายบรรทัดในสรุป — ย่อหน้าบรรทัดถัดไปให้อยู่ใต้หัวข้อ
+    indentText(text) { return String(text).trim().split('\n').join('\n      '); },
+    // คัดลอกด้วย Clipboard API ก่อน ไม่ได้ (เบราว์เซอร์บางตัว / หน้าไม่ได้โฟกัส) ใช้วิธีเลือกข้อความแล้วสั่งคัดลอกแทน
+    // ===== แชร์ลิงก์อ่านอย่างเดียว (ยืนยันจากผู้ใช้ 2026-11-04) =====
+    openShareDialog() { this.shareDialog = { open: true, days: 30, saving: false }; },
+    async shareMeeting() {
+      this.shareDialog.saving = true;
+      let res;
+      try { res = await apiCall('POST', 'api/meetings.php?action=share_meeting', { id: this.meeting.id, days: this.shareDialog.days }); }
+      catch { res = { success: false }; }
+      this.shareDialog.saving = false;
+      if (!res.success) { await this.showAlert(res.message || 'สร้างลิงก์ไม่สำเร็จ', 'error'); return; }
+      Object.assign(this.meeting, res.data);
+    },
+    async unshareMeeting() {
+      const ok = await this.showConfirm('ปิดการแชร์', 'ลิงก์เดิมจะเปิดไม่ได้ทันที — แชร์ใหม่จะได้ลิงก์ใหม่', 'ปิดการแชร์');
+      if (!ok) return;
+      this.shareDialog.saving = true;
+      let res;
+      try { res = await apiCall('POST', 'api/meetings.php?action=unshare_meeting', { id: this.meeting.id }); }
+      catch { res = { success: false }; }
+      this.shareDialog.saving = false;
+      if (!res.success) { await this.showAlert(res.message || 'ปิดการแชร์ไม่สำเร็จ', 'error'); return; }
+      Object.assign(this.meeting, res.data);
+    },
+    async copyShareUrl() {
+      if (await this.copyText(this.shareUrl)) await this.showAlert('คัดลอกลิงก์แล้ว ส่งให้ผู้เกี่ยวข้องได้เลย — ดูได้อย่างเดียว', 'success');
+      else await this.showAlert('คัดลอกไม่สำเร็จ — เลือกข้อความในช่องลิงก์แล้วคัดลอกเอง', 'error');
+    },
+    // คัดลอกข้อความ: Clipboard API ก่อน ไม่ได้ใช้วิธีเลือกข้อความแล้วสั่งคัดลอก
+    async copyText(text) {
+      try { await navigator.clipboard.writeText(text); return true; }
+      catch {
+        const box = document.createElement('textarea');
+        box.value = text;
+        box.style.position = 'fixed'; box.style.opacity = '0';
+        document.body.appendChild(box);
+        box.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+        box.remove();
+        return ok;
+      }
+    },
+    async copySummary() {
+      const ok = await this.copyText(this.summaryText);
+      if (ok) await this.showAlert('คัดลอกสรุปแล้ว นำไปวางในกลุ่ม LINE หรืออีเมลได้เลย', 'success');
+      else await this.showAlert('คัดลอกไม่สำเร็จ — กด "พิมพ์" แล้วคัดลอกข้อความจากหน้าที่เปิดแทน', 'error');
+    },
+    // พิมพ์ / บันทึกเป็น PDF — เปิดหน้าต่างใหม่ที่มีแค่ข้อความสรุป (ไม่มีเมนูและปุ่มของหน้า)
+    printSummary() {
+      const w = window.open('', '_blank');
+      if (!w) { this.showAlert('เบราว์เซอร์บล็อกหน้าต่างใหม่ — อนุญาตป๊อปอัปแล้วลองอีกครั้ง', 'error'); return; }
+      const escaped = this.summaryText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>สรุปการประชุม</title>
+        <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600&display=swap" rel="stylesheet">
+        <style>body{font-family:Anuphan,sans-serif;margin:24px;color:#0f172a}pre{font-family:inherit;font-size:15px;line-height:1.7;white-space:pre-wrap;margin:0}</style>
+        </head><body><pre>${escaped}</pre></body></html>`);
+      w.document.close();
+      w.onload = () => { w.focus(); w.print(); };
+    },
+    // กดรายการตรวจก่อนส่ง → ปิดหน้าสรุปแล้วเลื่อนไปการ์ดนั้น
+    switchMeetingTab(section) {
+      this.meetingTab = section;
+      this.topicFilter = '';
+    },
+    goToCard(t) {
+      this.summaryOpen = false;
+      this.switchMeetingTab(this.topicGroup(t));
+      this.$nextTick(() => document.getElementById('card' + t.id)?.scrollIntoView({ block: 'start' }));
+    },
+    // ประวัติอัปเดต — เรื่องที่ตามมาจากครั้งก่อนแยกของครั้งนี้ไว้ในช่องกรอก
+    // แถวที่บันทึกแค่สถานะ (ข้อความว่าง) ไม่แสดงเป็นอัปเดต / แสดงถึงวันประชุมนี้เท่านั้น ไม่โชว์อัปเดตของครั้งหลัง
+    // อ่านอย่างเดียวแสดงอัปเดตของครั้งนี้ด้วย (ไม่มีช่องกรอก)
+    noteHistory(t) {
+      const cur = this.meeting?.meeting_date;
+      return (t.notes || []).filter(n => n.note && (!cur || n.meeting_date <= cur)
+        && (this.readOnly || t.first_meeting_id === this.meetingId || Number(n.meeting_id) !== this.meetingId));
+    },
+    async startEditPast() {
+      const ok = await this.showConfirm('แก้ไขบันทึกการประชุมที่ผ่านไปแล้ว', `การประชุม ${this.dateLabel(this.meeting.meeting_date)} ผ่านไปแล้ว — กดบันทึกการ์ดจะเปลี่ยนสถานะหลังประชุมของวันนั้น ถ้าจะอัปเดตงานระหว่างสัปดาห์ให้ใช้แท็บงานทั้งหมด`, 'แก้ไขการประชุมนี้');
+      if (!ok) return;
+      // ช่องสถานะเริ่มที่สถานะ ณ วันประชุมนั้น (ไม่ใช่สถานะปัจจุบัน) — ตั้งเป็นค่าที่บันทึกแล้วของโหมดนี้ จึงไม่ขึ้นว่าแก้ค้าง
+      this.topics.forEach(t => { t.status = this.meetingStatus(t); });
+      this.savedState = Object.fromEntries(this.topics.map(t => [t.id, this.cardState(t)]));
+      this.editingPast = true;
+    },
+    // สถานะที่ใช้เทียบว่าแก้ค้างไหม — แก้การประชุมที่ผ่านไปแล้วเทียบกับสถานะ ณ วันนั้น
+    baseStatus(t) { return this.editingPast ? this.meetingStatus(t) : t.saved_status; },
+
+    async loadMeetings() {
+      const res = await apiCall('GET', 'api/meetings.php?action=list');
+      if (res.success) this.meetings = res.data.map(m => ({ ...m, id: Number(m.id) }));
+      else await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+    },
+    async openMeeting(id) {
+      if (this.topics.some(t => this.isDirty(t))) {
+        const ok = await this.showConfirm('มีการแก้ไขที่ยังไม่บันทึก', 'เปลี่ยนการประชุมแล้วการแก้ไขที่ยังไม่กดบันทึกจะหาย', 'เปลี่ยนการประชุม');
+        if (!ok) return;
+      }
+      this.loading = true;
+      this.meetingId = id;
+      const res = await apiCall('GET', `api/meetings.php?action=detail&id=${id}`);
+      this.loading = false;
+      if (!res.success) { await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+      this.meeting = res.data.meeting;
+      this.attendees = res.data.attendees || [];
+      this.resetNextDraft();
+      // สถานะก่อน / หลังของการประชุมนี้ จากแถวบันทึกของครั้งนี้
+      const mine = t => (t.notes || []).find(n => Number(n.meeting_id) === id) || {};
+      this.topics = res.data.topics.map(t => ({ ...t, id: Number(t.id), saved_status: t.status, status_before: mine(t).status_before || null, status_after: mine(t).status_after || null, first_meeting_id: Number(t.first_meeting_id), detail: t.detail || '', owner_team: t.owner_team || '', owner_name: t.owner_name || '', related_pages: t.related_pages ? t.related_pages.split(',') : [], decision: t.decision || '' }));
+      this.savedText = {};
+      this.topicFilter = '';
+      this.editingPast = false;
+      this.editingDecision = {};
+      this.editingNote = {};
+      this.editingTitle = {};
+      // เปิดที่เรื่องสืบเนื่องตามลำดับวาระ — ไม่มีเรื่องสืบเนื่อง (เช่น ประชุมครั้งแรก) เปิดที่เรื่องใหม่
+      this.meetingTab = this.topics.some(t => this.topicGroup(t) === GROUP_CARRIED) ? GROUP_CARRIED : GROUP_NEW;
+      this.noteDrafts = Object.fromEntries(this.topics.map(t => [t.id, (t.notes || []).find(n => Number(n.meeting_id) === id)?.note || '']));
+      this.savedState = Object.fromEntries(this.topics.map(t => [t.id, this.cardState(t)]));
+    },
+    async createMeeting() {
+      if (!this.newMeetingDate) { await this.showAlert('กรุณาเลือกวันที่ประชุม', 'error'); return; }
+      const res = await apiCall('POST', 'api/meetings.php?action=create_meeting', { meeting_date: this.newMeetingDate });
+      if (!res.success) { await this.showAlert(res.message || 'สร้างการประชุมไม่สำเร็จ', 'error'); return; }
+      await this.loadMeetings();
+      await this.openMeeting(Number(res.data.id));
+    },
+    async deleteMeeting() {
+      const ok = await this.showConfirm('ลบการประชุมที่ว่าง', `ลบการประชุม ${this.dateLabel(this.meeting.meeting_date)}`, 'ลบการประชุม');
+      if (!ok) return;
+      const res = await apiCall('POST', 'api/meetings.php?action=delete_meeting', { id: this.meetingId });
+      if (!res.success) await this.showAlert(res.message || 'ลบการประชุมไม่สำเร็จ', 'error');
+      await this.loadMeetings();
+      this.meetingId = null; this.meeting = null; this.topics = [];
+      if (this.meetings.length) await this.openMeeting(this.meetings[0].id);
+    },
+    async createTopic() {
+      const res = await apiCall('POST', 'api/meetings.php?action=create_topic', { ...this.topicForm, meeting_id: this.meetingId });
+      if (!res.success) { await this.showAlert(res.message || 'เพิ่มหัวข้อไม่สำเร็จ', 'error'); return; }
+      this.topicForm = { topic_no: '', title: '', detail: '', decision: '', owner_team: '', owner_name: '' };
+      this.showAdd = false;
+      await this.loadMeetings();
+      await this.openMeeting(this.meetingId);
+      this.meetingTab = GROUP_NEW;   // เห็นเรื่องที่เพิ่งเพิ่มทันที
+    },
+    toggleDecision(t) { this.editingDecision[t.id] = !this.editingDecision[t.id]; },
+    // ช่องพิมพ์เปิดเมื่อ: ยังไม่มีข้อความ / กดแก้ไข / มีการแก้ที่ยังไม่บันทึก (กันข้อความที่พิมพ์ค้างถูกซ่อน)
+    noteEditing(t) {
+      const saved = this.savedState[t.id] ? JSON.parse(this.savedState[t.id])[7] : (this.noteDrafts[t.id] || '');
+      return !!this.editingNote[t.id] || !(this.noteDrafts[t.id] || '').trim() || saved !== (this.noteDrafts[t.id] || '');
+    },
+    toggleNote(t) { this.editingNote[t.id] = !this.noteEditing(t); },
+    // ตกลงแล้วไม่ต้องดำเนินการ = มติที่ประชุม — เติมให้เมื่อยังไม่เลือกทีม ไม่ทับทีมเดิม (ยืนยันจากผู้ใช้ 2026-11-02)
+    onStatusChange(t) {
+      if (t.status === 'agreed' && !t.owner_team) t.owner_team = 'meeting';
+    },
+    cardState(t) { return JSON.stringify([t.title, t.detail, t.status, t.owner_team, t.owner_name, t.related_pages, t.decision, this.noteDrafts[t.id] || '']); },
+    isDirty(t) { return this.savedState[t.id] !== undefined && this.savedState[t.id] !== this.cardState(t); },
+    // ปุ่มบันทึกของการ์ด: ข้อมูลหัวข้อ + ความคืบหน้าของครั้งนี้
+    async saveTopic(t) {
+      this.savingId = t.id;
+      const statusBeforeSave = t.saved_status;
+      // ส่ง meeting_id ให้ API เก็บสถานะ ณ การประชุมนี้ด้วย
+      const pastMeeting = this.editingPast;
+      const res = await apiCall('POST', 'api/meetings.php?action=update_topic', { id: t.id, meeting_id: this.meetingId, keep_current_status: pastMeeting, title: t.title, detail: t.detail, status: t.status, owner_team: t.owner_team, owner_name: t.owner_name, related_pages: t.related_pages, decision: t.decision });
+      if (res.success) {
+        // ตรงกับที่ API บันทึก: สถานะก่อนเก็บครั้งแรกเท่านั้น เรื่องใหม่ของครั้งนี้ / การประชุมที่ผ่านไปแล้วไม่มีสถานะก่อน
+        if (!t.status_after) t.status_before = (this.topicGroup(t) === GROUP_NEW || pastMeeting) ? null : statusBeforeSave;
+        t.status_after = t.status;
+      }
+      let ok = res.success, message = res.message;
+      if (ok && t.first_meeting_id !== this.meetingId) {
+        const note = await apiCall('POST', 'api/meetings.php?action=save_note', { meeting_id: this.meetingId, topic_id: t.id, note: this.noteDrafts[t.id] || '' });
+        ok = note.success; message = note.message;
+        if (ok) this.loadMeetings();
+      }
+      this.savingId = null;
+      if (!ok) { await this.showAlert(message || 'บันทึกไม่สำเร็จ', 'error'); return; }
+      this.savedState[t.id] = this.cardState(t);
+      if (!pastMeeting) t.saved_status = t.status;   // การประชุมที่ผ่านไปแล้วไม่เปลี่ยนสถานะปัจจุบัน
+      this.savedText[t.id] = 'บันทึกแล้ว';
+      this.editingTitle[t.id] = false;
+      this.editingNote[t.id] = false;
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
