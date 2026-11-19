@@ -170,20 +170,21 @@
             <!-- สรุป -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 px-4 py-3">
-                <div class="text-xs text-slate-500">LINE ที่ส่งแล้วเดือนนี้</div>
-                <div class="text-xl font-bold text-slate-700">{{ hist.summary.line_month ?? 0 }} <span class="text-xs font-normal text-slate-400">ข้อความ</span></div>
+                <div class="text-xs text-slate-500">LINE ที่ส่งแล้ว {{ histPeriodLabel }}</div>
+                <div class="text-xl font-bold text-slate-700">{{ hist.summary.sent_line ?? 0 }} <span class="text-xs font-normal text-slate-400">ข้อความ</span></div>
               </div>
               <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 px-4 py-3">
-                <div class="text-xs text-slate-500">ส่งไม่สำเร็จ</div>
+                <div class="text-xs text-slate-500">ส่งไม่สำเร็จ {{ histPeriodLabel }}</div>
                 <div class="text-xl font-bold" :class="hist.summary.failed ? 'text-red-600' : 'text-slate-700'">{{ hist.summary.failed ?? 0 }}</div>
               </div>
               <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 px-4 py-3">
-                <div class="text-xs text-slate-500">ไม่ได้ส่ง (ตามการตั้งค่า)</div>
+                <div class="text-xs text-slate-500">ไม่ได้ส่ง (ตามการตั้งค่า) {{ histPeriodLabel }}</div>
                 <div class="text-xl font-bold text-amber-600">{{ hist.summary.skipped ?? 0 }}</div>
               </div>
               <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-100 px-4 py-3">
-                <div class="text-xs text-slate-500">กดดูจาก LINE / อีเมล</div>
+                <div class="text-xs text-slate-500">กดดูจาก LINE / อีเมล {{ histPeriodLabel }}</div>
                 <div class="text-xl font-bold text-slate-700">{{ hist.summary.clicked ?? 0 }} <span class="text-xs font-normal text-slate-400">/ {{ hist.summary.sent ?? 0 }} ที่ส่งแล้ว</span></div>
+                <div class="text-xs text-slate-400">LINE {{ hist.summary.sent_line ?? 0 }} · อีเมล {{ hist.summary.sent_email ?? 0 }}</div>
               </div>
             </div>
 
@@ -210,10 +211,14 @@
                 <option value="skipped">ไม่ได้ส่ง</option>
                 <option value="clicked">กดดูแล้ว</option>
               </select>
-              <select v-model="histFilter.days" @change="loadHistory" class="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
-                <option :value="7">7 วันล่าสุด</option>
-                <option :value="30">30 วันล่าสุด</option>
-                <option :value="90">90 วันล่าสุด</option>
+              <select v-model="histFilter.period" @change="loadHistory" class="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
+                <option value="7">7 วันล่าสุด</option>
+                <option value="30">30 วันล่าสุด</option>
+                <option value="90">90 วันล่าสุด</option>
+                <optgroup v-if="(hist.months || []).length" label="รายเดือน">
+                  <option v-for="m in hist.months" :key="m" :value="m">{{ monthLabel(m) }}</option>
+                </optgroup>
+                <option value="all">ทั้งหมด</option>
               </select>
             </div>
 
@@ -270,6 +275,7 @@
                 </table>
               </div>
             </div>
+            <p v-if="hist.total > hist.groups.length" class="text-sm text-amber-700 mt-3">แสดง {{ formatNumber(hist.groups.length) }} จาก {{ formatNumber(hist.total) }} รายการล่าสุด — ใช้ตัวกรองด้านบนเพื่อดูส่วนที่เหลือ (ตัวเลขสรุปด้านบนนับครบทุกรายการ)</p>
             <p class="text-xs text-slate-400 mt-3 max-w-[860px]">แสดงไม่เกิน 300 รายการล่าสุด · เก็บประวัติ 1 ปี · LINE ไม่ให้ข้อมูลว่าเปิดอ่านแล้ว จึงนับจากการกดปุ่ม "ดูรายละเอียด" (นับเมื่อผู้รับ login แล้วเปิดหน้านั้นจริง) · อีเมลไม่ติดตามการเปิดอ่าน</p>
           </template>
         </template>
@@ -422,7 +428,7 @@ createApp({
       tab: 'settings',
       tabs: [{ val: 'settings', label: 'ตั้งค่าเรื่องที่แจ้งเตือน' }, { val: 'history', label: 'ประวัติการส่ง' }],
       hist: { summary: {}, groups: [], users: [], total: 0 },
-      histFilter: { role: '', user_id: '', type: '', status: '', days: 7 },
+      histFilter: { role: '', user_id: '', type: '', status: '', period: '7' },
       histLoading: false,
       histError: '',
     };
@@ -464,6 +470,13 @@ createApp({
       const users = this.hist.users || [];
       return this.histFilter.role ? users.filter(u => u.role === this.histFilter.role) : users;
     },
+    // ชื่อช่วงเวลาที่เลือก ต่อท้ายหัวกล่องสรุป เช่น "30 วันล่าสุด", "ต.ค. 2569"
+    histPeriodLabel() {
+      const p = this.histFilter.period;
+      if (p === 'all') return 'ทั้งหมด';
+      if (p.length === 7) return this.monthLabel(p);
+      return p + ' วันล่าสุด';
+    },
     histTypeGroups() {
       return this.histFilter.role ? this.typeGroupsAll.filter(g => g.role === this.histFilter.role) : this.typeGroupsAll;
     },
@@ -501,6 +514,13 @@ createApp({
       if (!res.success) { this.histError = res.message || 'โหลดประวัติไม่สำเร็จ'; return; }
       this.histError = '';
       this.hist = res.data;
+    },
+
+    // "2026-10" → "ต.ค. 2569"
+    monthLabel(ym) {
+      const names = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+      const [y, m] = ym.split('-').map(Number);
+      return names[m - 1] + ' ' + (y + 543);
     },
 
     // เปลี่ยนกลุ่มผู้รับ: ล้างผู้รับ / เรื่องที่ไม่อยู่ในกลุ่มใหม่ แล้วโหลดใหม่

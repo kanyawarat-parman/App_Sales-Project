@@ -1,3 +1,6 @@
 .claude/
 app-salesproject/sql
 app-salesproject/uploads/avatars
+# ไฟล์แนบของดีล (เอกสารลูกค้า) — ไม่เก็บใน git
+app-salesproject/storage/deal_files/*
+!app-salesproject/storage/deal_files/index.html

@@ -105,11 +105,13 @@ function saveAppConfigValue(PDO $db, string $key, string $value, int $userId): b
 
 /**
  * ประวัติการส่งแจ้งเตือน (Delivery log — ยืนยันจากผู้ใช้ 2026-10-08) ตาราง notification_deliveries + กระดิ่ง (notifications)
- * GET: days (7|30|90), user_id, type, status (sent|failed|skipped|clicked) — จัดกลุ่ม 1 แถวต่อการแจ้งเตือน 1 ครั้ง แสดงทุกช่องทาง
+ * GET: period (7|30|90 = วันล่าสุด, YYYY-MM = ทั้งเดือน, all = ทั้งหมดที่เก็บไว้ — 2026-11-02), user_id, type, status (sent|failed|skipped|clicked)
+ * จัดกลุ่ม 1 แถวต่อการแจ้งเตือน 1 ครั้ง แสดงทุกช่องทาง / ตัวเลขสรุปทุกช่องนับตามช่วงที่เลือก นับจาก SQL ครบทุกแถว (ไม่ใช่จากแถวที่แสดง)
  * ลบประวัติเก่ากว่า app_config.notify_log_retention_days (ไม่ตั้ง = 365 วัน) ทุกครั้งที่เปิด
  */
 function listDeliveries(PDO $db): void {
-    $days   = in_array((int)($_GET['days'] ?? 7), [7, 30, 90], true) ? (int)$_GET['days'] : 7;
+    $period = (string)($_GET['period'] ?? '7');
+    if (!in_array($period, ['7', '30', '90', 'all'], true) && !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) $period = '7';
     $userId = (int)($_GET['user_id'] ?? 0);
     $type   = (string)($_GET['type'] ?? '');
     $status = (string)($_GET['status'] ?? '');
@@ -120,8 +122,19 @@ function listDeliveries(PDO $db): void {
         $keep = (int)($db->query("SELECT value FROM app_config WHERE `key` = 'notify_log_retention_days'")->fetchColumn() ?: 365);
         $db->prepare('DELETE FROM notification_deliveries WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)')->execute([max(30, $keep)]);
 
-        $where  = ['d.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)'];
-        $params = [$days];
+        $where  = [];
+        $params = [];
+        if ($period === 'all') {
+            $where[] = '1 = 1';
+        } elseif (strlen($period) === 7) {
+            // ทั้งเดือน: ตั้งแต่วันที่ 1 ถึงก่อนวันที่ 1 ของเดือนถัดไป
+            $where[]  = 'd.created_at >= ? AND d.created_at < DATE_ADD(?, INTERVAL 1 MONTH)';
+            $params[] = $period . '-01';
+            $params[] = $period . '-01';
+        } else {
+            $where[]  = 'd.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)';
+            $params[] = (int)$period;
+        }
         if ($userId) { $where[] = 'd.user_id = ?'; $params[] = $userId; }
         if ($role)   { $where[] = 'u.role = ?';    $params[] = $role; }
         if (isset(NOTIFY_TYPES[$type])) { $where[] = 'd.notification_type_id = ?'; $params[] = $type; }
@@ -136,6 +149,31 @@ function listDeliveries(PDO $db): void {
                               ORDER BY d.created_at DESC, d.delivery_id DESC LIMIT 2000');
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
+
+        // สรุปช่วงที่เลือก (ก่อนกรองสถานะ) — แยก LINE / อีเมล
+        $sum = $db->prepare("SELECT SUM(d.status = 'sent' AND d.channel = 'line')  AS sent_line,
+                                    SUM(d.status = 'sent' AND d.channel = 'email') AS sent_email,
+                                    SUM(d.status = 'failed')  AS failed,
+                                    SUM(d.status = 'skipped') AS skipped,
+                                    SUM(d.clicked_at IS NOT NULL) AS clicked
+                             FROM notification_deliveries d JOIN users u ON u.id = d.user_id
+                             WHERE " . implode(' AND ', $where));
+        $sum->execute($params);
+        $summary = array_map('intval', $sum->fetch() ?: []);
+        $summary['sent'] = ($summary['sent_line'] ?? 0) + ($summary['sent_email'] ?? 0);
+
+        // จำนวนการแจ้งเตือน (แถวในตาราง) ทั้งหมดตามตัวกรอง รวมตัวกรองสถานะ — ไว้บอกว่าแสดงไม่ครบ
+        $totalWhere = $where;
+        if (in_array($status, ['sent', 'failed', 'skipped'], true)) { $totalWhere[] = 'd.status = ?'; }
+        elseif ($status === 'clicked') { $totalWhere[] = 'd.clicked_at IS NOT NULL'; }
+        $cnt = $db->prepare("SELECT COUNT(DISTINCT IF(d.notification_id IS NULL, CONCAT('d', d.delivery_id), CONCAT('n', d.notification_id)))
+                             FROM notification_deliveries d JOIN users u ON u.id = d.user_id
+                             WHERE " . implode(' AND ', $totalWhere));
+        $cnt->execute(in_array($status, ['sent', 'failed', 'skipped'], true) ? array_merge($params, [$status]) : $params);
+        $total = (int)$cnt->fetchColumn();
+
+        // เดือนที่มีข้อมูล ให้เลือกในตัวกรอง
+        $months = $db->query("SELECT DISTINCT DATE_FORMAT(created_at, '%Y-%m') FROM notification_deliveries ORDER BY 1 DESC")->fetchAll(PDO::FETCH_COLUMN);
     } catch (Throwable $e) {
         jsonResponse(false, null, 'ยังไม่ได้สร้างตารางบันทึกการส่ง — ให้รัน sql/add_notification_deliveries.sql ก่อน', 500);
     }
@@ -159,17 +197,6 @@ function listDeliveries(PDO $db): void {
     }
     $groups = array_values($groups);
 
-    // สรุปช่วงที่เลือก (ก่อนกรองสถานะ) + LINE ที่ส่งแล้วเดือนนี้ (ใช้ดูโควตา)
-    $summary = ['failed' => 0, 'skipped' => 0, 'sent' => 0, 'clicked' => 0];
-    foreach ($rows as $r) {
-        if (isset($summary[$r['status']])) $summary[$r['status']]++;
-        if ($r['clicked_at']) $summary['clicked']++;
-    }
-    $lm = $db->prepare("SELECT COUNT(*) FROM notification_deliveries d JOIN users u ON u.id = d.user_id
-        WHERE d.channel = 'line' AND d.status = 'sent' AND d.sent_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')" . ($role ? ' AND u.role = ?' : ''));
-    $lm->execute($role ? [$role] : []);
-    $summary['line_month'] = (int)$lm->fetchColumn();
-
     if (in_array($status, ['sent', 'failed', 'skipped'], true)) {
         $groups = array_values(array_filter($groups, fn($g) => in_array($status, array_column($g['channels'], 'status'), true)));
     } elseif ($status === 'clicked') {
@@ -177,8 +204,8 @@ function listDeliveries(PDO $db): void {
     }
 
     $users = $db->query("SELECT DISTINCT u.id, u.full_name, u.role FROM notification_deliveries d JOIN users u ON u.id = d.user_id ORDER BY u.full_name")->fetchAll();
-    jsonResponse(true, ['summary' => $summary, 'groups' => array_slice($groups, 0, 300), 'total' => count($groups), 'users' => $users,
-                        'roles' => notifyRecipientGroups()]);
+    jsonResponse(true, ['summary' => $summary, 'groups' => array_slice($groups, 0, 300), 'total' => $total, 'users' => $users,
+                        'months' => $months, 'roles' => notifyRecipientGroups()]);
 }
 
 // body: { items: [ { notification_type_id, send_email, send_line, public_view } ] } — ช่องทางที่เรื่องนั้นไม่รองรับบันทึกเป็น 0 เสมอ
