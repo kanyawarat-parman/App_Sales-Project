@@ -47,7 +47,7 @@ function listQuoteRequests(PDO $db, array $user): void {
                  qr.requested_at DESC
         LIMIT 500");
     $stmt->execute($params);
-    jsonResponse(true, attachQuoteViewUrls($db, $stmt->fetchAll(PDO::FETCH_ASSOC)));
+    jsonResponse(true, attachQuoteViewUrls($db, $stmt->fetchAll(PDO::FETCH_ASSOC), $user));
 }
 
 function dealQuoteRequests(PDO $db, array $user): void {
@@ -60,8 +60,8 @@ function dealQuoteRequests(PDO $db, array $user): void {
     $requests = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($requests as &$r) $r['can_cancel'] = in_array($r['status'], QUOTE_REQUEST_OPEN_STATUSES, true) && canCancelQuoteRequest($user, $r);
     unset($r);
-    $requests = attachQuoteViewUrls($db, $requests);
-    $requests = attachQuoteRevisions($db, $requests);   // ทุก Rev ของใบ — 1 Rev = 1 การ์ด (แบบ ข 2026-10-29)
+    $requests = attachQuoteViewUrls($db, $requests, $user);
+    $requests = attachQuoteRevisions($db, $requests, $user);   // ทุก Rev ของใบ — 1 Rev = 1 การ์ด (แบบ ข 2026-10-29)
 
     $canRequest = canRequestQuote($user, $deal);
     jsonResponse(true, [

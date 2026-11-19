@@ -8,7 +8,8 @@
 // POST accept          — ธุรการกด "ออกใบ" จากรายการ = รับเรื่อง (log ข้อ 2)
 // POST issued          — บันทึกจริงใบตามคำขอ → ปิดคำขอ + ขายตรง Interest→Send PI + มูลค่าดีล = GrossAmountNet + แจ้ง Sale (ระยะ 3)
 // POST confirmed       — ลูกค้ายืนยันสั่งซื้อ (สถานะ 2) → ป้ายบนดีลให้ Sale ปิดดีลเอง (ระยะ 3)
-// ระบบใบเสนอราคาส่งผ่านตาราง Outbox ส่งซ้ำได้ — ทั้ง 2 action ทำซ้ำแล้วผลเท่าเดิม
+// POST unconfirmed     — ธุรการ/admin ยกเลิกการยืนยัน (สถานะ 2 → 1) → ล้างป้ายลูกค้ายืนยัน + ประวัติดีล (2026-11-10)
+// ระบบใบเสนอราคาส่งผ่านตาราง Outbox ส่งซ้ำได้ — ทุก action ทำซ้ำแล้วผลเท่าเดิม
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth_check.php';
@@ -34,6 +35,7 @@ switch ($method) {
             case 'cancel': cancelQuoteRequestExt($db); break;   // ธุรการกด "ยกเลิก" ในแท็บรอเปิดใบ (2026-10-21)
             case 'issued':    quoteIssued($db);    break;   // ระยะ 3 — บันทึกจริงใบตามคำขอแล้ว
             case 'confirmed': quoteConfirmed($db); break;   // ระยะ 3 — ลูกค้ายืนยันสั่งซื้อ
+            case 'unconfirmed': quoteUnconfirmed($db); break;   // ธุรการ/admin ยกเลิกการยืนยัน (ใบกลับเป็นบันทึกจริง — 2026-11-10)
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -162,5 +164,11 @@ function quoteIssued(PDO $db): void {
 // ระยะ 3 — ลูกค้ายืนยันสั่งซื้อตามใบ (body: quote_request_code, quotation_id, so_code, confirmed_at)
 function quoteConfirmed(PDO $db): void {
     $r = applyQuoteConfirmed($db, getJsonBody());
+    jsonResponse($r['ok'], null, $r['message'], $r['ok'] ? 200 : 400);
+}
+
+// ยกเลิกการยืนยัน (body: quote_request_code, quotation_id, revision, username, reason, unconfirmed_at) — 2026-11-10
+function quoteUnconfirmed(PDO $db): void {
+    $r = applyQuoteUnconfirmed($db, getJsonBody());
     jsonResponse($r['ok'], null, $r['message'], $r['ok'] ? 200 : 400);
 }

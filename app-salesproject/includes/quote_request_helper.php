@@ -97,11 +97,41 @@ function quoteRequestSelectSql(): string {
 }
 
 /**
+ * ลิงก์ดูใบอย่างเดียวสำหรับผู้บริหาร (role viewer — Signed URL ยืนยันจากผู้ใช้ 2026-11-03)
+ * ผู้บริหารไม่มี user ในระบบใบเสนอราคา → แนบ &vt=วันหมดอายุ.ชื่อผู้ดู.ลายเซ็น ให้หน้าพิมพ์เปิดใบนั้นได้โดยไม่ต้อง login
+ * ลายเซ็น = HMAC-SHA256 ของ "เลขใบ|Rev|วันหมดอายุ|ชื่อ" ด้วยกุญแจที่แตกจาก QUOTE_API_TOKEN (ค่าเดียวกับ SalesProjectApiToken ของระบบใบเสนอราคา)
+ *   ไม่ต้องตั้งกุญแจเพิ่ม / ตัว token จริงไม่อยู่ในลิงก์ / แก้เลขใบหรือวันหมดอายุในลิงก์ = ลายเซ็นไม่ตรง เปิดไม่ได้
+ * ตัวตรวจฝั่งระบบใบเสนอราคา: App_Code/clsQuoteViewLink.cs (สูตรต้องตรงกัน)
+ */
+const QUOTE_VIEWER_LINK_DAYS = 7;
+
+function quoteViewerToken(string $quotationId, string $rev, string $viewerName): ?string {
+    $apiToken = defined('QUOTE_API_TOKEN') ? trim(QUOTE_API_TOKEN) : '';
+    if ($apiToken === '') return null;
+    $key  = hash_hmac('sha256', 'quote-view-link', $apiToken);
+    $exp  = time() + QUOTE_VIEWER_LINK_DAYS * 86400;
+    $name = rtrim(strtr(base64_encode($viewerName), '+/', '-_'), '=');
+    $sig  = hash_hmac('sha256', "{$quotationId}|{$rev}|{$exp}|{$name}", $key);
+    return "{$exp}.{$name}.{$sig}";
+}
+
+// URL หน้าพิมพ์ของใบ — $rev = null คือฉบับปัจจุบัน / ผู้บริหาร (viewer) ได้ลิงก์ดูอย่างเดียวแนบ &vt=
+function quoteViewUrl(string $base, string $quotationId, ?int $rev, ?array $user): string {
+    $url = $base . 'print.html?quotationid=' . rawurlencode($quotationId) . ($rev !== null ? '&rev=' . $rev : '');
+    if (($user['role'] ?? '') === 'viewer') {
+        $vt = quoteViewerToken($quotationId, $rev !== null ? (string)$rev : '', (string)($user['full_name'] ?? $user['username'] ?? ''));
+        if ($vt !== null) $url .= '&vt=' . rawurlencode($vt);
+    }
+    return $url;
+}
+
+/**
  * ลิงก์เปิดดูใบ (quote_view_url) ให้แต่ละคำขอ — {QUOTATION_WEB_URL}print.html?quotationid=QT… (ผู้ใช้ยืนยัน 2026-10-14)
  * ทำลิงก์เฉพาะ Revision ล่าสุดของใบนั้น — หน้าพิมพ์แสดงได้แค่ฉบับปัจจุบัน กด Rev เก่าจะได้ใบผิดฉบับ
  * หน้าพิมพ์ต้อง login ระบบใบเสนอราคา (ยังไม่ login → ไปหน้า login แล้วกลับมาเปิดใบเดิม) / ไม่ได้ตั้ง QUOTATION_WEB_URL = ไม่มีลิงก์
+ * $user = ผู้เปิดดู — ผู้บริหาร (viewer) ได้ลิงก์ดูอย่างเดียว (quoteViewUrl)
  */
-function attachQuoteViewUrls(PDO $db, array $rows): array {
+function attachQuoteViewUrls(PDO $db, array $rows, ?array $user = null): array {
     $base = defined('QUOTATION_WEB_URL') ? trim(QUOTATION_WEB_URL) : '';
     $ids = array_values(array_unique(array_filter(array_column($rows, 'quotation_id'))));
     $latest = [];
@@ -116,7 +146,7 @@ function attachQuoteViewUrls(PDO $db, array $rows): array {
     foreach ($rows as &$r) {
         $qt = $r['quotation_id'] ?? '';
         $isLatest = $qt !== '' && ($r['status'] ?? '') === 'issued' && isset($latest[$qt]) && (int)$latest[$qt] === (int)$r['quotation_revision'];
-        $r['quote_view_url'] = $isLatest ? $base . 'print.html?quotationid=' . rawurlencode($qt) : null;
+        $r['quote_view_url'] = $isLatest ? quoteViewUrl($base, $qt, null, $user) : null;
     }
     unset($r);
     return $rows;
@@ -196,7 +226,7 @@ function quoteTotalNote(array $sum): string {
  *               is_primary (นับในมูลค่าดีล = Rev ล่าสุดของแต่ละเลข QT — รวมทุกใบ 2026-10-30)}
  * Rev ล่าสุดของคำขอที่ยังไม่มีในตาราง (ออกก่อนรัน SQL / ยังไม่ได้รัน SQL) = ใช้ค่าจากคำขอแทน — หน้าจอเหมือนก่อนมีตาราง
  */
-function attachQuoteRevisions(PDO $db, array $rows): array {
+function attachQuoteRevisions(PDO $db, array $rows, ?array $user = null): array {
     $base = defined('QUOTATION_WEB_URL') ? trim(QUOTATION_WEB_URL) : '';
     if ($base !== '' && substr($base, -1) !== '/') $base .= '/';
     $ids = array_values(array_unique(array_map('intval', array_column($rows, 'quote_request_id'))));
@@ -241,7 +271,7 @@ function attachQuoteRevisions(PDO $db, array $rows): array {
         $v['is_old'] = $v['quotation_revision'] < $latestRev[$v['quotation_id']];
         $v['is_primary'] = !$v['is_old'];   // ตรงกับ dealQuoteTotal()
         $v['view_url'] = $base === '' ? null
-            : $base . 'print.html?quotationid=' . rawurlencode($v['quotation_id']) . ($v['is_old'] ? '&rev=' . $v['quotation_revision'] : '');
+            : quoteViewUrl($base, $v['quotation_id'], $v['is_old'] ? $v['quotation_revision'] : null, $user);
     }
     unset($r, $v);
     return $rows;
@@ -537,4 +567,59 @@ function applyQuoteConfirmed(PDO $db, array $body): array {
                        WHERE quote_request_code = ? AND status <> 'cancelled'");
     $n->execute([$at, $so, $code]);
     return ['ok' => true, 'message' => $n->rowCount() ? "บันทึกลูกค้ายืนยันตามคำขอ {$code} แล้ว" : "คำขอ {$code} ไม่มีการเปลี่ยนแปลง"];
+}
+
+/**
+ * ธุรการ / admin กด "ยกเลิกการยืนยัน" ในระบบใบเสนอราคา (ใบกลับจากสถานะ 2 เป็น 1 — ยืนยันจากผู้ใช้ 2026-11-10)
+ * body: quote_request_code, quotation_id, revision, username, reason, unconfirmed_at
+ * → ล้าง confirmed_at / confirmed_so_code (ป้าย "ลูกค้ายืนยันใบแล้ว — กดปิดดีล" หายเอง) + บันทึกประวัติดีลขายตรง
+ * ส่งซ้ำได้: ไม่ได้ยืนยันอยู่แล้ว = ไม่ทำอะไร / ระบบใบเสนอราคาส่งผ่าน Outbox ตามลำดับ (confirmed ที่ค้างส่งจะถึงก่อนเสมอ)
+ */
+function applyQuoteUnconfirmed(PDO $db, array $body): array {
+    $code = trim($body['quote_request_code'] ?? '');
+    $quotationId = trim($body['quotation_id'] ?? '');
+    $revision = isset($body['revision']) ? (int)$body['revision'] : 0;
+    $reason = trim($body['reason'] ?? '');
+    if ($code === '') return ['ok' => false, 'message' => 'ต้องระบุเลขคำขอ'];
+
+    $st = $db->prepare(quoteRequestSelectSql() . ' WHERE qr.quote_request_code = ?');
+    $st->execute([$code]);
+    $req = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$req) return ['ok' => false, 'message' => "ไม่พบคำขอ {$code}"];
+    if ($req['confirmed_at'] === null) return ['ok' => true, 'message' => "คำขอ {$code} ไม่ได้อยู่ในสถานะลูกค้ายืนยัน — ไม่มีการเปลี่ยนแปลง"];
+
+    $actor = null;
+    if (!empty($body['username'])) {
+        $u = $db->prepare('SELECT id, full_name FROM users WHERE username = ? LIMIT 1');
+        $u->execute([trim($body['username'])]);
+        $actor = $u->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+    $actorId = $actor ? (int)$actor['id'] : (int)$req['requested_by'];   // ประวัติดีลต้องมีผู้ทำ — ไม่พบผู้กด ใช้ผู้ขอ (แบบเดียวกับ applyQuoteIssued)
+    $actorName = $actor ? $actor['full_name'] : trim($body['username'] ?? '');
+
+    $db->beginTransaction();
+    try {
+        $db->prepare('UPDATE quote_requests SET confirmed_at = NULL, confirmed_so_code = NULL, updated_by = COALESCE(?, updated_by)
+                      WHERE quote_request_id = ?')
+           ->execute([$actor['id'] ?? null, $req['quote_request_id']]);
+
+        // ประวัติดีล — เฉพาะดีลขายตรง (ดีลคู่งานประมูลไม่บันทึก แบบเดียวกับตอนออกใบ)
+        $deal = $db->prepare('SELECT id, project_code, source_type, stage FROM pipeline_items WHERE id = ?');
+        $deal->execute([$req['pipeline_item_id']]);
+        $d = $deal->fetch(PDO::FETCH_ASSOC);
+        if ($d && $d['source_type'] !== 'ebidding') {
+            $qt = $quotationId !== '' ? $quotationId : (string)$req['quotation_id'];
+            $note = "ยกเลิกการยืนยันใบ {$qt}" . ($revision > 0 ? " Rev {$revision}" : '') . " ({$code})"
+                  . ($reason !== '' ? " — เหตุผล: {$reason}" : '')
+                  // ผู้กดอยู่ที่หัวบรรทัดประวัติแล้ว (changed_by) — ใส่ "โดย" เฉพาะตอนหาผู้กดไม่เจอ (หัวบรรทัดเป็นผู้ขอใบแทน) 2026-11-19
+                  . (!$actor && $actorName !== '' ? " · โดย {$actorName}" : '');
+            $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+               ->execute([$d['id'], $d['project_code'], $actorId, $d['stage'], $d['stage'], $note]);
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    return ['ok' => true, 'message' => "ยกเลิกการยืนยันตามคำขอ {$code} แล้ว"];
 }
