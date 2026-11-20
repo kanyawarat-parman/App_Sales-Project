@@ -299,6 +299,11 @@
             <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">เลขที่โครงการ</span><span class="text-slate-700 font-mono">{{ modal.data.project_no }}</span></div>
             <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">ชื่อโครงการ</span><span class="text-slate-700 font-semibold">{{ modal.data.project_name }}</span></div>
             <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">หน่วยงาน</span><span class="text-slate-700">{{ modal.data.unit_name }}</span></div>
+            <!-- ที่ตั้ง + เบอร์โทรหน่วยงาน จากไฟล์นำเข้า (2026-11-20) — ประกาศเก่าไม่มี = ไม่แสดง -->
+            <div v-if="modal.data.unit_address" class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">ที่ตั้งหน่วยงาน</span><span class="text-slate-700">{{ modal.data.unit_address }}</span></div>
+            <div v-if="modal.data.unit_phone" class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">เบอร์โทรหน่วยงาน</span>
+              <a v-if="phoneTelHref(modal.data.unit_phone)" :href="phoneTelHref(modal.data.unit_phone)" class="text-teal-700 font-semibold no-underline hover:underline">{{ formatPhone(modal.data.unit_phone) }}</a>
+              <span v-else class="text-slate-700">{{ modal.data.unit_phone }}</span></div>
             <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">วันที่ประกาศ</span><span class="text-slate-700">{{ formatDateThai(modal.data.announce_date) }}</span></div>
             <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">วันปิดรับ</span><span class="font-semibold text-red-600">{{ formatDateThai(modal.data.close_date) }}</span></div>
             <div class="flex py-1.5 border-b border-slate-50 text-sm"><span class="w-32 shrink-0 text-slate-400 font-medium">ราคากลาง</span><span class="font-semibold text-green-600">{{ formatPrice(modal.data.price_median) }}</span></div>

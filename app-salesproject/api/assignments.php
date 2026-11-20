@@ -170,7 +170,7 @@ function getDetail(PDO $db, array $user): void {
                pi.winner_competitor_id, wc.competitor_name AS winner_name, pi.winning_price,
                pi.sla_deadline, pi.sla_status, pi.line_notified_at, pi.email_notified_at,
                pi.created_at AS assigned_at, pi.updated_at,
-               a.project_no, a.project_name, a.unit_name, a.announce_date, a.close_date,
+               a.project_no, a.project_name, a.unit_name, a.unit_address, a.unit_phone, a.announce_date, a.close_date,
                a.price_median, a.items, a.spec, a.can_bid, a.reason, a.docs_required,
                a.need_sample, a.sample_detail, a.conditions, a.url, a.keyword_match, a.filter_status,
                a.source_type, acc.account_type, a.account_id, acc.account_code, acc.name AS account_name,

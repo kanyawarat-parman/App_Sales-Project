@@ -114,6 +114,20 @@
                     class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
                 </div>
 
+                <!-- ที่ตั้ง + เบอร์โทรหน่วยงาน (ช่องเดียวกับไฟล์นำเข้า unit_address / unit_phone — 2026-11-20) -->
+                <div class="flex flex-col gap-1 col-span-2">
+                  <label class="block text-sm font-semibold text-slate-600">ที่ตั้งหน่วยงาน</label>
+                  <input v-model="manualForm.unit_address" type="text" placeholder="ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="block text-sm font-semibold text-slate-600">เบอร์โทรหน่วยงาน</label>
+                  <input v-model="manualForm.unit_phone" type="tel" placeholder="เช่น 054-330-737"
+                    class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+                <div></div>
+
                 <div class="flex flex-col gap-1">
                   <label class="block text-sm font-semibold text-slate-600">วันที่ประกาศ <span class="text-red-500">*</span></label>
                   <input v-model="manualForm.announce_date" type="date"
@@ -208,7 +222,7 @@ createApp({
       jsonResult: null,
       jsonLoading: false,
       manualForm: {
-        project_no: '', project_name: '', unit_name: '',
+        project_no: '', project_name: '', unit_name: '', unit_address: '', unit_phone: '',
         announce_date: '', close_date: '', price_median: '',
         url: '', can_bid: 'ต้องตรวจสอบ', reason: '',
       },
@@ -286,6 +300,8 @@ createApp({
         project_no:    this.manualForm.project_no.trim() || this.genProjectNo(),
         project_name:  this.manualForm.project_name,
         unit_name:     this.manualForm.unit_name     || null,
+        unit_address:  this.manualForm.unit_address  || null,
+        unit_phone:    this.manualForm.unit_phone    || null,
         announce_date: this.manualForm.announce_date,
         close_date:    this.manualForm.close_date    || null,
         price_median:  this.manualForm.price_median  ? parseFloat(this.manualForm.price_median) : null,
@@ -305,7 +321,7 @@ createApp({
 
     clearManual() {
       this.manualForm = {
-        project_no: '', project_name: '', unit_name: '',
+        project_no: '', project_name: '', unit_name: '', unit_address: '', unit_phone: '',
         announce_date: '', close_date: '', price_median: '',
         url: '', can_bid: 'ต้องตรวจสอบ', reason: '',
       };

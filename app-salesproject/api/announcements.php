@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/account_helper.php';
 require_once __DIR__ . '/../includes/notify_helper.php';   // แจ้งธุรการเมื่อนำเข้าประกาศใหม่ (2026-10-09)
 require_once __DIR__ . '/../includes/win_loss_reason_helper.php';   // เหตุผลไม่เข้าประมูล (no_bid — 2026-10-09)
+require_once __DIR__ . '/../includes/phone_helper.php';   // เบอร์โทรหน่วยงานจากไฟล์นำเข้า (unit_phone — 2026-11-20)
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -283,7 +284,8 @@ function importData(PDO $db, array $user): void {
     // ช่องข้อมูลประกาศที่นำเข้าทับได้ (ไม่รวม project_no ที่เป็นตัวจับคู่ และช่อง audit)
     $dataColumns = ['filter_status', 'keyword_match', 'project_name', 'unit_name',
                     'announce_date', 'close_date', 'price_median', 'items', 'spec', 'can_bid', 'reason',
-                    'docs_required', 'need_sample', 'sample_detail', 'conditions', 'url', 'source_type'];
+                    'docs_required', 'need_sample', 'sample_detail', 'conditions', 'url', 'source_type',
+                    'unit_address', 'unit_phone'];   // ที่ตั้ง + เบอร์โทรหน่วยงาน (key ต่อท้ายในไฟล์นำเข้า — 2026-11-20, sql/add_announcement_unit_contact.sql)
 
     // ประกาศเดิมที่นำเข้าทับ: เปลี่ยนผู้แก้ไข/เวลาแก้ไขเฉพาะเมื่อมีช่องใดช่องหนึ่งเปลี่ยนจริง (ยืนยันจากผู้ใช้ 2026-09-26)
     // นำเข้าไฟล์เดิมซ้ำ → แถวไม่ถูกแตะเลย นับเป็น "ไม่เปลี่ยนแปลง" — หลักเดียวกับเป้าหมาย/KPI/วันหยุด/เวร
@@ -331,6 +333,9 @@ function importData(PDO $db, array $user): void {
                 ':conditions'    => $item['conditions']    ?? null,
                 ':url'           => $item['url']           ?? null,
                 ':source_type'   => $itemSource,
+                // ไฟล์เก่าที่ไม่มี 2 key นี้ = ว่าง / ที่อยู่ "-" = ว่าง / เบอร์แปลงแบบผ่อนปรน (ไม่หยุดการนำเข้า)
+                ':unit_address'  => (($a = trim((string)($item['unit_address'] ?? ''))) === '' || $a === '-') ? null : $a,
+                ':unit_phone'    => normalizePhoneLenient($item['unit_phone'] ?? null),
                 ':created_by'    => $user['id'],
                 ':updated_by'    => $user['id'],
             ]);

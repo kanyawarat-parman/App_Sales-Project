@@ -37,6 +37,21 @@ function normalizePhone($value, string $label): ?string {
     return $phone;
 }
 
+// เบอร์จากข้อมูลนำเข้า (ไฟล์ประกาศรายวัน — 2026-11-20) แบบผ่อนปรน: ไม่ตอบ error เพราะห้ามทำให้การนำเข้าทั้งไฟล์หยุด
+// ว่าง / "-" / ไม่มีตัวเลข = null · ถอดขีด/ช่องว่างแล้วถูกรูปแบบ = ตัวเลขล้วน · แปลงไม่ได้ (หลายเบอร์ / มีเบอร์ต่อ) = เก็บข้อความเดิม ($maxLen ตัวอักษร)
+function normalizePhoneLenient($value, int $maxLen = 50): ?string {
+    $raw = cleanPhoneChars($value);
+    if ($raw === '' || !preg_match('/[0-9]/', $raw)) return null;
+    if (preg_match('/^[+]?[0-9\s\-().]+$/u', $raw)) {
+        $digits = preg_replace('/[^0-9]/', '', $raw);
+        $phone = str_starts_with($raw, '+')
+            ? ((str_starts_with($digits, '66') && strlen($digits) >= 10) ? '0' . substr($digits, 2) : '+' . $digits)
+            : $digits;
+        if (preg_match('/' . PHONE_VALID_REGEX . '/', $phone)) return $phone;
+    }
+    return mb_substr($raw, 0, $maxLen);
+}
+
 // เบอร์ต่อ: ตัวเลขล้วน ไม่เกิน 10 หลัก (ตัด "#" / "ต่อ" / ช่องว่างที่พิมพ์มาออก)
 function normalizePhoneExt($value, string $label): ?string {
     $raw = trim((string)$value);
