@@ -104,13 +104,16 @@ function fetchPipelineRows(PDO $db, string $where, array $params): array {
     $sql = "
         SELECT pi.id, pi.project_code, pi.source_type, pi.title, pi.client_name,
                pi.stage, pi.deal_type_id, dt.deal_type_name, pi.segment, pi.priority,
-               pi.product_category, pi.brand, pi.fee_structure, pi.specialization,
+               pi.product_category, pi.brand, pi.fee_structure, pi.specialization, pi.specialization_note, pi.competitor_other_note,
                pi.value, pi.win_probability,
                pi.expected_close, pi.next_action, pi.next_followup_date, pi.notes,
                COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason, pi.win_loss_reason_id, pi.win_loss_note,
                pi.winner_competitor_id, wc.competitor_name AS winner_name, pi.winning_price,
                pi.order_date, pi.delivered_date, pi.expected_delivery_date,
                pi.account_id, a.name AS account_name, a.account_type AS account_type,
+               -- ช่องทางของดีล (ตั้งต้นจากลูกค้า Sale ปรับได้ต่อดีล — 2026-11-20) + บทบาทของลูกค้า (ใช้ตั้งต้นในฟอร์ม)
+               pi.sales_channel, pi.channel_role_id, pi.channel_role_note, dcr.customer_role_name AS channel_role_name, pi.end_user_name,
+               a.customer_role_id AS account_role_id, a.customer_role_note AS account_role_note, acr.customer_role_name AS account_role_name, acr.is_intermediary AS account_is_intermediary,
                u.id AS sale_id, u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url,
                pi.created_at, pi.updated_at,
                -- ข้อมูลย้อนหลังที่ยังไม่ตรวจ: 1 = นำเข้าแล้วยังไม่มีคนบันทึก/ย้ายสถานะ (ป้ายรอตรวจ — 2026-09-30)
@@ -124,6 +127,8 @@ function fetchPipelineRows(PDO $db, string $where, array $params): array {
         FROM pipeline_items pi
         JOIN users u ON u.id = pi.assigned_to
         LEFT JOIN accounts a ON a.id = pi.account_id
+        LEFT JOIN customer_roles acr ON acr.customer_role_id = a.customer_role_id
+        LEFT JOIN customer_roles dcr ON dcr.customer_role_id = pi.channel_role_id
         LEFT JOIN deal_types dt ON dt.deal_type_id = pi.deal_type_id
         LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id
         LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id
@@ -336,11 +341,13 @@ function getList(PDO $db, array $user): void {
     [$where, $params] = buildWhere($user);
     $sql = "
         SELECT pi.*, a.name AS account_name, a.account_type AS account_type,
+               dcr.customer_role_name AS channel_role_name,
                u.full_name AS sale_name, u.avatar_color AS sale_color, u.photo_url AS sale_photo_url,
                COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason
         FROM pipeline_items pi
         JOIN users u ON u.id = pi.assigned_to
         LEFT JOIN accounts a ON a.id = pi.account_id
+        LEFT JOIN customer_roles dcr ON dcr.customer_role_id = pi.channel_role_id
         LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id
         {$where}
         ORDER BY FIELD(pi.stage,'Interest','Send PI','Negotiating','Deal Signed','Delivered','Lost'),
@@ -356,7 +363,7 @@ function getList(PDO $db, array $user): void {
 // ─── GET one ─────────────────────────────────────────────────────────────────
 function getOne(PDO $db, array $user, int $id): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
-    $stmt = $db->prepare("SELECT pi.*, a.name AS account_name, a.account_type AS account_type, u.full_name AS sale_name, wc.competitor_name AS winner_name, COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to LEFT JOIN accounts a ON a.id = pi.account_id LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id WHERE pi.id = ?");
+    $stmt = $db->prepare("SELECT pi.*, a.name AS account_name, a.account_type AS account_type, dcr.customer_role_name AS channel_role_name, a.customer_role_id AS account_role_id, a.customer_role_note AS account_role_note, acr.customer_role_name AS account_role_name, acr.is_intermediary AS account_is_intermediary, u.full_name AS sale_name, wc.competitor_name AS winner_name, COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to LEFT JOIN accounts a ON a.id = pi.account_id LEFT JOIN customer_roles acr ON acr.customer_role_id = a.customer_role_id LEFT JOIN customer_roles dcr ON dcr.customer_role_id = pi.channel_role_id LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id WHERE pi.id = ?");
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
@@ -385,7 +392,8 @@ function getOne(PDO $db, array $user, int $id): void {
     $row['deal_contacts'] = dealContacts($db, $id);
     $row['account_contacts'] = [];
     if ($row['account_id']) {
-        $ac = $db->prepare('SELECT id, full_name, phone, position, is_primary FROM contacts WHERE account_id = ? ORDER BY is_primary DESC, full_name');
+        // ผู้ติดต่อของลูกค้าให้ติ๊กเลือก — เรียงตามชื่ออย่างเดียว (ไม่ใช้คนหลักระดับลูกค้าแล้ว — 2026-11-20)
+        $ac = $db->prepare('SELECT id, full_name, phone, position, is_primary FROM contacts WHERE account_id = ? ORDER BY full_name, id');
         $ac->execute([$row['account_id']]);
         $row['account_contacts'] = $ac->fetchAll();
     }
@@ -406,9 +414,11 @@ function getOne(PDO $db, array $user, int $id): void {
 // รายที่เลือกอยู่เดิมไม่ถูกลบแล้วใส่ใหม่ — created_by/created_at เดิมจึงยังอยู่ (รู้ว่าใครระบุคู่แข่งรายนั้นไว้ตั้งแต่เมื่อไร)
 // ไม่บังคับ: ส่ง [] = ไม่มี/ไม่ทราบคู่แข่ง (ยืนยันจากผู้ใช้ 2026-09-24)
 // project_code copy จาก pipeline_items ไว้ทุกแถว (แบบเดียวกับ assignment_history) — อัปเดตแถวเดิมให้ตรงด้วยทุกครั้งที่บันทึก
-function saveDealCompetitors(PDO $db, int $itemId, ?string $projectCode, array $user, $competitorIds): void {
+// $otherNote = คู่แข่งอื่นที่ไม่มีในรายชื่อ (พิมพ์เอง — 2026-11-23) เก็บที่ pipeline_items.competitor_other_note / ใช้ร่วมกับตัวเลือกพิเศษไม่ได้
+function saveDealCompetitors(PDO $db, int $itemId, ?string $projectCode, array $user, $competitorIds, $otherNote = ''): void {
     if (!is_array($competitorIds)) jsonError(400, 'ข้อมูลคู่แข่งไม่ถูกต้อง');
     $ids = array_values(array_unique(array_filter(array_map('intval', $competitorIds))));
+    $otherNote = mb_substr(trim((string)$otherNote), 0, 255);
 
     if ($ids) {
         $in  = implode(',', array_fill(0, count($ids), '?'));
@@ -417,7 +427,7 @@ function saveDealCompetitors(PDO $db, int $itemId, ?string $projectCode, array $
         $found = $chk->fetch();
         if ((int)$found['total'] !== count($ids)) jsonError(400, 'ไม่พบคู่แข่งบางรายในระบบ');
         // ตัวเลือกพิเศษ (ไม่มีคู่แข่ง/ยังไม่ทราบ) ต้องเลือกเดี่ยวๆ ห้ามปนกับคู่แข่งจริง
-        if ((int)$found['special'] > 0 && count($ids) > 1) jsonError(400, 'เลือก "ไม่มีคู่แข่ง" หรือ "ยังไม่ทราบ" ร่วมกับคู่แข่งรายอื่นไม่ได้');
+        if ((int)$found['special'] > 0 && (count($ids) > 1 || $otherNote !== '')) jsonError(400, 'เลือก "ไม่มีคู่แข่ง" หรือ "ยังไม่ทราบ" ร่วมกับคู่แข่งรายอื่นไม่ได้');
 
         $db->prepare("DELETE FROM pipeline_item_competitors WHERE pipeline_item_id = ? AND competitor_id NOT IN ($in)")
            ->execute(array_merge([$itemId], $ids));
@@ -429,6 +439,8 @@ function saveDealCompetitors(PDO $db, int $itemId, ?string $projectCode, array $
     } else {
         $db->prepare('DELETE FROM pipeline_item_competitors WHERE pipeline_item_id = ?')->execute([$itemId]);
     }
+    $db->prepare('UPDATE pipeline_items SET competitor_other_note = ? WHERE id = ? AND NOT (competitor_other_note <=> ?)')
+       ->execute([$otherNote !== '' ? $otherNote : null, $itemId, $otherNote !== '' ? $otherNote : null]);
 }
 
 // ─── GET stats ───────────────────────────────────────────────────────────────
@@ -459,6 +471,73 @@ function resolveDealType(PDO $db, $dealType): string {
     return $dealType;
 }
 
+// ─── ช่องทางของดีล 3 ชั้น (ยืนยันจากผู้ใช้ 2026-11-20 — แทนแบบ "ลูกค้าปลายทาง = ลูกค้าในทะเบียน" ของ 2026-11-02) ───
+// ลูกค้า = ตัวตนผู้ซื้อ/ผู้จ่ายเงิน / ดีล = การขายครั้งนั้น ฟอร์มตั้งต้นค่าจากลูกค้า แล้ว Sale ปรับได้ต่อดีล — แก้ลูกค้าทีหลัง ดีลเก่าไม่เปลี่ยน
+// body: apply_channel = true (ฟอร์มให้บันทึกส่วนนี้)
+//   ชั้น 1+2  channel_role_id (customer_roles) + channel_role_note (ตัวเลือกที่ต้องพิมพ์ระบุ) — ช่องทางตัดสินจากธง is_intermediary ของตัวเลือก ห้ามเช็กจากชื่อ
+//   ขายตรง        segment (Gov / Private / Individual) บังคับ + deal_industry_id (ตลาด) บังคับ
+//   ผ่านคนกลาง    deal_industry_id (ตลาดของลูกค้าปลายทาง) ไม่บังคับ + end_user_name (ชื่อลูกค้าปลายทาง พิมพ์เอง) ไม่บังคับ / segment = ว่าง
+// ไม่ส่ง apply_channel (ปุ่มเลื่อนขั้น / ดีลเดิมที่ยังไม่ระบุ) → คืน null ไม่แตะช่องเหล่านี้
+// $current = ค่าที่ดีลมีอยู่ (ตอนแก้ไข) — ตัวเลือกที่ซ่อนแล้วหรือตลาดเดิมที่ไม่อยู่ในรายการ คงค่าเดิมได้
+function dealChannelFromBody(PDO $db, array $body, ?int $accountId, bool $required, array $current = []): ?array {
+    if (empty($body['apply_channel'])) {
+        if ($required) jsonError(400, 'กรุณาเลือกลูกค้า');
+        return null;
+    }
+    if (!$accountId) jsonError(400, 'กรุณาเลือกลูกค้า');
+
+    $roleId = trim((string)($body['channel_role_id'] ?? ''));
+    $st = $db->prepare('SELECT customer_role_name, is_intermediary, requires_note, is_active FROM customer_roles WHERE customer_role_id = ?');
+    $st->execute([$roleId]);
+    $role = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$role || (!(int)$role['is_active'] && $roleId !== ($current['channel_role_id'] ?? null))) jsonError(400, 'กรุณาเลือกช่องทางและประเภทของดีลนี้');
+    $roleNote = trim((string)($body['channel_role_note'] ?? ''));
+    if ((int)$role['requires_note'] && $roleNote === '') jsonError(400, 'กรุณาพิมพ์ระบุ "' . $role['customer_role_name'] . '"');
+    $roleNote = (int)$role['requires_note'] ? mb_substr($roleNote, 0, 255) : null;
+
+    // ตลาด (ดีลนี้ขายไปตลาดไหน) — เก็บเป็นชื่อในช่อง specialization เดิม ให้รายงานใช้ต่อได้
+    $industryId = trim((string)($body['deal_industry_id'] ?? ''));
+    $market = null;
+    $marketNote = null;
+    if ($industryId !== '') {
+        $chk = $db->prepare('SELECT customer_industry_name, requires_note, is_active FROM customer_industries WHERE customer_industry_id = ?');
+        $chk->execute([$industryId]);
+        $ind = $chk->fetch(PDO::FETCH_ASSOC);
+        if (!$ind || (!(int)$ind['is_active'] && $ind['customer_industry_name'] !== ($current['specialization'] ?? null))) jsonError(400, 'ตลาดที่เลือกไม่ถูกต้อง');
+        $market = $ind['customer_industry_name'];
+        // ตัวเลือกที่ต้องพิมพ์ระบุ (ธง requires_note เช่น อื่นๆ — 2026-11-23) บังคับพิมพ์ / ตัวเลือกอื่นล้างข้อความ
+        if ((int)$ind['requires_note']) {
+            $marketNote = mb_substr(trim((string)($body['specialization_note'] ?? '')), 0, 255);
+            if ($marketNote === '') jsonError(400, 'กรุณาพิมพ์ระบุกลุ่มตลาด "' . $ind['customer_industry_name'] . '"');
+        }
+    }
+
+    if (!(int)$role['is_intermediary']) {
+        $segment = (string)($body['segment'] ?? '');
+        if (!in_array($segment, ['Gov', 'Private', 'Individual'], true)) jsonError(400, 'กรุณาเลือกประเภท (หน่วยงานรัฐ / หน่วยงานเอกชน / บุคคลทั่วไป)');
+        if ($market === null) jsonError(400, 'กรุณาเลือกว่าดีลนี้ขายไปตลาดไหน');
+        return ['sales_channel' => 'direct', 'channel_role_id' => $roleId, 'channel_role_note' => $roleNote,
+                'end_user_name' => null, 'segment' => $segment, 'specialization' => $market, 'specialization_note' => $marketNote];
+    }
+    $endUserName = mb_substr(trim((string)($body['end_user_name'] ?? '')), 0, 255);
+    return ['sales_channel' => 'indirect', 'channel_role_id' => $roleId, 'channel_role_note' => $roleNote,
+            'end_user_name' => $endUserName !== '' ? $endUserName : null, 'segment' => null, 'specialization' => $market, 'specialization_note' => $marketNote];
+}
+
+// ข้อความประวัติดีล เช่น "ขายผ่านคนกลาง — ผู้รับเหมา — ลูกค้าปลายทาง: โรงพยาบาล X" / "ขายตรง"
+function dealChannelLabel(PDO $db, ?string $channel, ?string $roleId, ?string $roleNote, ?string $endUserName): string {
+    if (!$channel) return 'ยังไม่ระบุ';
+    if ($channel === 'direct') return 'ขายตรง';
+    $label = 'ขายผ่านคนกลาง';
+    if ($roleId) {
+        $st = $db->prepare('SELECT customer_role_name FROM customer_roles WHERE customer_role_id = ?');
+        $st->execute([$roleId]);
+        $name = $st->fetchColumn();
+        if ($name) $label .= ' — ' . $name . ($roleNote ? ' (' . $roleNote . ')' : '');
+    }
+    return $label . ' — ลูกค้าปลายทาง: ' . ($endUserName ?: 'ยังไม่ทราบ');
+}
+
 // ─── POST create ─────────────────────────────────────────────────────────────
 function createItem(PDO $db, array $user, array $body): void {
     // ชื่อโครงการไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23 — อนาคตอาจกลับมาบังคับทั้งหมด) ไม่ใส่ = ค่าว่าง (คอลัมน์ NOT NULL รับ '' ได้)
@@ -477,22 +556,26 @@ function createItem(PDO $db, array $user, array $body): void {
     // บังคับผูกหน่วยงาน/บริษัท (account) + ผู้ติดต่อ (ชื่อ+เบอร์โทร) ตอนสร้างดีลใหม่ฝั่งขายตรงเท่านั้น (ยืนยันจากผู้ใช้ 2026-09-22)
     // ไม่บังคับฝั่ง ebidding (mirror งานประมูลที่ auto สร้างจาก api/assignments.php) เพราะตอนนั้นยังไม่มีใครติดต่อหน่วยงานจริงเลย
     $accountId      = !empty($body['account_id']) ? (int)$body['account_id'] : null;
+    $channel        = null;   // งานประมูล (mirror) ไม่มีช่องทางขาย
     if ($sourceType !== 'ebidding') {
+        $body['stage'] = 'Interest';   // ดีลใหม่เริ่มที่สนใจ/ติดต่อเสมอ — Sale ต้องสร้างดีลตั้งแต่ได้งาน (ยืนยันจากผู้ใช้ 2026-11-02)
         if (!$accountId)    jsonError(400, 'กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท');
         // ผู้ติดต่อในดีลอย่างน้อย 1 คน (เลือกคนเดิมของลูกค้า หรือเพิ่มคนใหม่) — แทนการบังคับกรอกชื่อ+เบอร์ช่องเดียวแบบเดิม (2026-09-28)
         if (!dealContactsFromBody($body)) jsonError(400, 'กรุณาเลือกหรือเพิ่มผู้ติดต่อในดีลอย่างน้อย 1 คน');
         // บังคับเลือกประเภทดีลเอง ไม่ใช้ค่า default 'normal' — กันงานวาง Spec ถูกบันทึกเป็นซื้อทันทีเพราะเผลอไม่ได้เลือก (ยืนยันจากผู้ใช้ 2026-09-23)
         if (empty($body['deal_type_id'])) jsonError(400, 'กรุณาเลือกประเภทดีล');
         // เช่นเดียวกัน: ไม่เติม priority='Medium' / win_probability=20% ให้เองสำหรับดีลขายตรง (ยืนยันจากผู้ใช้ 2026-09-23)
-        if (empty($body['priority'])) jsonError(400, 'กรุณาเลือกระดับความสำคัญ');
-        if (!isset($body['win_probability']) || $body['win_probability'] === '') jsonError(400, 'กรุณากรอกโอกาสปิดดีล (%)');
+        if (empty($body['priority'])) jsonError(400, 'กรุณาเลือกระดับความสำคัญของดีล');
+        if (!isset($body['win_probability']) || $body['win_probability'] === '') jsonError(400, 'กรุณาเลือกโอกาสปิดดีล');
         // บังคับเลือกคู่แข่งตอนสร้างดีลใหม่ — ไม่มี/ไม่รู้ ให้เลือกตัวเลือกพิเศษ "ไม่มีคู่แข่ง"/"ยังไม่ทราบ" (ยืนยันจากผู้ใช้ 2026-09-24)
         // ตอนแก้ไขดีลเก่าไม่บังคับ (ดีลเก่ายังไม่มีข้อมูลคู่แข่ง) — ดู updateItem()
-        if (empty($body['competitor_ids']) || !is_array($body['competitor_ids'])) {
+        if ((empty($body['competitor_ids']) || !is_array($body['competitor_ids'])) && trim((string)($body['competitor_other_note'] ?? '')) === '') {
             jsonError(400, 'กรุณาเลือกคู่แข่ง (ถ้าไม่มีหรือไม่ทราบ ให้เลือก "ไม่มีคู่แข่ง" หรือ "ยังไม่ทราบ")');
         }
         // ตรวจผู้ติดต่อใหม่ก่อนบันทึกดีล (เบอร์ผิดรูปแบบ / เบอร์ตรงคนเดิมแต่ชื่อต่าง) — กันดีลถูกบันทึกค้างโดยไม่มีผู้ติดต่อ (2026-09-29)
         precheckDealContacts($db, $accountId, dealContactsFromBody($body));
+        // ขายตรง / ผ่านคนกลาง + ลูกค้าปลายทาง บังคับตอนสร้างดีลใหม่ (2026-11-02)
+        $channel = dealChannelFromBody($db, $body, $accountId, true);
 
         // กันกดบันทึกซ้ำ (Idempotency — ยืนยันจากผู้ใช้ 2026-10-23): ผู้ใช้คนเดิม + ลูกค้าเดียวกัน + ชื่อโครงการเดียวกัน ภายใน 60 วินาที
         //   = กดซ้ำ / เน็ตหลุดแล้วกดใหม่ / เปิด 2 แท็บ → ตอบสำเร็จด้วยดีลเดิม ไม่สร้างใหม่ (เดิมได้ดีลซ้ำ 2 รายการ)
@@ -527,11 +610,11 @@ function createItem(PDO $db, array $user, array $body): void {
 
     $stmt = $db->prepare("
         INSERT INTO pipeline_items
-            (project_code, source_type, announcement_id, title, client_name, account_id, assigned_to,
+            (project_code, source_type, announcement_id, title, client_name, account_id, sales_channel, channel_role_id, channel_role_note, end_user_name, assigned_to,
              stage, deal_type_id, segment, priority, product_category, brand, fee_structure,
-             specialization, value, win_probability, expected_close, expected_delivery_date, next_action, next_followup_date, notes,
+             specialization, specialization_note, value, win_probability, expected_close, expected_delivery_date, next_action, next_followup_date, notes,
              created_by, updated_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ");
     $stmt->execute([
         $projectCode,
@@ -540,15 +623,21 @@ function createItem(PDO $db, array $user, array $body): void {
         $title,
         $body['client_name']      ?? null,
         $accountId,
+        $channel['sales_channel']     ?? null,
+        $channel['channel_role_id']   ?? null,
+        $channel['channel_role_note'] ?? null,
+        $channel['end_user_name']     ?? null,
         $assignTo,
         $body['stage']            ?? 'Interest',
         resolveDealType($db, $body['deal_type_id'] ?? null),
-        !empty($body['segment'])          ? $body['segment']          : null,
+        // ประเภท/ตลาดของดีล: ดีลขายตรงมาจากส่วน "ดีลนี้ขายแบบไหน" ในฟอร์ม (2026-11-20) / งานประมูลใช้ค่าที่ส่งมาแบบเดิม
+        $channel ? $channel['segment'] : (!empty($body['segment']) ? $body['segment'] : null),
         $body['priority']         ?? 'Medium',
         !empty($body['product_category']) ? $body['product_category'] : null,
         !empty($body['brand'])            ? $body['brand']            : null,
         !empty($body['fee_structure'])    ? $body['fee_structure']    : null,
-        !empty($body['specialization'])   ? $body['specialization']   : null,
+        $channel ? $channel['specialization'] : (!empty($body['specialization']) ? $body['specialization'] : null),
+        $channel['specialization_note'] ?? null,
         !empty($body['value'])    ? (float)$body['value'] : null,
         // ใช้ isset แทน !empty — เดิม sale กรอก 0% แล้วถูกเปลี่ยนเป็น 20% เพราะ empty(0) เป็นจริง (default 0.20 เหลือไว้ให้ฝั่ง ebidding เท่านั้น)
         (isset($body['win_probability']) && $body['win_probability'] !== '') ? (float)$body['win_probability'] : 0.20,
@@ -564,7 +653,7 @@ function createItem(PDO $db, array $user, array $body): void {
     $id = $db->lastInsertId();
 
     if ($accountId && dealContactsFromBody($body)) saveDealContacts($db, (int)$id, $projectCode, $accountId, $user, dealContactsFromBody($body));
-    if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, (int)$id, $projectCode, $user, $body['competitor_ids']);
+    if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, (int)$id, $projectCode, $user, $body['competitor_ids'], $body['competitor_other_note'] ?? '');
 
     $db->prepare("INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, NULL, ?, 'สร้างดีลใหม่')")
        ->execute([$id, $projectCode, $user['id'], $body['stage'] ?? 'Interest']);
@@ -725,13 +814,19 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
 
     // Ownership check
     $owner = $db->prepare("SELECT assigned_to, stage, project_code, account_id, source_type, announcement_id, expected_delivery_date, delivered_date,
-                                  value, win_probability, expected_close FROM pipeline_items WHERE id = ?");
+                                  value, win_probability, expected_close, sales_channel, channel_role_id, channel_role_note, end_user_name, specialization, specialization_note FROM pipeline_items WHERE id = ?");
     $owner->execute([$id]);
     $row = $owner->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
     if ($user['role'] === 'sale' && $row['assigned_to'] != $user['id']) jsonError(403, 'ไม่มีสิทธิ์');
     // กันบันทึกทับ: ฟอร์มส่งค่าตอนเปิดหน้าต่างมา (_base) — มีช่องไหนในฐานข้อมูลเปลี่ยนไปแล้ว ตอบ 409 ไม่บันทึก (2026-10-30)
     if (isset($body['_base']) && is_array($body['_base'])) guardDealConflict($db, $id, $body['_base']);
+
+    // ช่องทางของดีล 3 ชั้น (2026-11-20) — ฟอร์มส่ง apply_channel มา = บันทึกช่องทาง / ประเภท / ตลาด / ชื่อลูกค้าปลายทาง
+    // ไม่บังคับดีลเดิม (ดีลก่อนกติกานี้ยังไม่ระบุ แก้ช่องอื่นได้) / งานประมูลไม่ใช้
+    $channelAccountId = array_key_exists('account_id', $body) ? ((int)($body['account_id'] ?: 0) ?: null) : ($row['account_id'] ? (int)$row['account_id'] : null);
+    $channel = $row['source_type'] !== 'ebidding' ? dealChannelFromBody($db, $body, $channelAccountId, false, $row) : null;
+    if ($channel) unset($body['segment'], $body['specialization'], $body['specialization_note']);
 
     $allowed = ['stage','priority','segment','product_category','brand','fee_structure',
                 'specialization','value','win_probability','expected_close',
@@ -747,6 +842,9 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
             if ($f === 'title') { $params[] = trim((string)($body[$f] ?? '')); continue; }
             $params[]  = ($body[$f] === '' || $body[$f] === null) ? null : $body[$f];
         }
+    }
+    if ($channel) {
+        foreach (['sales_channel', 'channel_role_id', 'channel_role_note', 'end_user_name', 'segment', 'specialization', 'specialization_note'] as $f) { $fields[] = "{$f} = ?"; $params[] = $channel[$f]; }
     }
     // deal_type_id เป็น NOT NULL (FK -> deal_types) — แยกจาก loop ด้านบนที่แปลงค่าว่างเป็น null
     if (array_key_exists('deal_type_id', $body)) {
@@ -826,6 +924,17 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
 
     $params[] = $id;
     $db->prepare("UPDATE pipeline_items SET " . implode(', ', $fields) . " WHERE id = ?")->execute($params);
+    // เปลี่ยนช่องทาง / ประเภทคนกลาง / ชื่อลูกค้าปลายทาง → บันทึกประวัติดีล (Field History)
+    if ($channel && ($channel['sales_channel'] !== $row['sales_channel']
+                     || $channel['channel_role_id'] !== $row['channel_role_id']
+                     || $channel['channel_role_note'] !== $row['channel_role_note']
+                     || $channel['end_user_name'] !== $row['end_user_name'])) {
+        $stageNow = $body['stage'] ?? $row['stage'];
+        $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+           ->execute([$id, $row['project_code'], $user['id'], $stageNow, $stageNow,
+                      'ช่องทางขาย: ' . dealChannelLabel($db, $row['sales_channel'], $row['channel_role_id'], $row['channel_role_note'], $row['end_user_name'])
+                      . ' → ' . dealChannelLabel($db, $channel['sales_channel'], $channel['channel_role_id'], $channel['channel_role_note'], $channel['end_user_name'])]);
+    }
 
     // ผู้ติดต่อในดีล: บันทึกเฉพาะเมื่อฟอร์มส่งมา (ปุ่มเลื่อนขั้น/ปิดดีลที่ส่งแค่ stage ไม่แตะ) — ตอนแก้ไขไม่บังคับ เพราะดีลเก่ายังไม่มี (2026-09-28)
     $updatedAccountId = array_key_exists('account_id', $body) ? (int)($body['account_id'] ?: 0) : (int)($row['account_id'] ?? 0);
@@ -842,7 +951,7 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     // ช่องที่กระทบยอดคาดการณ์ (มูลค่า / โอกาสปิดดีล / วันคาดปิดดีล) แก้แล้วบันทึกประวัติ (Field History Tracking — ยืนยันจากผู้ใช้ 2026-10-30)
     logDealKeyFieldChanges($db, $id, $row, $body, (int)$user['id'], $newStage ?? $row['stage']);
     // แก้คู่แข่งเฉพาะเมื่อส่ง competitor_ids มา (ปุ่มเลื่อนขั้น/ปิดดีลที่ส่งแค่ stage จะไม่ล้างคู่แข่งทิ้ง)
-    if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, $id, $row['project_code'], $user, $body['competitor_ids']);
+    if (array_key_exists('competitor_ids', $body)) saveDealCompetitors($db, $id, $row['project_code'], $user, $body['competitor_ids'], $body['competitor_other_note'] ?? '');
 
     // บันทึก log เฉพาะตอน stage เปลี่ยนค่าจริงๆ (ไม่ใช่ทุกครั้งที่ update ฟิลด์อื่น)
     if (isset($body['stage']) && $body['stage'] !== $row['stage']) {
@@ -1080,9 +1189,12 @@ function logDealKeyFieldChanges(PDO $db, int $id, array $old, array $body, int $
  */
 function guardDealConflict(PDO $db, int $id, array $base): void {
     $lockFields = ['title' => 'ชื่อโครงการ', 'stage' => 'สถานะ', 'value' => 'มูลค่า', 'win_probability' => 'โอกาสปิดดีล',
-                   'expected_close' => 'วันคาดปิดดีล', 'priority' => 'ความสำคัญ', 'segment' => 'ประเภทลูกค้า', 'product_category' => 'หมวดสินค้า',
-                   'brand' => 'แบรนด์', 'fee_structure' => 'Fee Structure', 'specialization' => 'กลุ่มลูกค้า', 'next_action' => 'สิ่งที่ต้องทำต่อ',
-                   'next_followup_date' => 'วันนัดติดตาม', 'notes' => 'หมายเหตุ', 'deal_type_id' => 'ประเภทดีล', 'assigned_to' => 'Sale', 'account_id' => 'ลูกค้า'];
+                   'expected_close' => 'วันคาดปิดดีล', 'priority' => 'ระดับความสำคัญของดีล', 'product_category' => 'หมวดสินค้า',
+                   'brand' => 'แบรนด์', 'fee_structure' => 'ค่าตอบแทนคนกลาง (Fee Structure)', 'next_action' => 'สิ่งที่ต้องทำต่อ',
+                   'next_followup_date' => 'วันนัดติดตาม', 'notes' => 'หมายเหตุ', 'deal_type_id' => 'ประเภทดีล', 'assigned_to' => 'Sale', 'account_id' => 'ลูกค้า',
+                   // ส่วน "ดีลนี้ขายแบบไหน" — Sale แก้ได้ต่อดีลทุกช่อง (2026-11-20)
+                   'sales_channel' => 'ช่องทาง (ขายตรง / ผ่านคนกลาง)', 'channel_role_id' => 'ประเภทช่องทาง', 'channel_role_note' => 'ข้อความระบุประเภทช่องทาง',
+                   'segment' => 'ประเภท (รัฐ / เอกชน / บุคคลทั่วไป)', 'specialization' => 'ตลาดของดีล', 'specialization_note' => 'ข้อความระบุกลุ่มตลาด', 'competitor_other_note' => 'คู่แข่งอื่น (พิมพ์เอง)', 'end_user_name' => 'ชื่อลูกค้าปลายทาง'];
     $st = $db->prepare('SELECT ' . implode(', ', array_keys($lockFields)) . ' FROM pipeline_items WHERE id = ?');
     $st->execute([$id]);
     $cur = $st->fetch(PDO::FETCH_ASSOC);

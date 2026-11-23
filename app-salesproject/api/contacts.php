@@ -31,7 +31,8 @@ switch ($method) {
 function listContacts(PDO $db): void {
     $accountId = (int)($_GET['account_id'] ?? 0);
     if (!$accountId) jsonResponse(false, null, 'กรุณาระบุ account_id', 400);
-    $stmt = $db->prepare('SELECT * FROM contacts WHERE account_id = ? ORDER BY is_primary DESC, full_name');
+    // เรียงตามชื่ออย่างเดียว — ไม่ใช้คนหลักระดับลูกค้าแล้ว คนหลักตั้งที่ดีล (ยืนยันจากผู้ใช้ 2026-11-20)
+    $stmt = $db->prepare('SELECT * FROM contacts WHERE account_id = ? ORDER BY full_name, id');
     $stmt->execute([$accountId]);
     jsonResponse(true, $stmt->fetchAll());
 }

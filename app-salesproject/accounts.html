@@ -82,7 +82,7 @@
               <div><b class="text-slate-700">ระบบหาคู่ที่อาจซ้ำอย่างไร</b> — ก่อนเทียบ ตัดคำว่า บริษัท / จำกัด / มหาชน / หจก. / Co.,Ltd. ช่องว่าง จุด และวงเล็บออก แล้วจับคู่เมื่อเข้าข้อใดข้อหนึ่ง</div>
               <ol class="m-0 mt-1 pl-5 list-decimal">
                 <li><b class="text-slate-700">ชื่อเหมือนกันหลังตัดคำ</b> เช่น "บริษัท เอ คลาส จำกัด" กับ "เอคลาส"</li>
-                <li><b class="text-slate-700">เลขภาษีเดียวกัน</b> แม้ชื่อต่างกัน (เฉพาะเอกชน — หน่วยงานราชการใช้เลขของหน่วยงานแม่ร่วมกันได้)</li>
+                <li><b class="text-slate-700">เลขภาษีเดียวกัน</b> แม้ชื่อต่างกัน (ไม่นับหน่วยงานรัฐ — หน่วยงานรัฐใช้เลขของหน่วยงานแม่ร่วมกันได้)</li>
                 <li><b class="text-slate-700">ชื่อหนึ่งอยู่ในอีกชื่อ</b> (ยาว 4 ตัวขึ้นไป) เช่น "มหาวิทยาลัยเกษตรศาสตร์" กับ "มหาวิทยาลัยเกษตรศาสตร์ (มก.) กรุงเทพฯ"</li>
                 <li><b class="text-slate-700">สะกดต่าง 1–2 ตัว</b> เช่น "กอริลลาพาเลซ" กับ "กอริลลาพาเลส"</li>
                 <li><b class="text-slate-700">ต้นชื่อเหมือนกัน ต่างแค่ท้ายไม่เกิน 3 ตัว</b> เช่น "โกลบอลไทซอน" กับ "โกลบอลไทยซอนพรีซิซั่น"</li>
@@ -112,7 +112,7 @@
                       </div>
                       <div class="flex items-center gap-2 flex-wrap">
                         <span class="font-mono text-xs text-teal-700 bg-white rounded px-1.5 py-0.5">{{ acc.account_code }}</span>
-                        <span class="text-[11px] font-bold px-2 py-0.5 rounded-full" :class="acc.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ acc.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
+                        <span class="text-[11px] font-bold px-2 py-0.5 rounded-full" :class="accountTypeBadgeClass(acc.account_type)">{{ accountTypeLabel(acc.account_type) }}</span>
                       </div>
                       <div class="font-semibold text-slate-800 mt-1">{{ acc.name }}</div>
                       <div class="text-sm text-slate-500 mt-0.5">
@@ -283,10 +283,13 @@
                       <div v-if="a.merged_codes" class="text-xs font-normal text-slate-400 mt-0.5">รวมมาจาก {{ a.merged_codes }}</div>
                     </td>
                     <td class="px-4 py-3">
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
-                        :class="a.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">
-                        {{ a.account_type==='government' ? 'ราชการ' : 'เอกชน' }}
+                      <span v-if="Number(a.is_intermediary) !== 1" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
+                        :class="accountTypeBadgeClass(a.account_type)">
+                        {{ accountTypeLabel(a.account_type) }}
                       </span>
+                      <!-- ลูกค้าทำอะไรกับของ + กลุ่มลูกค้า (2026-11-02) -->
+                      <span v-if="Number(a.is_intermediary) === 1" class="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-violet-100 text-violet-700">{{ a.customer_role_name }}</span>
+                      <div v-if="a.customer_industry_name" class="text-xs text-slate-500 mt-0.5">{{ a.customer_industry_name }}</div>
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
                       <span v-if="a.owner_name" class="text-slate-700">{{ a.owner_name }}</span>
@@ -327,7 +330,7 @@
       @pick="onDuplicatePick" @confirm="onDuplicateConfirm" @close="dupDialog.list = null"></app-duplicate-accounts>
 
     <!-- ยืนยันรวมลูกค้า (Merge — 2026-09-30): สรุปสิ่งที่จะย้าย + เตือนย้อนกลับไม่ได้ -->
-    <div v-if="mergeDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" @click.self="mergeDialog = null">
+    <div v-if="mergeDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (mergeDialog = null)">
       <div class="bg-white rounded-2xl w-full max-w-[560px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
         <div class="px-6 py-5 border-b border-slate-100">
           <h3 class="font-bold text-lg text-slate-800 m-0">ยืนยันรวมลูกค้า</h3>
@@ -378,19 +381,19 @@
     </div>
 
     <!-- MODAL: รายละเอียด/แก้ไข/สร้างหน่วยงาน — header/footer แบบเดียวกับ sp-form modal ใน sales-pipeline.html (ยืนยันจากผู้ใช้ 2026-09-22 ว่าเป็น pattern มาตรฐานของระบบ ไม่ใช่ header สีทึบแบบ users.html/sources.html) -->
-    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4"
-      v-if="modal.type==='account'" @click.self="closeModal">
-      <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
-        <div class="px-6 py-5 flex items-center justify-between border-b border-slate-100">
+    <div class="fixed inset-0 bg-black/50 flex items-stretch sm:items-center justify-center z-[1000] p-0 sm:p-4"
+      v-if="modal.type==='account'" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
+      <div class="bg-white sm:rounded-2xl w-full h-full sm:h-auto sm:max-h-[90vh] max-w-[640px] shadow-2xl flex flex-col overflow-hidden">
+        <div class="px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between border-b border-slate-100">
           <div>
-            <h3 class="font-bold text-lg text-slate-800 m-0">{{ accountForm.id ? 'รายละเอียดหน่วยงาน/บริษัท' : 'เพิ่มหน่วยงาน/บริษัท' }}</h3>
+            <h3 class="font-bold text-lg text-slate-800 m-0">{{ accountForm.id ? 'รายละเอียดลูกค้า' : 'เพิ่มลูกค้า' }}</h3>
             <span v-if="accountForm.account_code" class="inline-block mt-1 font-mono text-xs text-teal-700 bg-teal-50 rounded px-1.5 py-0.5">{{ accountForm.account_code }}</span>
             <span v-else class="block mt-1 text-xs text-slate-400">รหัสลูกค้าออกให้อัตโนมัติหลังบันทึก</span>
           </div>
           <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none"
             @click="closeModal">×</button>
         </div>
-        <div class="p-5 overflow-y-auto flex-1">
+        <div class="p-3 sm:p-5 overflow-y-auto flex-1">
 
           <!-- ลูกค้าที่อาจซ้ำ (Potential Duplicates — ยืนยันจากผู้ใช้ 2026-09-30) ทุก role เห็น / ธุรการตัดสินในแท็บ "ชื่อคล้ายกัน" -->
           <div v-if="accountForm.id && accountDetail.potential_duplicates.length" class="mb-4 p-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-900">
@@ -404,29 +407,35 @@
             <div v-if="!canChangeOwner" class="mt-1 text-amber-800">ถ้ารู้ว่าเป็นลูกค้าเดียวกันหรือคนละราย แจ้งธุรการขายได้เลย</div>
           </div>
 
-          <!-- แยก 2 ส่วน: ข้อมูลลูกค้าใช้ในงานขาย (CRM) / ข้อมูลออกบิลยึดตาม ERP — คำอธิบายใต้ช่องให้คนสร้างเข้าใจว่าช่องไหนใช้ทำอะไร (ยืนยันจากผู้ใช้ 2026-09-28) -->
-          <div class="flex items-baseline gap-2 mb-3">
-            <span class="text-base font-bold text-slate-700">ข้อมูลลูกค้า</span>
-            <span class="text-xs text-slate-500">— ใช้ในงานขาย</span>
+          <!-- ฟอร์มลูกค้าแบบการ์ดแยกเรื่อง 5 ขั้น: ข้อมูลลูกค้า / บทบาท / ข้อมูลติดต่อหน่วยงาน / ผู้ติดต่อ / ตรวจก่อนบันทึก (ยืนยันจากผู้ใช้ 2026-11-20 — รูปแบบเดียวกับฟอร์มสร้างดีล)
+               ลูกค้าใหม่: กรอกทีละขั้น ปุ่ม "ถัดไป" ตรวจช่องบังคับของขั้นนั้น / แก้ไขลูกค้าเดิม: แสดงครบทุกการ์ดในหน้าเดียว
+               ใช้ v-show ไม่ใช่ v-if ค่าที่กรอกไว้ไม่หายตอนเปลี่ยนขั้น / ปุ่มกด ไม่มีลากวาง (ผู้ใช้วัย 50-60) -->
+          <div v-if="!accountForm.id" class="mb-4">
+            <div class="text-sm font-semibold text-slate-600">ขั้น {{ accStep }} จาก 5 · {{ accStepTitles[accStep - 1] }}</div>
+            <div class="grid grid-cols-5 gap-1.5 mt-1.5">
+              <span v-for="n in 5" :key="n" class="h-1.5 rounded-full" :class="n <= accStep ? 'bg-teal-600' : 'bg-slate-200'"></span>
+            </div>
           </div>
-          <div class="grid grid-cols-2 gap-4 mb-2">
-            <div class="flex flex-col gap-1 col-span-2">
-              <label class="block text-sm font-semibold text-slate-600">ชื่อหน่วยงาน/บริษัท <span class="text-red-500">*</span></label>
-              <input v-model="accountForm.name" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-              <p class="text-sm text-slate-500 leading-relaxed m-0">ชื่อที่ใช้เรียกในระบบ — ถ้ามีรหัส ERP แล้ว ควรตรงกับชื่อในหน้าบัญชี</p>
+
+          <!-- ① ข้อมูลลูกค้า: ชื่อ + เลขภาษี + ผู้ดูแล (ยืนยันจากผู้ใช้ 2026-11-20)
+               เลขภาษีอยู่คู่กับชื่อ — ระบบใช้ทั้งคู่ตรวจลูกค้าซ้ำและจับคู่ ERP / ไม่ได้ใช้ออกบิล (ข้อมูลออกบิลยึดหน้าบัญชีใน ERP) -->
+          <section v-show="accStepVisible(1)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+              <span class="text-base font-bold text-slate-800">ข้อมูลลูกค้า</span>
             </div>
             <div class="flex flex-col gap-1">
-              <label class="block text-sm font-semibold text-slate-600">ประเภท <span class="text-red-500">*</span></label>
-              <div class="flex gap-2 mt-1">
-                <button type="button" @click="accountForm.account_type='government'"
-                  class="flex-1 border rounded-lg py-2 text-sm font-medium" :class="accountForm.account_type==='government' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'">ราชการ</button>
-                <button type="button" @click="accountForm.account_type='private'"
-                  class="flex-1 border rounded-lg py-2 text-sm font-medium" :class="accountForm.account_type==='private' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'">เอกชน</button>
-              </div>
+              <label class="flex items-center gap-1 text-sm font-semibold text-slate-600">ชื่อลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) <span class="text-red-500">*</span> <button type="button" @click.prevent="accHelp='name'" class="inline-flex items-center justify-center w-5 h-5 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50 shrink-0" title="ช่องนี้คืออะไร" aria-label="คำอธิบาย ชื่อลูกค้า"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
+              <input v-model="accountForm.name" placeholder="ชื่อหน่วยงาน / บริษัท / บุคคล" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+            <!-- เลขภาษีไม่บังคับ — ลูกค้าใหม่ที่ยังเป็นผู้สนใจมักยังไม่มี (ยืนยันจากผู้ใช้ 2026-09-26) ใช้จับคู่กับ ERP -->
+            <div class="flex flex-col gap-1">
+              <label class="flex items-center gap-1 text-sm font-semibold text-slate-600">เลขประจำตัวผู้เสียภาษี <span class="text-xs font-normal text-slate-400">(13 หลัก ไม่บังคับ)</span> <button type="button" @click.prevent="accHelp='tax'" class="inline-flex items-center justify-center w-5 h-5 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50 shrink-0" title="ช่องนี้คืออะไร" aria-label="คำอธิบาย เลขประจำตัวผู้เสียภาษี"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
+              <input v-model="accountForm.tax_id" inputmode="numeric" maxlength="17" placeholder="0105500000000" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white font-mono">
             </div>
             <!-- Sale ผู้ดูแลลูกค้า (Account Owner — 2026-09-30): เปลี่ยนได้เฉพาะธุรการ/admin (API บังคับซ้ำ) / ว่าง = ลูกค้าส่วนกลาง -->
             <div class="flex flex-col gap-1">
-              <label class="block text-sm font-semibold text-slate-600">Sale ผู้ดูแลลูกค้า</label>
+              <label class="flex items-center gap-1 text-sm font-semibold text-slate-600">Sale ผู้ดูแลลูกค้า <button type="button" @click.prevent="accHelp='owner'" class="inline-flex items-center justify-center w-5 h-5 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50 shrink-0" title="ช่องนี้คืออะไร" aria-label="คำอธิบาย Sale ผู้ดูแลลูกค้า"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
               <select v-if="canChangeOwner" v-model="accountForm.owner_user_id"
                 class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white cursor-pointer">
                 <option value="">ลูกค้าส่วนกลาง (ไม่มีผู้ดูแล)</option>
@@ -434,172 +443,370 @@
               </select>
               <div v-else class="py-2.5 text-sm" :class="ownerDisplayName ? 'text-slate-700' : 'text-slate-400'">{{ ownerDisplayName || 'ลูกค้าส่วนกลาง' }}</div>
             </div>
-            <p class="col-span-2 text-sm text-slate-500 leading-relaxed m-0 -mt-2">ผู้ดูแลบอกว่าใครดูแลลูกค้ารายนี้ ทุกคนยังเห็นและสร้างดีลได้ — เปลี่ยนผู้ดูแลได้เฉพาะธุรการขาย / admin</p>
+          </section>
+
+          <!-- ② บทบาทลูกค้า 2 ชั้น (ยืนยันจากผู้ใช้ 2026-11-20): ชั้น 1 ผู้ใช้เอง / คนกลาง → ชั้น 2 ผู้ใช้เอง = ประเภท, คนกลาง = ประเภทคนกลาง
+               คนกลางไม่ถามรัฐ/เอกชน (API บันทึก private ให้เอง) / ตลาด (Office, Hospital ...) ถามตอนสร้างดีล ไม่ถามที่นี่
+               ชั้น 1 ดูจากธง is_intermediary ของ customer_roles ห้ามเช็กจากชื่อ — เขียว = ขายตรง, ส้ม = ผ่านคนกลาง (สีเดียวกับฟอร์มดีล) -->
+          <section v-show="accStepVisible(2)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <span class="text-base font-bold text-slate-800">บทบาทลูกค้า</span>
+            </div>
+            <!-- หัวข้อย่อย ข้อ 1 / ข้อ 2 ให้รู้ว่าต้องเลือกอะไร (ยืนยันจากผู้ใช้ 2026-11-20) — ป้ายขอบเส้น ไม่ใช่วงกลมทึบ กันชนกับเลขหัวการ์ด
+                 ข้อ 2 แสดงเป็นสีเทาก่อนเลือกข้อ 1 ให้รู้ว่ายังมีอีกข้อ -->
+            <div>
+              <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 1</span>ลูกค้ารายนี้เป็นแบบไหน <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                <button type="button" @click="setRoleKind('self')" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                  :class="accountForm.role_kind === 'self' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="accountForm.role_kind === 'self' ? 'border-current' : 'border-slate-300'"><span v-if="accountForm.role_kind === 'self'" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">
+                  เป็นผู้ใช้เอง<span class="block text-xs font-normal">ซื้อสินค้าไปใช้เอง (ขายตรง)</span></span></button>
+                <button type="button" @click="setRoleKind('mid')" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                  :class="accountForm.role_kind === 'mid' ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="accountForm.role_kind === 'mid' ? 'border-current' : 'border-slate-300'"><span v-if="accountForm.role_kind === 'mid'" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">
+                  เป็นคนกลาง<span class="block text-xs font-normal">ไม่ได้ใช้สินค้าเอง (คนกลาง)</span></span></button>
+              </div>
+            </div>
+            <div v-if="!accountForm.role_kind" class="pt-3 border-t border-dashed border-slate-300">
+              <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-400"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-slate-300 text-slate-400 bg-white shrink-0">ข้อ 2</span>ประเภท <span class="text-sm font-normal">— เลือกข้อ 1 ก่อน</span></div>
+            </div>
+            <div v-if="accountForm.role_kind === 'self'" class="pt-3 border-t border-dashed border-slate-300">
+              <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>ประเภทของลูกค้า <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                <button v-for="t in accountTypeOptions" :key="t.value" type="button" @click="accountForm.account_type = t.value" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                  :class="accountForm.account_type === t.value ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="accountForm.account_type === t.value ? 'border-current' : 'border-slate-300'"><span v-if="accountForm.account_type === t.value" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ t.label }}</span></button>
+              </div>
+            </div>
+            <div v-if="accountForm.role_kind === 'mid'" class="pt-3 border-t border-dashed border-slate-300">
+              <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>ประเภทคนกลาง <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                <button v-for="r in intermediaryRoleOptions" :key="r.customer_role_id" type="button" @click="accountForm.customer_role_id = r.customer_role_id" :title="r.customer_role_description" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                  :class="accountForm.customer_role_id === r.customer_role_id ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="accountForm.customer_role_id === r.customer_role_id ? 'border-current' : 'border-slate-300'"><span v-if="accountForm.customer_role_id === r.customer_role_id" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ r.customer_role_name }}</span></button>
+              </div>
+              <input v-if="selectedRole && Number(selectedRole.requires_note) === 1" v-model="accountForm.customer_role_note" maxlength="255" placeholder="พิมพ์ระบุ เช่น บริษัทให้เช่าเฟอร์นิเจอร์"
+                class="mt-2 w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            </div>
+          </section>
+
+          <!-- ③ ข้อมูลติดต่อหน่วยงาน: เบอร์กลางของหน่วยงาน + ที่ตั้งสำนักงาน + บันทึก (เบอร์รายคนอยู่ที่ผู้ติดต่อ) -->
+          <section v-show="accStepVisible(3)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span>
+              <span class="text-base font-bold text-slate-800">ข้อมูลติดต่อหน่วยงาน</span>
+            </div>
             <!-- เบอร์โทร 1 ช่อง = 1 เบอร์ เก็บตัวเลขล้วน (มาตรฐาน CRM — ยืนยันจากผู้ใช้ 2026-09-28) พิมพ์ขีดได้ ระบบตัดออกเอง
                  ข้อความสีส้มใต้ช่อง = รูปแบบยังไม่ถูก รวมถึงเบอร์เก่าที่ต้องแก้ -->
-            <div class="flex flex-col gap-1">
-              <label class="block text-sm font-semibold text-slate-600">เบอร์สำนักงาน</label>
-              <div class="flex gap-2">
-                <input v-model="accountForm.phone" type="tel" placeholder="02-963-2951" class="min-w-0 flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-                <input v-model="accountForm.phone_ext" inputmode="numeric" placeholder="ต่อ" class="w-20 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="flex flex-col gap-1">
+                <label class="flex items-center gap-1 text-sm font-semibold text-slate-600">เบอร์สำนักงาน <button type="button" @click.prevent="accHelp='phone'" class="inline-flex items-center justify-center w-5 h-5 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50 shrink-0" title="ช่องนี้คืออะไร" aria-label="คำอธิบาย เบอร์โทร"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
+                <div class="flex gap-2">
+                  <input v-model="accountForm.phone" type="tel" placeholder="02-963-2951" class="min-w-0 flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                  <input v-model="accountForm.phone_ext" inputmode="numeric" placeholder="ต่อ" class="w-20 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                </div>
+                <p v-if="phoneInputProblem(accountForm.phone)" class="text-sm text-amber-700 leading-relaxed m-0">{{ phoneInputProblem(accountForm.phone) }}</p>
               </div>
-              <p v-if="phoneInputProblem(accountForm.phone)" class="text-sm text-amber-700 leading-relaxed m-0">{{ phoneInputProblem(accountForm.phone) }}</p>
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">เบอร์มือถือ</label>
+                <input v-model="accountForm.mobile" type="tel" placeholder="092-536-4624" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
+                <p v-if="phoneInputProblem(accountForm.mobile)" class="text-sm text-amber-700 leading-relaxed m-0">{{ phoneInputProblem(accountForm.mobile) }}</p>
+              </div>
             </div>
-            <div class="flex flex-col gap-1">
-              <label class="block text-sm font-semibold text-slate-600">เบอร์มือถือ</label>
-              <input v-model="accountForm.mobile" type="tel" placeholder="092-536-4624" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white">
-              <p v-if="phoneInputProblem(accountForm.mobile)" class="text-sm text-amber-700 leading-relaxed m-0">{{ phoneInputProblem(accountForm.mobile) }}</p>
+            <div class="grid grid-cols-1 gap-4">
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">ที่อยู่ <span class="text-xs font-normal text-slate-400">(ที่ตั้งสำนักงาน)</span></label>
+                <textarea v-model="accountForm.address" rows="3" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"></textarea>
+                <p class="text-xs text-slate-500 leading-relaxed m-0">ไว้ไปพบลูกค้า / ดูว่าอยู่จังหวัดไหน — ไม่ใช่ที่อยู่ออกบิล และไม่ใช่ที่ส่งของ</p>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-semibold text-slate-600">บันทึกเพิ่มเติม</label>
+                <textarea v-model="accountForm.note" rows="3" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"></textarea>
+              </div>
             </div>
-            <p class="col-span-2 text-sm text-slate-500 leading-relaxed m-0 -mt-2">ช่องละ 1 เบอร์ — เบอร์ทั่วไปของหน่วยงาน (เบอร์รายคนอยู่ในส่วนผู้ติดต่อ)</p>
-            <!-- เลขภาษีไม่บังคับ — ลูกค้าใหม่ที่ยังเป็นผู้สนใจมักยังไม่มี (ยืนยันจากผู้ใช้ 2026-09-26) ใช้จับคู่กับ ERP -->
-            <div class="flex flex-col gap-1 col-span-2">
-              <label class="block text-sm font-semibold text-slate-600">เลขประจำตัวผู้เสียภาษี <span class="text-xs font-normal text-slate-400">(13 หลัก ไม่บังคับ)</span></label>
-              <input v-model="accountForm.tax_id" inputmode="numeric" maxlength="17" placeholder="0105500000000" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white font-mono">
-              <p class="text-sm text-slate-500 leading-relaxed m-0">ใช้ยืนยันว่าเป็นบริษัทไหน กันสร้างลูกค้าซ้ำ และจับคู่กับ ERP</p>
-            </div>
-            <div class="flex flex-col gap-1 col-span-2">
-              <label class="block text-sm font-semibold text-slate-600">ที่อยู่ <span class="text-xs font-normal text-slate-400">(ที่ตั้งสำนักงาน)</span></label>
-              <textarea v-model="accountForm.address" rows="2" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"></textarea>
-              <p class="text-sm text-slate-500 leading-relaxed m-0">ไว้ไปพบลูกค้า / ดูว่าอยู่จังหวัดไหน — <span class="text-amber-700 font-semibold">ไม่ใช่ที่อยู่ออกบิล และไม่ใช่ที่ส่งของ</span></p>
-            </div>
-            <div class="flex flex-col gap-1 col-span-2">
-              <label class="block text-sm font-semibold text-slate-600">บันทึกเพิ่มเติม</label>
-              <textarea v-model="accountForm.note" rows="2" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"></textarea>
-            </div>
-          </div>
+          </section>
 
-          <div v-if="!accountForm.id" class="mt-2 p-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-900 leading-relaxed">
-            <span class="font-bold">ข้อมูลออกบิล (ERP)</span> — ชื่อ ที่อยู่ และเลขภาษีที่ใช้ออกบิล ยึดตามหน้าบัญชีใน ERP
-            ผูกรหัส ERP ได้หลังบันทึกลูกค้า (ธุรการขาย)
-          </div>
+          <!-- ④ ผู้ติดต่อ — เฉพาะลูกค้าใหม่ ไม่บังคับ เพิ่มได้หลายคน (ยืนยันจากผู้ใช้ 2026-11-20)
+               เก็บไว้ในหน้าเว็บก่อน บันทึกเข้า api/contacts.php หลังสร้างลูกค้าสำเร็จ / ไม่มีคนหลักระดับลูกค้า — คนหลักตั้งที่ดีล (ยืนยันจากผู้ใช้ 2026-11-20)
+               ลูกค้าเดิมจัดการผู้ติดต่อที่ส่วน "ผู้ติดต่อ" ด้านล่างเหมือนเดิม -->
+          <section v-if="!accountForm.id" v-show="accStep === 4" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">4</span>
+              <span class="text-base font-bold text-slate-800">ผู้ติดต่อรายบุคคล</span> <span class="text-sm font-normal text-slate-500">คนในหน่วยงานที่ Sale คุยด้วย · ไม่บังคับ · เพิ่มได้หลายคน</span>
+            </div>
+            <p class="text-xs text-slate-500 leading-relaxed m-0">ข้ามได้ — เพิ่มทีหลังได้ที่หน้าลูกค้า หรือตอนสร้างดีล</p>
+            <div v-for="(c, i) in accNewContacts" :key="i" class="flex items-center gap-2 flex-wrap border border-slate-200 rounded-xl px-3 py-2 bg-white text-sm"
+              :class="accContactEditIndex === i ? 'ring-2 ring-teal-200' : ''">
+              <div class="flex-1 min-w-[180px]">
+                <div class="font-semibold text-slate-800">{{ c.full_name }}
+                  <span v-if="c.position" class="font-normal text-slate-500">({{ c.position }})</span>
+                </div>
+                <div class="text-xs text-slate-500">{{ [c.phone ? formatPhone(c.phone) : '', c.office_phone ? 'สำนักงาน ' + formatPhone(c.office_phone, c.office_phone_ext) : ''].filter(Boolean).join(' · ') || 'ไม่มีเบอร์' }}</div>
+              </div>
+              <button type="button" @click="accEditContact(i)" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">แก้ไข</button>
+              <button type="button" @click="accRemoveContact(i)" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-rose-200 text-rose-700 hover:bg-rose-50 border-0 cursor-pointer">ลบ</button>
+            </div>
+            <!-- ช่องเหมือนฟอร์มผู้ติดต่อเดิม: ชื่อ (บังคับ) / ตำแหน่ง / เบอร์หลัก / เบอร์สำนักงาน + ต่อ -->
+            <div class="rounded-xl border border-dashed border-slate-300 bg-white p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 items-start">
+              <div class="sm:col-span-2 text-sm font-semibold text-slate-600">{{ accContactEditIndex === null ? 'เพิ่มผู้ติดต่อรายบุคคล' : 'แก้ไขผู้ติดต่อรายบุคคล' }}</div>
+              <input v-model="accContactDraft.full_name" placeholder="ชื่อผู้ติดต่อ *" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+              <input v-model="accContactDraft.position" placeholder="ตำแหน่ง (ไม่บังคับ)" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+              <div class="flex flex-col gap-1">
+                <input v-model="accContactDraft.phone" type="tel" placeholder="เบอร์โทร — มือถือ หรือ 02… (ไม่บังคับ)" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                <p v-if="phoneInputProblem(accContactDraft.phone)" class="text-sm text-amber-700 m-0">{{ phoneInputProblem(accContactDraft.phone) }}</p>
+              </div>
+              <div class="flex flex-col gap-1">
+                <div class="flex gap-2">
+                  <input v-model="accContactDraft.office_phone" type="tel" placeholder="เบอร์สำนักงาน" class="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                  <input v-model="accContactDraft.office_phone_ext" inputmode="numeric" placeholder="ต่อ" class="w-16 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                </div>
+                <p v-if="phoneInputProblem(accContactDraft.office_phone)" class="text-sm text-amber-700 m-0">{{ phoneInputProblem(accContactDraft.office_phone) }}</p>
+              </div>
+              <div class="sm:col-span-2 flex justify-end gap-2">
+                <button v-if="accContactEditIndex !== null" type="button" @click="accResetContactDraft" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิกแก้ไข</button>
+                <button type="button" @click="accAddContact" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-500 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">{{ accContactEditIndex === null ? '+ เพิ่มเข้ารายการ' : 'บันทึกการแก้ไข' }}</button>
+              </div>
+            </div>
+          </section>
 
-          <!-- ผู้ติดต่อ + ดีลที่เกี่ยวข้อง — แสดงเฉพาะหน่วยงานที่มีอยู่แล้ว (บันทึกครั้งแรกก่อนถึงจะมี id) -->
+          <!-- ⑤ ตรวจก่อนบันทึก — เฉพาะลูกค้าใหม่ (ลูกค้าเดิมเห็นข้อมูลในการ์ดด้านบนอยู่แล้ว) ดูอย่างเดียว แก้ได้โดยกดย้อนกลับ -->
+          <section v-if="!accountForm.id" v-show="accStep === 5" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">5</span>
+              <span class="text-base font-bold text-slate-800">ตรวจก่อนบันทึก</span>
+            </div>
+            <div class="rounded-xl bg-white border border-slate-200 px-4 py-3">
+              <div class="grid grid-cols-[130px_1fr] gap-y-2 text-sm">
+                <span class="text-slate-500">ชื่อลูกค้า</span><span class="text-slate-800 font-semibold">{{ accountForm.name || '-' }}</span>
+                <span class="text-slate-500">เลขภาษี</span><span class="text-slate-800 font-mono">{{ accountForm.tax_id || '-' }}</span>
+                <span class="text-slate-500">ผู้ดูแล</span><span class="text-slate-800">{{ accOwnerSummary }}</span>
+                <span class="text-slate-500">บทบาท</span><span class="text-slate-800">{{ accRoleSummary || '-' }}</span>
+                <span class="text-slate-500">เบอร์สำนักงาน</span><span class="text-slate-800">{{ accountForm.phone ? accountForm.phone + (accountForm.phone_ext ? ' ต่อ ' + accountForm.phone_ext : '') : '-' }}</span>
+                <span class="text-slate-500">เบอร์มือถือ</span><span class="text-slate-800">{{ accountForm.mobile || '-' }}</span>
+                <span class="text-slate-500">ที่อยู่</span><span class="text-slate-800 whitespace-pre-line">{{ accountForm.address || '-' }}</span>
+                <span class="text-slate-500">บันทึกเพิ่มเติม</span><span class="text-slate-800 whitespace-pre-line">{{ accountForm.note || '-' }}</span>
+                <span class="text-slate-500">ผู้ติดต่อรายบุคคล</span><span class="text-slate-800">{{ accNewContacts.length ? accNewContacts.length + ' คน · ' + accNewContacts.map(c => c.full_name).join(', ') : '-' }}</span>
+              </div>
+            </div>
+            <p class="text-xs text-slate-500 leading-relaxed m-0">ถ้าต้องแก้ กด "ย้อนกลับ" ไปขั้นที่ต้องการ — ถูกต้องแล้วกด "บันทึก"</p>
+          </section>
+
+          <!-- ลูกค้าเดิม: ส่วนล่างเป็นการ์ด 4–7 แบบเดียวกับการ์ด 1–3 (ยืนยัน mockup จากผู้ใช้ 2026-11-20)
+               ④ ผู้ติดต่อรายบุคคล ⑤ ข้อมูลออกบิล (ERP) ⑥ ดีลที่เกี่ยวข้อง ⑦ ประวัติ — ผู้ติดต่อขึ้นก่อน ERP ให้ตรงกับลำดับตอนสร้างลูกค้า
+               เนื้อในแต่ละส่วนเหมือนเดิม / คำอธิบาย ERP (เดิมกล่องเหลือง) ย้ายไปไอคอน ⓘ ตามกฎคำอธิบายยาวให้อยู่ในไอคอน -->
           <template v-if="accountForm.id">
-            <!-- รหัสลูกค้าใน ERP (ฐานข้อมูล taiyo ตาราง RD01CUST) — 1 ลูกค้ามีได้หลายรหัส (แยกสาขา/แยกบริษัทในเครือ)
-                 เพิ่ม/แก้/ลบได้เฉพาะ admin / ธุรการขาย เพราะต้องตรงกับฝ่ายบัญชี — sale ดูได้อย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-26) -->
-            <div ref="erpSection" class="border-t border-slate-100 pt-4 mb-4">
-              <div class="flex items-center justify-between mb-2">
-                <div class="flex items-baseline gap-2">
-                  <span class="text-base font-bold text-slate-700">ข้อมูลออกบิล (ERP)</span>
-                  <span class="text-xs text-slate-500">— ใช้ตอนออก SO</span>
-                </div>
-                <button v-if="canEditErp && !erpForm.show" @click="openErpForm(null)" class="text-xs font-semibold text-teal-700 bg-transparent border-0 cursor-pointer">+ เพิ่มรหัส ERP</button>
-              </div>
-              <div class="mb-3 p-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-900 leading-relaxed">
-                ชื่อ ที่อยู่ และเลขภาษีที่ใช้ออกบิล ยึดตามหน้าบัญชีใน ERP — ลูกค้าใหม่ยังไม่มี ต้องให้บัญชีเปิดหน้าบัญชีก่อนออก SO แล้วธุรการผูกรหัสที่นี่
-                <span v-if="!canEditErp"> (ผูก / แก้รหัส ERP ได้เฉพาะธุรการขาย / admin)</span>
-              </div>
-              <div v-if="!accountDetail.erp_codes.length && !erpForm.show" class="text-sm text-slate-400 mb-2">ยังไม่ผูกกับรหัสลูกค้าใน ERP (ลูกค้าใหม่ที่ยังไม่เคยเปิดบิล)</div>
-              <div v-for="e in accountDetail.erp_codes" :key="e.account_erp_code_id" class="flex items-center gap-2 py-2 border-b border-slate-50 text-sm flex-wrap">
-                <span class="font-mono text-slate-700">{{ e.erp_customer_code }}</span>
-                <span v-if="Number(e.is_primary)===1" class="px-1.5 py-0.5 rounded text-[11px] font-bold bg-teal-50 text-teal-700">รหัสหลัก</span>
-                <span v-if="e.erp_role" class="px-1.5 py-0.5 rounded text-[11px] bg-slate-100 text-slate-600">{{ erpRoleLabel(e.erp_role) }}</span>
-                <span v-if="e.note" class="w-full text-sm text-slate-500 order-last">{{ e.note }}</span>
-                <span v-if="canEditErp" class="ml-auto flex gap-1">
-                  <button @click="openErpForm(e)" class="px-2 py-0.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">แก้ไข</button>
-                  <button @click="removeErpCode(e)" class="px-2 py-0.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-rose-200 text-rose-600 hover:bg-rose-50 border-0 cursor-pointer">ลบ</button>
-                </span>
-              </div>
-              <div v-if="erpForm.show" class="mt-3 p-3 bg-slate-50 rounded-xl grid grid-cols-2 gap-2">
-                <input v-model="erpForm.erp_customer_code" placeholder="รหัสลูกค้าใน ERP *" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white font-mono">
-                <select v-model="erpForm.erp_role" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
-                  <option value="">บทบาท: ไม่แยก</option>
-                  <option v-for="r in erpRoleOptions" :key="r.val" :value="r.val">{{ r.label }}</option>
-                </select>
-                <input v-model="erpForm.note" placeholder="ที่อยู่ออกบิล / สาขา ตามหน้าบัญชี ERP (ไม่บังคับ)" class="col-span-2 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
-                <label class="col-span-2 flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                  <input type="checkbox" v-model="erpForm.is_primary" class="accent-teal-600 w-4 h-4"> ตั้งเป็นรหัสหลัก
-                </label>
-                <button @click="erpForm.show=false" class="bg-white ring-1 ring-slate-200 text-slate-600 rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">ยกเลิก</button>
-                <button @click="submitErpCode" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">{{ erpForm.account_erp_code_id ? 'บันทึก' : 'เพิ่ม' }}</button>
-              </div>
+            <!-- ④ ผู้ติดต่อรายบุคคล — 1 กล่องต่อ 1 คน / ไม่แสดงคนหลักระดับลูกค้า (contacts.is_primary) — ใช้แค่คนหลักในดีล (ยืนยันจากผู้ใช้ 2026-11-20 — 2 ความหมายทำให้สับสน, ช่องในฐานข้อมูลยังอยู่) / กดแก้ไข = กล่องของคนนั้นกลายเป็นฟอร์มในที่เดิม
+                 เพิ่มใหม่ = ฟอร์มขึ้นบนสุด / ระหว่างเปิดฟอร์ม ปุ่มแก้ไขคนอื่น + ปุ่มเพิ่ม จาง กดไม่ได้ (ยืนยัน mockup จากผู้ใช้ 2026-11-20) -->
+            <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-2.5">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">4</span>
+              <span class="text-base font-bold text-slate-800">ผู้ติดต่อรายบุคคล</span>
+              <span v-if="accountDetail.contacts.length" class="text-sm text-slate-500">{{ accountDetail.contacts.length }} คน</span>
+              <button v-if="!isViewer" type="button" @click="openContactForm(null)" :disabled="showContactForm" class="ml-auto text-sm font-semibold text-teal-700 bg-transparent border-0 cursor-pointer disabled:text-slate-300 disabled:cursor-not-allowed">+ เพิ่มผู้ติดต่อ</button>
             </div>
-
-            <div class="border-t border-slate-100 pt-4 mb-4">
-              <div class="flex items-center justify-between mb-2">
-                <div class="text-xs font-bold uppercase tracking-wider text-slate-400">ผู้ติดต่อ</div>
-                <button v-if="!isViewer && !showContactForm" @click="openContactForm(null)" class="text-xs font-semibold text-teal-700 bg-transparent border-0 cursor-pointer">+ เพิ่มผู้ติดต่อ</button>
-              </div>
-              <div v-if="!accountDetail.contacts.length" class="text-sm text-slate-400 mb-2">ยังไม่มีผู้ติดต่อ</div>
-              <div v-for="c in accountDetail.contacts" :key="c.id" class="flex items-center gap-2 py-2 border-b border-slate-50 text-sm flex-wrap">
-                <span class="font-medium text-slate-700">{{ c.full_name }}</span>
-                <span v-if="c.position" class="text-slate-400">({{ c.position }})</span>
-                <span v-if="Number(c.phone_needs_fix)===1" class="px-1.5 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800">เบอร์ต้องแก้ไข</span>
-                <span class="ml-auto text-slate-500 text-right">
-                  <span class="block">{{ formatPhone(c.phone) }}</span>
-                  <span v-if="c.office_phone" class="block text-xs">สำนักงาน {{ formatPhone(c.office_phone, c.office_phone_ext) }}</span>
-                </span>
-                <!-- แก้ไขผู้ติดต่อ (ชื่อ/ตำแหน่ง/เบอร์) — เพิ่ม 2026-09-28 ให้แก้เบอร์เก่าจากหน้าจอได้ -->
-                <button v-if="!isViewer" @click="openContactForm(c)" class="px-2 py-0.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">แก้ไข</button>
-                <!-- ผู้ติดต่อคนนี้อยู่ในดีลไหน บทบาทอะไร (ผู้ติดต่อในดีล — 2026-09-28) -->
-                <span class="w-full text-sm" :class="c.deals_text ? 'text-slate-500' : 'text-slate-400'">อยู่ในดีล: {{ c.deals_text || '-' }}</span>
-              </div>
-              <!-- ฟอร์มเพิ่ม/แก้ผู้ติดต่อ — ช่องละ 1 เบอร์: เบอร์หลัก (ปกติมือถือ, บังคับ) + เบอร์สำนักงาน/เบอร์ต่อ (ไม่บังคับ) -->
-              <div v-if="showContactForm" class="mt-3 p-3 bg-slate-50 rounded-xl grid grid-cols-2 gap-2 items-start">
-                <div class="col-span-2 text-sm font-semibold text-slate-600">{{ contactForm.id ? 'แก้ไขผู้ติดต่อ' : 'เพิ่มผู้ติดต่อ' }}</div>
-                <input v-model="contactForm.full_name" placeholder="ชื่อผู้ติดต่อ *" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
-                <input v-model="contactForm.position" placeholder="ตำแหน่ง (ไม่บังคับ)" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
-                <div class="col-span-2 sm:col-span-1 flex flex-col gap-1">
-                  <input v-model="contactForm.phone" type="tel" placeholder="เบอร์โทร — มือถือ หรือ 02… (ไม่บังคับ)" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
-                  <p v-if="phoneInputProblem(contactForm.phone)" class="text-sm text-amber-700 m-0">{{ phoneInputProblem(contactForm.phone) }}</p>
+              <!-- เพิ่มผู้ติดต่อใหม่ — ฟอร์มบนสุด -->
+              <div v-if="showContactForm && !contactForm.id" class="rounded-xl border-2 border-dashed border-teal-500 bg-white p-3.5">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 text-lg font-bold flex items-center justify-center shrink-0">+</span>
+                  <span class="text-[.95rem] font-bold text-slate-800">เพิ่มผู้ติดต่อใหม่</span>
                 </div>
-                <div class="col-span-2 sm:col-span-1 flex flex-col gap-1">
-                  <div class="flex gap-2">
-                    <input v-model="contactForm.office_phone" type="tel" placeholder="เบอร์สำนักงาน" class="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
-                    <input v-model="contactForm.office_phone_ext" inputmode="numeric" placeholder="ต่อ" class="w-16 border border-slate-200 rounded-lg px-2 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-start">
+                  <div><label class="block text-xs font-semibold text-slate-500 mb-1">ชื่อผู้ติดต่อ <span class="text-red-500">*</span></label><input v-model="contactForm.full_name" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white"></div>
+                  <div><label class="block text-xs font-semibold text-slate-500 mb-1">ตำแหน่ง</label><input v-model="contactForm.position" placeholder="ไม่บังคับ" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white"></div>
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">เบอร์โทร (มือถือ หรือ 02…)</label>
+                    <input v-model="contactForm.phone" type="tel" placeholder="ไม่บังคับ" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                    <p v-if="phoneInputProblem(contactForm.phone)" class="text-sm text-amber-700 m-0 mt-1">{{ phoneInputProblem(contactForm.phone) }}</p>
                   </div>
-                  <p v-if="phoneInputProblem(contactForm.office_phone)" class="text-sm text-amber-700 m-0">{{ phoneInputProblem(contactForm.office_phone) }}</p>
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">เบอร์สำนักงาน</label>
+                    <div class="flex gap-2">
+                      <input v-model="contactForm.office_phone" type="tel" placeholder="02-963-2951" class="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                      <input v-model="contactForm.office_phone_ext" inputmode="numeric" placeholder="ต่อ" class="w-16 border border-slate-200 rounded-lg px-2 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                    </div>
+                    <p v-if="phoneInputProblem(contactForm.office_phone)" class="text-sm text-amber-700 m-0 mt-1">{{ phoneInputProblem(contactForm.office_phone) }}</p>
+                  </div>
                 </div>
-                <button @click="showContactForm=false" class="bg-white ring-1 ring-slate-200 text-slate-600 rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">ยกเลิก</button>
-                <button @click="submitContact" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">{{ contactForm.id ? 'บันทึก' : 'เพิ่ม' }}</button>
-              </div>
-            </div>
-
-            <div class="border-t border-slate-100 pt-4">
-              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">ดีลที่เกี่ยวข้อง</div>
-              <div v-if="!accountDetail.deals.length" class="text-sm text-slate-400">ยังไม่มีดีลที่ผูกกับหน่วยงานนี้</div>
-              <div v-for="d in accountDetail.deals" :key="d.id" class="flex items-center gap-2 py-2 border-b border-slate-50 text-sm">
-                <span class="font-mono text-xs text-purple-700 bg-purple-50 rounded px-1.5 py-0.5">{{ d.project_code || '-' }}</span>
-                <span class="text-slate-700">{{ d.title }}</span>
-                <span class="ml-auto text-slate-400">{{ d.stage }}</span>
-              </div>
-            </div>
-
-            <!-- ประวัติการรวมลูกค้า (account_merge_logs — 2026-09-30) ทุก role ดูได้ -->
-            <div v-if="accountDetail.merge_logs.length" class="border-t border-slate-100 pt-4 mt-4">
-              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติการรวม</div>
-              <div v-for="l in accountDetail.merge_logs" :key="l.account_merge_log_id" class="py-2 border-b border-slate-50 text-sm text-slate-600">
-                <div>
-                  <span class="text-slate-500">{{ formatDateThai(l.created_at) }}</span> ·
-                  รวม <span class="font-mono text-xs">{{ l.merged_account_code }}</span> <b class="text-slate-700">{{ l.merged_account_name }}</b> เข้ารายนี้
-                  <span v-if="l.merged_by_name">โดย {{ l.merged_by_name }}</span>
-                </div>
-                <div class="text-slate-500">
-                  ย้ายมา: ดีล {{ l.moved_deal_count }} · ประกาศ {{ l.moved_announcement_count }} · ผู้ติดต่อ {{ l.moved_contact_count }} · รหัส ERP {{ l.moved_erp_code_count }}<span v-if="l.merged_erp_codes"> ({{ l.merged_erp_codes }})</span>
-                  <span v-if="l.reason"> — {{ l.reason }}</span>
+                <div class="flex justify-end gap-2 mt-3">
+                  <button type="button" @click="showContactForm=false" class="px-4 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+                  <button type="button" @click="submitContact" class="px-4 py-2 rounded-lg text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">เพิ่ม</button>
                 </div>
               </div>
-            </div>
+              <div v-if="!accountDetail.contacts.length && !(showContactForm && !contactForm.id)" class="text-sm text-slate-400">ยังไม่มีผู้ติดต่อ</div>
+              <template v-for="c in accountDetail.contacts" :key="c.id">
+                <!-- กำลังแก้คนนี้ — ฟอร์มแทนที่กล่อง -->
+                <div v-if="showContactForm && contactForm.id === c.id" class="rounded-xl border-2 border-teal-600 bg-teal-50/60 p-3.5">
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="text-[.95rem] font-bold text-teal-900">กำลังแก้ไข: {{ c.full_name }}</span>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-start">
+                    <div><label class="block text-xs font-semibold text-slate-500 mb-1">ชื่อผู้ติดต่อ <span class="text-red-500">*</span></label><input v-model="contactForm.full_name" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white"></div>
+                    <div><label class="block text-xs font-semibold text-slate-500 mb-1">ตำแหน่ง</label><input v-model="contactForm.position" placeholder="ไม่บังคับ" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white"></div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">เบอร์โทร (มือถือ หรือ 02…)</label>
+                      <input v-model="contactForm.phone" type="tel" placeholder="ไม่บังคับ" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                      <p v-if="phoneInputProblem(contactForm.phone)" class="text-sm text-amber-700 m-0 mt-1">{{ phoneInputProblem(contactForm.phone) }}</p>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">เบอร์สำนักงาน</label>
+                      <div class="flex gap-2">
+                        <input v-model="contactForm.office_phone" type="tel" placeholder="02-963-2951" class="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                        <input v-model="contactForm.office_phone_ext" inputmode="numeric" placeholder="ต่อ" class="w-16 border border-slate-200 rounded-lg px-2 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                      </div>
+                      <p v-if="phoneInputProblem(contactForm.office_phone)" class="text-sm text-amber-700 m-0 mt-1">{{ phoneInputProblem(contactForm.office_phone) }}</p>
+                    </div>
+                  </div>
+                  <div class="flex justify-end gap-2 mt-3">
+                    <button type="button" @click="showContactForm=false" class="px-4 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">ยกเลิก</button>
+                    <button type="button" @click="submitContact" class="px-4 py-2 rounded-lg text-sm font-semibold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">บันทึกการแก้ไข</button>
+                  </div>
+                </div>
+                <div v-else class="flex gap-3 rounded-xl bg-white px-3.5 py-3 border border-slate-200">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="text-[.95rem] font-bold text-slate-800">{{ c.full_name }}</span>
+                      <span v-if="c.position" class="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{{ c.position }}</span>
+                      <span v-if="Number(c.phone_needs_fix)===1" class="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">เบอร์ต้องแก้ไข</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap text-sm text-slate-600 mt-1">
+                      <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5l-2.5 1.5a11 11 0 0 0 5 5l1.5 -2.5l5 2v4a2 2 0 0 1 -2 2a16 16 0 0 1 -15 -15a2 2 0 0 1 2 -2"/></svg>
+                      <template v-if="c.phone || c.office_phone">
+                        <span v-if="c.phone">{{ formatPhone(c.phone) }}</span>
+                        <span v-if="c.phone && c.office_phone" class="text-slate-300">·</span>
+                        <span v-if="c.office_phone">สำนักงาน {{ formatPhone(c.office_phone, c.office_phone_ext) }}</span>
+                      </template>
+                      <span v-else class="text-slate-400">ไม่มีเบอร์</span>
+                    </div>
+                    <!-- ผู้ติดต่อคนนี้อยู่ในดีลไหน บทบาทอะไร (ผู้ติดต่อในดีล — 2026-09-28) — ป้ายรหัสดีล + บทบาท จาก c.deals (API เรียงดีลล่าสุดก่อน)
+                         แสดงดีลล่าสุด 1 ดีล + ปุ่ม "ดูทั้งหมด" กดแล้วแสดงครบ (ยืนยันจากผู้ใช้ 2026-11-20 — หลายโครงการแล้วยาว) -->
+                    <div class="flex items-center gap-1.5 flex-wrap text-sm text-slate-600 mt-1">
+                      <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7v-2a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>
+                      <template v-if="(c.deals || []).length">
+                        <span v-for="d in (contactDealsOpen[c.id] ? c.deals : c.deals.slice(0, 1))" :key="d.project_code + d.role_name" class="inline-flex items-center gap-1" :title="d.title">
+                          <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">{{ d.project_code || '-' }}</span>
+                          <span class="text-xs text-slate-500">{{ d.role_name }}<template v-if="Number(d.is_primary) === 1"> · คนหลักในดีลนี้</template></span>
+                        </span>
+                        <button v-if="c.deals.length > 1" type="button" @click="contactDealsOpen[c.id] = !contactDealsOpen[c.id]"
+                          class="px-2 py-0.5 rounded-md text-xs font-semibold bg-white ring-1 ring-teal-300 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">
+                          {{ contactDealsOpen[c.id] ? 'ย่อ' : 'ดูทั้งหมด ' + c.deals.length + ' ดีล' }}</button>
+                      </template>
+                      <span v-else class="text-slate-400">ยังไม่อยู่ในดีลไหน</span>
+                    </div>
+                  </div>
+                  <button v-if="!isViewer" type="button" @click="openContactForm(c)" :disabled="showContactForm" class="self-start px-3 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">แก้ไข</button>
+                </div>
+              </template>
+            </section>
 
-            <!-- ประวัติผู้ดูแล (account_history Field History — 2026-10-09) ทุก role ดูได้ — หัวหน้าดูย้อนหลังว่าใครเปลี่ยนเมื่อไหร่ -->
-            <div v-if="accountDetail.history.length" class="border-t border-slate-100 pt-4 mt-4">
-              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">ประวัติผู้ดูแล</div>
-              <div v-for="h in accountDetail.history" :key="h.account_history_id" class="py-2 border-b border-slate-50 text-sm text-slate-600">
-                <span class="text-slate-500">{{ formatDateTime(h.changed_at) }}</span> ·
-                {{ h.old_display || 'ส่วนกลาง' }} → <b class="text-slate-700">{{ h.new_display || 'ส่วนกลาง' }}</b>
-                <span v-if="h.changed_by_name"> · โดย {{ h.changed_by_name }}</span>
-                <span v-if="h.note" class="text-slate-500"> — {{ h.note }}</span>
-              </div>
+            <!-- ⑤ ข้อมูลออกบิล (ERP) — รหัสลูกค้าใน ERP (ฐานข้อมูล taiyo ตาราง RD01CUST) 1 ลูกค้ามีได้หลายรหัส (แยกสาขา/แยกบริษัทในเครือ)
+                 เพิ่ม/แก้/ลบได้เฉพาะ admin / ธุรการขาย เพราะต้องตรงกับฝ่ายบัญชี — sale ดูได้อย่างเดียว (ยืนยันจากผู้ใช้ 2026-09-26) -->
+            <section ref="erpSection" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-2">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">5</span>
+              <span class="text-base font-bold text-slate-800">ข้อมูลออกบิล (ERP)</span> <span class="text-xs text-slate-500">— ใช้ตอนออก SO</span>
+              <button type="button" @click.prevent="accHelp='erp'" class="inline-flex items-center justify-center w-5 h-5 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50 shrink-0" title="ส่วนนี้คืออะไร" aria-label="คำอธิบาย ข้อมูลออกบิล (ERP)"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+              <button v-if="canEditErp && !erpForm.show" @click="openErpForm(null)" class="ml-auto text-sm font-semibold text-teal-700 bg-transparent border-0 cursor-pointer">+ เพิ่มรหัส ERP</button>
             </div>
+                <div v-if="!accountDetail.erp_codes.length && !erpForm.show" class="text-sm text-slate-400 mb-2">ยังไม่ผูกกับรหัสลูกค้าใน ERP (ลูกค้าใหม่ที่ยังไม่เคยเปิดบิล)</div>
+                <div v-for="e in accountDetail.erp_codes" :key="e.account_erp_code_id" class="flex items-center gap-2 py-2 border-b border-slate-50 text-sm flex-wrap">
+                  <span class="font-mono text-slate-700">{{ e.erp_customer_code }}</span>
+                  <span v-if="Number(e.is_primary)===1" class="px-1.5 py-0.5 rounded text-[11px] font-bold bg-teal-50 text-teal-700">รหัสหลัก</span>
+                  <span v-if="e.erp_role" class="px-1.5 py-0.5 rounded text-[11px] bg-slate-100 text-slate-600">{{ erpRoleLabel(e.erp_role) }}</span>
+                  <span v-if="e.note" class="w-full text-sm text-slate-500 order-last">{{ e.note }}</span>
+                  <span v-if="canEditErp" class="ml-auto flex gap-1">
+                    <button @click="openErpForm(e)" class="px-2 py-0.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer">แก้ไข</button>
+                    <button @click="removeErpCode(e)" class="px-2 py-0.5 rounded-lg text-xs font-semibold bg-white ring-1 ring-rose-200 text-rose-600 hover:bg-rose-50 border-0 cursor-pointer">ลบ</button>
+                  </span>
+                </div>
+                <div v-if="erpForm.show" class="mt-3 p-3 bg-slate-50 rounded-xl grid grid-cols-2 gap-2">
+                  <input v-model="erpForm.erp_customer_code" placeholder="รหัสลูกค้าใน ERP *" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white font-mono">
+                  <select v-model="erpForm.erp_role" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                    <option value="">บทบาท: ไม่แยก</option>
+                    <option v-for="r in erpRoleOptions" :key="r.val" :value="r.val">{{ r.label }}</option>
+                  </select>
+                  <input v-model="erpForm.note" placeholder="ที่อยู่ออกบิล / สาขา ตามหน้าบัญชี ERP (ไม่บังคับ)" class="col-span-2 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white">
+                  <label class="col-span-2 flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                    <input type="checkbox" v-model="erpForm.is_primary" class="accent-teal-600 w-4 h-4"> ตั้งเป็นรหัสหลัก
+                  </label>
+                  <button @click="erpForm.show=false" class="bg-white ring-1 ring-slate-200 text-slate-600 rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">ยกเลิก</button>
+                  <button @click="submitErpCode" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">{{ erpForm.account_erp_code_id ? 'บันทึก' : 'เพิ่ม' }}</button>
+                </div>
+            </section>
+
+            <!-- ⑥ ดีลที่เกี่ยวข้อง -->
+            <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-2">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">6</span>
+              <span class="text-base font-bold text-slate-800">ดีลที่เกี่ยวข้อง</span>
+              <span v-if="accountDetail.deals.length" class="text-sm text-slate-500">{{ accountDetail.deals.length }} ดีล</span>
+            </div>
+                <!-- แสดงดีลล่าสุด 3 ดีล (accountDealsPreview) (API เรียงใหม่สุดก่อน) + ปุ่ม "ดูทั้งหมด" — ลูกค้าที่มีดีลเยอะรายการยาวมาก (ยืนยันจากผู้ใช้ 2026-11-20)
+                     ชื่อโครงการยาวตัดเหลือ 1 บรรทัด (ชี้ค้างดูชื่อเต็ม) / รหัส PJ กับสถานะไม่ตัดขึ้นบรรทัดใหม่ -->
+                <div v-if="!accountDetail.deals.length" class="text-sm text-slate-400">ยังไม่มีดีลที่ผูกกับหน่วยงานนี้</div>
+                <div v-for="d in (accountDealsOpen ? accountDetail.deals : accountDetail.deals.slice(0, accountDealsPreview))" :key="d.id" class="flex items-center gap-2 py-2 border-b border-slate-100 text-sm">
+                  <span class="font-mono text-xs text-purple-700 bg-purple-50 rounded px-1.5 py-0.5 whitespace-nowrap shrink-0">{{ d.project_code || '-' }}</span>
+                  <span class="text-slate-700 flex-1 min-w-0 truncate" :title="d.title">{{ d.title }}</span>
+                  <span class="text-slate-400 whitespace-nowrap shrink-0">{{ d.stage }}</span>
+                </div>
+                <button v-if="accountDetail.deals.length > accountDealsPreview" type="button" @click="accountDealsOpen = !accountDealsOpen"
+                  class="mt-1 px-3 py-1 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-300 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">
+                  {{ accountDealsOpen ? 'ย่อ' : 'ดูทั้งหมด ' + accountDetail.deals.length + ' ดีล' }}</button>
+            </section>
+
+            <!-- ⑦ ประวัติ — รวมประวัติผู้ดูแล (account_history Field History — 2026-10-09) กับประวัติการรวมลูกค้า (account_merge_logs — 2026-09-30) ทุก role ดูได้ -->
+            <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-2">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">7</span>
+              <span class="text-base font-bold text-slate-800">ประวัติ</span>
+            </div>
+              <div class="text-sm font-semibold text-slate-700">ประวัติผู้ดูแล</div>
+              <div v-if="!accountDetail.history.length" class="text-sm text-slate-400">ยังไม่มีการเปลี่ยนผู้ดูแล</div>
+                <div v-for="h in accountDetail.history" :key="h.account_history_id" class="py-2 border-b border-slate-50 text-sm text-slate-600">
+                  <span class="text-slate-500">{{ formatDateTime(h.changed_at) }}</span> ·
+                  {{ h.old_display || 'ส่วนกลาง' }} → <b class="text-slate-700">{{ h.new_display || 'ส่วนกลาง' }}</b>
+                  <span v-if="h.changed_by_name"> · โดย {{ h.changed_by_name }}</span>
+                  <span v-if="h.note" class="text-slate-500"> — {{ h.note }}</span>
+                </div>
+              <div class="text-sm font-semibold text-slate-700 pt-2">ประวัติการรวมลูกค้า</div>
+              <div v-if="!accountDetail.merge_logs.length" class="text-sm text-slate-400">ยังไม่เคยรวม</div>
+                <div v-for="l in accountDetail.merge_logs" :key="l.account_merge_log_id" class="py-2 border-b border-slate-50 text-sm text-slate-600">
+                  <div>
+                    <span class="text-slate-500">{{ formatDateThai(l.created_at) }}</span> ·
+                    รวม <span class="font-mono text-xs">{{ l.merged_account_code }}</span> <b class="text-slate-700">{{ l.merged_account_name }}</b> เข้ารายนี้
+                    <span v-if="l.merged_by_name">โดย {{ l.merged_by_name }}</span>
+                  </div>
+                  <div class="text-slate-500">
+                    ย้ายมา: ดีล {{ l.moved_deal_count }} · ประกาศ {{ l.moved_announcement_count }} · ผู้ติดต่อ {{ l.moved_contact_count }} · รหัส ERP {{ l.moved_erp_code_count }}<span v-if="l.merged_erp_codes"> ({{ l.merged_erp_codes }})</span>
+                    <span v-if="l.reason"> — {{ l.reason }}</span>
+                  </div>
+                </div>
+            </section>
           </template>
 
         </div>
-        <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+        <div class="px-3 sm:px-5 py-3 sm:py-4 border-t border-slate-100 flex items-center justify-end gap-2">
           <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="closeModal">ยกเลิก</button>
           <span v-if="isViewer" class="mr-auto text-sm text-violet-700 font-semibold">👁 ดูอย่างเดียว — แก้ไขไม่ได้</span>
-          <button v-if="!isViewer" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitAccount">
+          <!-- ลูกค้าใหม่: ย้อนกลับ / ถัดไป ทีละขั้น ปุ่มบันทึกอยู่ขั้นสุดท้าย — แก้ไขลูกค้าเดิม: ปุ่มบันทึกอย่างเดียว -->
+          <button v-if="!accountForm.id && accStep > 1" type="button" class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="accStep--">ย้อนกลับ</button>
+          <button v-if="!accountForm.id && accStep < 5 && !isViewer" type="button" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="accStepNext">ถัดไป</button>
+          <button v-if="!isViewer && (accountForm.id || accStep === 5)" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="submitAccount">
             บันทึก
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- คำอธิบายช่องในฟอร์มลูกค้า (ไอคอน ⓘ ข้างชื่อช่อง — ยืนยันจากผู้ใช้ 2026-11-20: คำอธิบายยาวให้กดดูจากไอคอน ไม่วางใต้ช่อง)
+         รูปแบบเดียวกับฟอร์มดีล (spFieldHelp ใน sales-pipeline.html) — ซ้อนบนหน้าต่างลูกค้า ปิดแล้วค่าที่กรอกยังอยู่ -->
+    <div v-if="accHelp && accHelpText[accHelp]" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1100] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (accHelp=null)">
+      <div class="bg-white rounded-2xl w-full max-w-[480px] shadow-2xl flex flex-col overflow-hidden" style="max-height:85vh">
+        <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+          <h3 class="font-bold text-lg text-slate-800 m-0">{{ accHelpText[accHelp].title }}</h3>
+          <button class="text-slate-400 hover:text-slate-600 bg-transparent border-0 text-2xl cursor-pointer leading-none" @click="accHelp=null">×</button>
+        </div>
+        <ul class="overflow-y-auto px-6 py-4 m-0 list-disc pl-10 space-y-1.5 text-[.95rem] text-slate-700 leading-relaxed">
+          <li v-for="line in accHelpText[accHelp].lines" :key="line">{{ line }}</li>
+        </ul>
+        <div class="px-6 py-4 border-t border-slate-100 flex justify-end">
+          <button type="button" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="accHelp=null">ปิด</button>
         </div>
       </div>
     </div>
@@ -625,7 +832,23 @@ createApp({
       ownerFilter: 'all',    // ตัวกรองผู้ดูแล: all / mine / central / user id (2026-09-30)
       salesUsers: [],        // รายชื่อ sale สำหรับตัวกรองและช่องผู้ดูแล
       dupDialog: { list: null, confirmLabel: '' },   // หน้าต่างพบลูกค้าที่อาจซ้ำ (2026-09-28)
-      accountForm: { id: null, account_code: '', account_type: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' },
+      backdropDown: false,   // กดเมาส์เริ่มบนพื้นหลังหน้าต่างหรือไม่ — ปิดหน้าต่างเฉพาะกด+ปล่อยบนพื้นหลัง (ลากเลือกข้อความแล้วปล่อยนอกกรอบไม่ปิด — 2026-11-23)
+      accStep: 1,   // ลูกค้าใหม่กรอกทีละขั้น (2026-11-20)
+      accHelp: null,   // ช่องที่เปิดคำอธิบาย ⓘ อยู่ (key ของ accHelpText)
+      // คำอธิบายช่องในฟอร์มลูกค้า — ข้อความเดิมที่เคยวางใต้ช่อง ย้ายมาไว้ในไอคอน ⓘ (2026-11-20)
+      accHelpText: {
+        name:    { title: 'ชื่อลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน)', lines: ['ชื่อที่ใช้เปิดบิลและออก SO', 'ถ้ามีรหัส ERP แล้ว ควรตรงกับชื่อในหน้าบัญชี'] },
+        owner:   { title: 'Sale ผู้ดูแลลูกค้า', lines: ['ผู้ดูแลบอกว่าใครดูแลลูกค้ารายนี้', 'ทุกคนยังเห็นและสร้างดีลได้', 'เปลี่ยนผู้ดูแลได้เฉพาะธุรการขาย / admin'] },
+        phone:   { title: 'เบอร์โทร', lines: ['ช่องละ 1 เบอร์', 'เบอร์ทั่วไปของหน่วยงาน', 'เบอร์รายคนอยู่ในส่วนผู้ติดต่อ'] },
+        erp:     { title: 'ข้อมูลออกบิล (ERP)', lines: ['ชื่อ ที่อยู่ และเลขภาษีที่ใช้ออกบิล ยึดตามหน้าบัญชีใน ERP', 'ลูกค้าใหม่ยังไม่มี ต้องให้บัญชีเปิดหน้าบัญชีก่อนออก SO แล้วธุรการผูกรหัสที่นี่', 'ผูก / แก้รหัส ERP ได้เฉพาะธุรการขาย / admin'] },
+        tax:     { title: 'เลขประจำตัวผู้เสียภาษี', lines: ['ใช้ยืนยันว่าเป็นบริษัทไหน', 'กันสร้างลูกค้าซ้ำ', 'จับคู่กับ ERP', 'ข้อมูลออกบิล (ชื่อ ที่อยู่ และเลขภาษีที่ใช้ออกบิล) ยึดตามหน้าบัญชีใน ERP', 'ผูกรหัส ERP ได้หลังบันทึกลูกค้า (ธุรการขาย)'] },
+      },
+      accStepTitles: ['ข้อมูลลูกค้า', 'บทบาทลูกค้า', 'ข้อมูลติดต่อหน่วยงาน', 'ผู้ติดต่อรายบุคคล', 'ตรวจก่อนบันทึก'],
+      // ผู้ติดต่อของลูกค้าใหม่ (ขั้น 4) — เก็บในหน้าเว็บก่อน บันทึกหลังสร้างลูกค้าสำเร็จ
+      accNewContacts: [],
+      accContactDraft: { full_name: '', position: '', phone: '', office_phone: '', office_phone_ext: '' },
+      accContactEditIndex: null,
+      accountForm: { id: null, account_code: '', account_type: '', role_kind: '', customer_role_id: '', customer_role_note: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' },
       accountDetail: { contacts: [], deals: [], erp_codes: [], merge_logs: [], history: [], potential_duplicates: [] },
       erpForm: { show: false, account_erp_code_id: null, erp_customer_code: '', erp_role: '', is_primary: false, note: '' },
       // บทบาทรหัส ERP ตาม SAP Partner Functions — ต้องตรงกับ erpRoles() ใน api/accounts.php
@@ -634,6 +857,9 @@ createApp({
         { val: 'ship_to', label: 'สถานที่ส่งของ' }, { val: 'payer', label: 'ผู้ชำระเงิน' },
       ],
       showContactForm: false,
+      contactDealsOpen: {},   // ผู้ติดต่อที่กด "ดูทั้งหมด" ดีล (key = contact id) — ปกติแสดงดีลล่าสุด 1 ดีล
+      accountDealsPreview: 3, // การ์ดดีลที่เกี่ยวข้อง แสดงดีลล่าสุดกี่ดีลก่อนกด "ดูทั้งหมด"
+      accountDealsOpen: false,
       contactForm: { id: null, full_name: '', phone: '', office_phone: '', office_phone_ext: '', position: '' },
       activeTab: 'all',
       erpPending: [],
@@ -644,9 +870,28 @@ createApp({
       mergeDialog: null,   // { keep, merge, reason } หน้าต่างยืนยันรวมลูกค้า
       merging: false,   // คำอธิบายวิธีหาคู่ — ซ่อนไว้ กดเปิดอ่าน
       erpPendingLoading: false,
+      customerOptions: { roles: [], industries: [] },   // master ลูกค้าทำอะไรกับของ + กลุ่มลูกค้า (2026-11-02)
     };
   },
   computed: {
+    // ตัวเลือกที่ใช้งาน + ค่าที่ลูกค้ารายนี้ใช้อยู่ (ค่าที่ซ่อนแล้วยังแสดงได้)
+    roleOptions() { return this.customerOptions.roles.filter(r => Number(r.is_active) === 1 || r.customer_role_id === this.accountForm.customer_role_id); },
+    selectedRole() { return this.customerOptions.roles.find(r => r.customer_role_id === this.accountForm.customer_role_id) || null; },
+    // ชั้น 2 ของคนกลาง = ตัวเลือกที่ธง is_intermediary = 1 / ชั้น 2 ของผู้ใช้เอง = ประเภท 3 ตัว (ค่าตรงกับ accounts.account_type)
+    intermediaryRoleOptions() { return this.roleOptions.filter(r => Number(r.is_intermediary) === 1); },
+    selfRole() { return this.customerOptions.roles.find(r => Number(r.is_intermediary) !== 1 && Number(r.is_active) === 1) || null; },
+    // สรุปก่อนบันทึก (ขั้น 5 ของลูกค้าใหม่)
+    accRoleSummary() {
+      const f = this.accountForm;
+      if (f.role_kind === 'self') return ['ผู้ใช้เอง', f.account_type ? this.accountTypeLabel(f.account_type) : ''].filter(Boolean).join(' · ');
+      if (f.role_kind === 'mid') return ['คนกลาง', (this.selectedRole?.customer_role_name || '') + (f.customer_role_note ? ' (' + f.customer_role_note + ')' : '')].filter(Boolean).join(' · ');
+      return '';
+    },
+    accOwnerSummary() {
+      if (!this.canChangeOwner) return this.ownerDisplayName || 'ลูกค้าส่วนกลาง';
+      return this.salesUsers.find(u => String(u.id) === String(this.accountForm.owner_user_id))?.full_name || 'ลูกค้าส่วนกลาง';
+    },
+    accountTypeOptions() { return [{ value: 'government', label: 'หน่วยงานรัฐ' }, { value: 'private', label: 'หน่วยงานเอกชน' }, { value: 'individual', label: 'บุคคลทั่วไป' }]; },
     tabItems() {
       return [
         { label:'ภาพรวม', icon:'home', href:'dashboard.html' },
@@ -790,7 +1035,7 @@ createApp({
       const rows = this.filteredAccounts.map(a => [
         a.account_code,
         a.name,
-        a.account_type === 'government' ? 'ราชการ' : 'เอกชน',
+        Number(a.is_intermediary) === 1 ? ('คนกลาง — ' + (a.customer_role_name || '')) : this.accountTypeLabel(a.account_type),
         a.owner_name || 'ลูกค้าส่วนกลาง',
         a.tax_id || '',
         a.erp_codes || '',
@@ -835,24 +1080,131 @@ createApp({
       this.$nextTick(() => this.$refs.erpSection?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     },
 
+    async loadCustomerOptions() {
+      const res = await apiCall('GET', 'api/accounts.php?action=customer_options');
+      if (res.success) this.customerOptions = res.data;
+    },
+
     async openAccountModal(a) {
+      if (!this.customerOptions.roles.length) await this.loadCustomerOptions();
       this.showContactForm = false;
       if (a) {
         this.accountForm = { id: a.id, account_code: a.account_code, account_type: a.account_type,
+                             role_kind: Number(a.is_intermediary) === 1 ? 'mid' : 'self',
+                             customer_role_id: a.customer_role_id || this.selfRole?.customer_role_id || '', customer_role_note: a.customer_role_note || '',
                              owner_user_id: a.owner_user_id ? String(a.owner_user_id) : '', owner_name: a.owner_name || '', name: a.name, tax_id: a.tax_id || '',
                              phone: a.phone || '', phone_ext: a.phone_ext || '', mobile: a.mobile || '', address: a.address || '', note: a.note || '' };
         await this.loadAccountDetail(a.id);
       } else {
-        this.accountForm = { id: null, account_code: '', account_type: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' };
+        this.accountForm = { id: null, account_code: '', account_type: '', role_kind: '', customer_role_id: '', customer_role_note: '', owner_user_id: '', owner_name: '', name: '', tax_id: '', phone: '', phone_ext: '', mobile: '', address: '', note: '' };
         this.accountDetail = { contacts: [], deals: [], erp_codes: [], merge_logs: [], history: [], potential_duplicates: [] };
       }
       this.erpForm.show = false;
+      this.accStep = 1;
+      this.accountDealsOpen = false;   // เปิดลูกค้ารายอื่น = กลับไปแสดงดีลล่าสุดก่อน
+      this.contactDealsOpen = {};
+      this.accNewContacts = [];
+      this.accResetContactDraft();
       this.modal = { type: 'account', data: a };
     },
 
+    // ชั้น 1 ของบทบาทลูกค้า: ผู้ใช้เอง = ตัวเลือกที่ไม่ใช่คนกลาง (ระบบเลือกให้) / คนกลาง = รอเลือกประเภทคนกลางในชั้น 2
+    setRoleKind(kind) {
+      if (this.accountForm.role_kind === kind) return;
+      this.accountForm.role_kind = kind;
+      this.accountForm.customer_role_note = '';
+      this.accountForm.customer_role_id = kind === 'self' ? (this.selfRole?.customer_role_id || '') : '';
+      if (kind === 'mid') this.accountForm.account_type = '';
+    },
+
+    accountTypeLabel(type) { return type === 'government' ? 'หน่วยงานรัฐ' : (type === 'individual' ? 'บุคคลทั่วไป' : 'หน่วยงานเอกชน'); },
+    accountTypeBadgeClass(type) { return type === 'government' ? 'bg-amber-100 text-amber-700' : (type === 'individual' ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'); },
+
+    // ── ฟอร์มลูกค้าทีละขั้น (2026-11-20) ──
+    // ลูกค้าใหม่แสดงทีละการ์ด / ลูกค้าเดิมแสดงครบทุกการ์ด
+    accStepVisible(n) { return !!this.accountForm.id || this.accStep === n; },
+    // ข้อความเตือนของแต่ละขั้น ว่าง = ผ่าน — ช่องบังคับเท่าเดิม (ชื่อ + บทบาท) ขั้น 3-4 ตรวจแค่รูปแบบเบอร์ที่พิมพ์ใหม่ (API ตรวจซ้ำ)
+    accStepError(step) {
+      const f = this.accountForm;
+      if (step === 1 && !f.name.trim()) return 'กรุณาระบุชื่อลูกค้า';
+      if (step === 2) {
+        if (!f.role_kind) return 'กรุณาเลือกว่าลูกค้ารายนี้เป็นผู้ใช้เอง หรือเป็นคนกลาง';
+        if (f.role_kind === 'self' && !f.account_type) return 'กรุณาเลือกประเภท (หน่วยงานรัฐ / หน่วยงานเอกชน / บุคคลทั่วไป)';
+        if (f.role_kind === 'mid' && !f.customer_role_id) return 'กรุณาเลือกประเภทคนกลาง';
+        if (this.selectedRole && Number(this.selectedRole.requires_note) === 1 && !f.customer_role_note.trim()) return `กรุณาพิมพ์ระบุ "${this.selectedRole.customer_role_name}"`;
+      }
+      if (step === 4 && !f.id && Object.values(this.accContactDraft).some(v => String(v || '').trim())) {
+        return 'มีผู้ติดต่อที่พิมพ์ไว้แต่ยังไม่ได้กด "' + (this.accContactEditIndex === null ? '+ เพิ่มเข้ารายการ' : 'บันทึกการแก้ไข') + '" — กดปุ่มก่อน หรือลบข้อความออก';
+      }
+      if (step === 3 && !f.id) {
+        const phoneProblem = this.phoneInputProblem(f.phone) || this.phoneInputProblem(f.mobile);
+        if (phoneProblem) return 'เบอร์โทร: ' + phoneProblem;
+      }
+      return '';
+    },
+
+    // ── ผู้ติดต่อของลูกค้าใหม่ (ขั้น 4 — 2026-11-20) ──
+    accResetContactDraft() {
+      this.accContactDraft = { full_name: '', position: '', phone: '', office_phone: '', office_phone_ext: '' };
+      this.accContactEditIndex = null;
+    },
+    // ชื่อเทียบซ้ำในรายการ: ตัดคำนำหน้า / ช่องว่าง (API ตรวจซ้ำกับผู้ติดต่อเดิมของลูกค้าด้วย contactNameKey — ลูกค้าใหม่ยังไม่มี)
+    accContactNameKey(name) {
+      return String(name || '').toLowerCase().replace(/^(คุณ|นางสาว|นาง|นาย|น\.ส\.|ดร\.|mr\.?|mrs\.?|ms\.?|miss)\s*/i, '').replace(/\s+/g, '');
+    },
+    async accAddContact() {
+      const d = this.accContactDraft;
+      const name = d.full_name.trim();
+      if (!name) { await this.showAlert('กรุณากรอกชื่อผู้ติดต่อ', 'error'); return; }
+      const phoneProblem = this.phoneInputProblem(d.phone) || this.phoneInputProblem(d.office_phone);
+      if (phoneProblem) { await this.showAlert('เบอร์โทร: ' + phoneProblem, 'error'); return; }
+      const key = this.accContactNameKey(name);
+      if (this.accNewContacts.some((c, i) => i !== this.accContactEditIndex && this.accContactNameKey(c.full_name) === key)) {
+        await this.showAlert('มีผู้ติดต่อชื่อนี้ในรายการแล้ว', 'error'); return;
+      }
+      const row = { full_name: name, position: d.position.trim(), phone: d.phone.trim(), office_phone: d.office_phone.trim(), office_phone_ext: d.office_phone_ext.trim() };
+      if (this.accContactEditIndex === null) {
+        this.accNewContacts.push(row);
+      } else {
+        Object.assign(this.accNewContacts[this.accContactEditIndex], row);
+      }
+      this.accResetContactDraft();
+    },
+    accEditContact(i) {
+      const c = this.accNewContacts[i];
+      this.accContactDraft = { full_name: c.full_name, position: c.position, phone: c.phone, office_phone: c.office_phone, office_phone_ext: c.office_phone_ext };
+      this.accContactEditIndex = i;
+    },
+    accRemoveContact(i) {
+      this.accNewContacts.splice(i, 1);
+      if (this.accContactEditIndex !== null) this.accResetContactDraft();
+    },
+    // บันทึกผู้ติดต่อหลังสร้างลูกค้าสำเร็จ — คืนรายชื่อที่บันทึกไม่ได้ (ลูกค้าสร้างแล้ว แก้/เพิ่มต่อได้ที่ส่วนผู้ติดต่อ)
+    async accSaveNewContacts(accountId) {
+      const failed = [];
+      for (const c of this.accNewContacts) {
+        const res = await apiCall('POST', 'api/contacts.php?action=create',
+          { account_id: accountId, ...c, confirm_new_contact: 1 });
+        if (!res.success) failed.push(c.full_name + (res.message ? ' — ' + res.message : ''));
+      }
+      return failed;
+    },
+
+    async accStepNext() {
+      const message = this.accStepError(this.accStep);
+      if (message) { await this.showAlert(message, 'error'); return; }
+      this.accStep++;
+    },
+
     async submitAccount() {
-      if (!this.accountForm.name.trim()) { await this.showAlert('กรุณาระบุชื่อหน่วยงาน/บริษัท', 'error'); return; }
-      if (!this.accountForm.account_type) { await this.showAlert('กรุณาเลือกประเภท', 'error'); return; }
+      // ตรวจทุกขั้นตามลำดับ — ลูกค้าใหม่พาไปขั้นที่ยังไม่ครบ
+      for (let step = 1; step <= 4; step++) {
+        const message = this.accStepError(step);
+        if (!message) continue;
+        if (!this.accountForm.id) this.accStep = step;
+        await this.showAlert(message, 'error');
+        return;
+      }
       await this.saveAccount(false);
     },
 
@@ -861,7 +1213,7 @@ createApp({
     async saveAccount(confirmNotDuplicate) {
       const isCreate = !this.accountForm.id;
       // ส่งผู้ดูแลเฉพาะ role ที่เปลี่ยนได้ — role อื่น API คงค่าเดิม / sale สร้างใหม่ = ตัวเองอัตโนมัติ
-      const { owner_user_id, owner_name, ...form } = this.accountForm;
+      const { owner_user_id, owner_name, role_kind, ...form } = this.accountForm;
       const body = { ...form, confirm_not_duplicate: confirmNotDuplicate };
       if (this.canChangeOwner) body.owner_user_id = owner_user_id ? Number(owner_user_id) : null;
       const res = await apiCall('POST', `api/accounts.php?action=${isCreate ? 'create' : 'update'}`, body);
@@ -877,10 +1229,24 @@ createApp({
           this.accountForm.account_code = res.data.account_code;
           this.accountForm.owner_name = this.accounts.find(a => Number(a.id) === Number(res.data.id))?.owner_name || '';
           this.accountDetail = { contacts: [], deals: [], erp_codes: [], merge_logs: [], history: [], potential_duplicates: [] };
+          // ผู้ติดต่อที่ใส่ในขั้น 4 (ไม่บังคับ — 2026-11-20)
+          const contactCount = this.accNewContacts.length;
+          const failed = contactCount ? await this.accSaveNewContacts(res.data.id) : [];
+          this.accNewContacts = [];
+          if (contactCount) {
+            await this.loadAccountDetail(res.data.id);
+            await this.loadAccounts();   // จำนวนผู้ติดต่อในตารางลูกค้า — โหลดด้านบนก่อนบันทึกผู้ติดต่อ จึงต้องโหลดซ้ำ
+          }
+          if (failed.length) {
+            await this.showAlert('เพิ่มลูกค้าสำเร็จ แต่บันทึกผู้ติดต่อไม่ได้ ' + failed.length + ' คน: ' + failed.join(', ') + ' — เพิ่มใหม่ได้ที่ส่วนผู้ติดต่อ', 'error');
+            return;
+          }
+          await this.showAlert(contactCount ? 'เพิ่มลูกค้าสำเร็จ พร้อมผู้ติดต่อ ' + contactCount + ' คน' : 'เพิ่มลูกค้าสำเร็จ', 'success');
+          return;
         } else {
           this.closeModal();
         }
-        await this.showAlert(isCreate ? 'เพิ่มหน่วยงานสำเร็จ' : 'บันทึกสำเร็จ', 'success');
+        await this.showAlert('บันทึกสำเร็จ', 'success');
       } else await this.showAlert(res.message || 'เกิดข้อผิดพลาด', 'error');
     },
 

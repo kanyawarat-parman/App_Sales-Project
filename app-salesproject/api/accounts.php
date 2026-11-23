@@ -16,6 +16,7 @@ switch ($method) {
     case 'GET':
         switch ($action) {
             case 'search':          searchAccounts($db); break;
+            case 'customer_options': jsonResponse(true, customerOptions($db)); break;   // master ลูกค้าทำอะไรกับของ + กลุ่มลูกค้า (2026-11-02)
             case 'recent':          jsonResponse(true, recentAccounts($db, $user)); break;
             case 'suggest_for_announcement': suggestForAnnouncement($db); break;
             case 'check_duplicate': checkDuplicateAccount($db); break;
@@ -98,11 +99,12 @@ function recentAccounts(PDO $db, array $user, int $limit = 10): array {
     $where = 'pi.account_id IS NOT NULL'; $params = [];
     if ($user['role'] === 'sale') { $where .= ' AND pi.assigned_to = ?'; $params[] = $user['id']; }
     $stmt = $db->prepare("
-        SELECT a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name AS owner_name, MAX(pi.updated_at) AS last_activity
+        SELECT a.id, a.account_code, a.name, a.account_type, a.customer_role_id, cr.customer_role_name, cr.is_intermediary, a.customer_role_note, a.customer_industry_id, ci.customer_industry_name, a.owner_user_id, ou.full_name AS owner_name, MAX(pi.updated_at) AS last_activity
         FROM pipeline_items pi JOIN accounts a ON a.id = pi.account_id
         LEFT JOIN users ou ON ou.id = a.owner_user_id
+        LEFT JOIN customer_roles cr ON cr.customer_role_id = a.customer_role_id LEFT JOIN customer_industries ci ON ci.customer_industry_id = a.customer_industry_id
         WHERE $where
-        GROUP BY a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name
+        GROUP BY a.id, a.account_code, a.name, a.account_type, a.customer_role_id, cr.customer_role_name, cr.is_intermediary, a.customer_role_note, a.customer_industry_id, ci.customer_industry_name, a.owner_user_id, ou.full_name
         ORDER BY last_activity DESC
         LIMIT $limit
     ");
@@ -110,8 +112,8 @@ function recentAccounts(PDO $db, array $user, int $limit = 10): array {
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (count($rows) < $limit) {
         $ids = array_column($rows, 'id') ?: [0];
-        $more = $db->query('SELECT a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name AS owner_name, a.created_at AS last_activity
-                            FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id
+        $more = $db->query('SELECT a.id, a.account_code, a.name, a.account_type, a.customer_role_id, cr.customer_role_name, cr.is_intermediary, a.customer_role_note, a.customer_industry_id, ci.customer_industry_name, a.owner_user_id, ou.full_name AS owner_name, a.created_at AS last_activity
+                            FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id LEFT JOIN customer_roles cr ON cr.customer_role_id = a.customer_role_id LEFT JOIN customer_industries ci ON ci.customer_industry_id = a.customer_industry_id
                             WHERE a.id NOT IN (' . implode(',', array_map('intval', $ids)) . ') ORDER BY a.created_at DESC, a.id DESC LIMIT ' . ($limit - count($rows)))
                    ->fetchAll(PDO::FETCH_ASSOC);
         $rows = array_merge($rows, $more);
@@ -138,7 +140,10 @@ function createAccount(PDO $db, array $user): void {
     $name = trim($body['name'] ?? '');
     $type = $body['account_type'] ?? '';
     if ($name === '') jsonResponse(false, null, 'กรุณาระบุชื่อหน่วยงาน/บริษัท', 400);
-    if (!in_array($type, ['government', 'private'], true)) jsonResponse(false, null, 'กรุณาระบุประเภทหน่วยงาน', 400);
+    // บทบาทลูกค้าจาก master — ไม่ส่งมา = ผู้ใช้เอง (งานประมูลสร้างลูกค้าไม่ได้ส่ง)
+    // คนกลางไม่ถามประเภท ระบบบันทึก private ให้เอง (ช่อง account_type ห้ามว่าง — ยืนยันจากผู้ใช้ 2026-11-20)
+    $role = accountRoleFromBody($db, $body);
+    $type = accountTypeForRole($type, $role['is_intermediary']);
 
     // ผู้สร้าง/ผู้แก้ไข = ผู้ใช้ที่ login (อ่านจาก session ฝั่ง API ไม่รับจากหน้าเว็บ) — กฎการสร้าง Database ข้อ 1 (ยืนยันจากผู้ใช้ 2026-09-26)
     // รหัสลูกค้า CRM ระบบออกให้เอง — กฎข้อ 2 / เลขภาษีไม่บังคับ (ลูกค้าใหม่ที่ยังเป็นผู้สนใจมักยังไม่มี)
@@ -154,11 +159,17 @@ function createAccount(PDO $db, array $user): void {
     // ผู้ดูแลลูกค้า (Account Owner — 2026-09-30): sale สร้างเอง (ขายตรง) = sale คนนั้น / ธุรการ-admin เลือกได้ ไม่เลือก = ลูกค้าส่วนกลาง
     $ownerId = $user['role'] === 'sale' ? (int)$user['id']
              : (canChangeAccountOwner($user) ? validAccountOwner($db, $body['owner_user_id'] ?? null) : null);
+    // กลุ่มลูกค้า: ฟอร์มลูกค้าไม่ถามแล้ว ย้ายไปถามที่ดีล (2026-11-20) — ช่องยังอยู่ ไม่ส่งมา = ว่าง
+    $industry = accountIndustryFromBody($db, $body);
     $accountCode = nextAccountCode($db, (int)$user['id']);
-    $stmt = $db->prepare('INSERT INTO accounts (account_code, account_type, owner_user_id, name, tax_id, phone, phone_ext, mobile, address, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$accountCode, $type, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile,
+    $stmt = $db->prepare('INSERT INTO accounts (account_code, account_type, customer_role_id, customer_role_note, customer_industry_id, owner_user_id, name, tax_id, phone, phone_ext, mobile, address, note, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt->execute([$accountCode, $type, $role['id'], $role['note'], $industry, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile,
                     trim($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $user['id']]);
-    jsonResponse(true, ['id' => (int)$db->lastInsertId(), 'account_code' => $accountCode, 'name' => $name, 'account_type' => $type, 'owner_user_id' => $ownerId], 'สร้างหน่วยงาน/บริษัทสำเร็จ');
+    $newId = (int)$db->lastInsertId();
+    $row = $db->prepare('SELECT a.id, a.account_code, a.name, a.account_type, a.customer_role_id, cr.customer_role_name, cr.is_intermediary, a.customer_role_note, a.customer_industry_id, ci.customer_industry_name, a.owner_user_id
+                         FROM accounts a LEFT JOIN customer_roles cr ON cr.customer_role_id = a.customer_role_id LEFT JOIN customer_industries ci ON ci.customer_industry_id = a.customer_industry_id WHERE a.id = ?');
+    $row->execute([$newId]);
+    jsonResponse(true, $row->fetch(PDO::FETCH_ASSOC), 'สร้างหน่วยงาน/บริษัทสำเร็จ');
 }
 
 // ─── ผู้ดูแลลูกค้า (Account Owner / House Account แบบ Salesforce — ยืนยันจากผู้ใช้ 2026-09-30) ───
@@ -186,7 +197,7 @@ function listAccounts(PDO $db): void {
     $needsFix = phoneNeedsFixSql('a.phone') . ' OR ' . phoneNeedsFixSql('a.mobile')
               . ' OR EXISTS (SELECT 1 FROM contacts cf WHERE cf.account_id = a.id AND (' . phoneNeedsFixSql('cf.phone') . ' OR ' . phoneNeedsFixSql('cf.office_phone') . '))';
     $stmt = $db->query("
-        SELECT a.id, a.account_code, a.account_type, a.name, a.tax_id, a.phone, a.phone_ext, a.mobile, a.address, a.note, a.created_at,
+        SELECT a.id, a.account_code, a.account_type, a.customer_role_id, cr.customer_role_name, cr.is_intermediary, a.customer_role_note, a.customer_industry_id, ci.customer_industry_name, a.name, a.tax_id, a.phone, a.phone_ext, a.mobile, a.address, a.note, a.created_at,
                a.owner_user_id, ou.full_name AS owner_name,
                (SELECT GROUP_CONCAT(ml.merged_account_code ORDER BY ml.created_at SEPARATOR ', ')
                   FROM account_merge_logs ml WHERE ml.kept_account_id = a.id) AS merged_codes,
@@ -203,6 +214,7 @@ function listAccounts(PDO $db): void {
                ) AS deal_count
         FROM accounts a
         LEFT JOIN users ou ON ou.id = a.owner_user_id
+        LEFT JOIN customer_roles cr ON cr.customer_role_id = a.customer_role_id LEFT JOIN customer_industries ci ON ci.customer_industry_id = a.customer_industry_id
         ORDER BY a.name
     ");
     jsonResponse(true, $stmt->fetchAll());
@@ -211,7 +223,7 @@ function listAccounts(PDO $db): void {
 // รายละเอียดหน่วยงาน/บริษัท 1 รายการ + ผู้ติดต่อทั้งหมด + ดีลที่เคยผูกไว้ทั้งหมด (ทั้งขายตรงและ mirror งานประมูล)
 function getAccountDetail(PDO $db, int $id): void {
     if (!$id) jsonResponse(false, null, 'กรุณาระบุ id', 400);
-    $stmt = $db->prepare('SELECT a.*, ou.full_name AS owner_name FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id WHERE a.id = ?');
+    $stmt = $db->prepare('SELECT a.*, cr.customer_role_name, cr.is_intermediary, ci.customer_industry_name, ou.full_name AS owner_name FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id LEFT JOIN customer_roles cr ON cr.customer_role_id = a.customer_role_id LEFT JOIN customer_industries ci ON ci.customer_industry_id = a.customer_industry_id WHERE a.id = ?');
     $stmt->execute([$id]);
     $account = $stmt->fetch();
     if (!$account) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
@@ -226,10 +238,26 @@ function getAccountDetail(PDO $db, int $id): void {
                   LEFT JOIN contact_roles r ON r.contact_role_id = pic.contact_role_id
                  WHERE pic.contact_id = c.id) AS deals_text,
                IF(" . phoneNeedsFixSql('c.phone') . " OR " . phoneNeedsFixSql('c.office_phone') . ", 1, 0) AS phone_needs_fix
-        FROM contacts c WHERE c.account_id = ? ORDER BY c.is_primary DESC, c.full_name
+        FROM contacts c WHERE c.account_id = ? ORDER BY c.full_name, c.id   -- เรียงตามชื่ออย่างเดียว: ไม่ใช้คนหลักระดับลูกค้าแล้ว (ยืนยันจากผู้ใช้ 2026-11-20)
     ");
     $contacts->execute([$id]);
     $account['contacts'] = $contacts->fetchAll();
+    // deals = รายการดีลของผู้ติดต่อแต่ละคน (รหัสดีล + บทบาท) — หน้าลูกค้าแสดงเป็นป้ายแยกดีล (2026-11-20)
+    // deals_text เดิมยังส่งเหมือนเดิม (ข้อความเดียว แยกดีลไม่ได้ถ้าชื่อโครงการมี / หรือวงเล็บ)
+    $dealRows = $db->prepare("
+        SELECT pic.contact_id, pi.project_code, pi.title, COALESCE(r.contact_role_name, 'ไม่ระบุบทบาท') AS role_name, pic.is_primary
+          FROM pipeline_item_contacts pic
+          JOIN contacts c ON c.id = pic.contact_id
+          JOIN pipeline_items pi ON pi.id = pic.pipeline_item_id
+          LEFT JOIN contact_roles r ON r.contact_role_id = pic.contact_role_id
+         WHERE c.account_id = ?
+         ORDER BY pi.created_at DESC
+    ");
+    $dealRows->execute([$id]);
+    $dealsByContact = [];
+    foreach ($dealRows->fetchAll() as $d) $dealsByContact[(int)$d['contact_id']][] = $d;
+    foreach ($account['contacts'] as &$c) $c['deals'] = $dealsByContact[(int)$c['id']] ?? [];
+    unset($c);
 
     // รหัสลูกค้า ERP ที่ผูกไว้ (1 ลูกค้ามีได้หลายรหัส) — รหัสหลักขึ้นก่อน
     $erp = $db->prepare('SELECT account_erp_code_id, erp_customer_code, erp_role, is_primary, note FROM account_erp_codes WHERE account_id = ? ORDER BY is_primary DESC, erp_customer_code');
@@ -272,15 +300,17 @@ function updateAccount(PDO $db, array $user): void {
     $name = trim($body['name'] ?? '');
     $type = $body['account_type'] ?? '';
     if ($name === '') jsonResponse(false, null, 'กรุณาระบุชื่อหน่วยงาน/บริษัท', 400);
-    if (!in_array($type, ['government', 'private'], true)) jsonResponse(false, null, 'กรุณาระบุประเภทหน่วยงาน', 400);
 
     // account_code ไม่รับจากหน้าเว็บ — รหัสไม่เปลี่ยนหลังออกแล้ว
     $taxId = normalizeTaxId($body['tax_id'] ?? '');
     // เบอร์: ตรวจรูปแบบเฉพาะช่องที่แก้ — เบอร์เก่าที่ยังไม่ได้แก้ไม่ขวางการบันทึกช่องอื่น (includes/phone_helper.php)
-    $old = $db->prepare('SELECT account_code, name, tax_id, phone, mobile, owner_user_id FROM accounts WHERE id = ?');
+    $old = $db->prepare('SELECT account_code, name, account_type, customer_role_id, customer_role_note, customer_industry_id, tax_id, phone, mobile, owner_user_id FROM accounts WHERE id = ?');
     $old->execute([$id]);
     $oldRow = $old->fetch();
     if (!$oldRow) jsonResponse(false, null, 'ไม่พบข้อมูล', 404);
+    // บทบาทลูกค้า: ไม่ส่งมา = คงค่าเดิม / คนกลางไม่ถามประเภท ระบบบันทึก private ให้เอง (2026-11-20)
+    $role = accountRoleFromBody($db, $body, $oldRow['customer_role_id'], $oldRow['customer_role_note']);
+    $type = accountTypeForRole($type, $role['is_intermediary']);
     $phone    = phoneForUpdate($body['phone'] ?? '', $oldRow['phone'], 'เบอร์สำนักงาน');
     $phoneExt = normalizePhoneExt($body['phone_ext'] ?? '', 'เบอร์ต่อ');
     $mobile   = phoneForUpdate($body['mobile'] ?? '', $oldRow['mobile'], 'เบอร์มือถือ');
@@ -292,8 +322,11 @@ function updateAccount(PDO $db, array $user): void {
     $ownerId = (canChangeAccountOwner($user) && array_key_exists('owner_user_id', $body))
              ? validAccountOwner($db, $body['owner_user_id'])
              : ($oldRow['owner_user_id'] !== null ? (int)$oldRow['owner_user_id'] : null);
-    $db->prepare('UPDATE accounts SET account_type = ?, owner_user_id = ?, name = ?, tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
-       ->execute([$type, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $id]);
+    // กลุ่มลูกค้า: ไม่ส่งมา = คงค่าเดิม
+    $industry = accountIndustryFromBody($db, $body, $oldRow['customer_industry_id']);
+    $db->prepare('UPDATE accounts SET account_type = ?, customer_role_id = ?, customer_role_note = ?, customer_industry_id = ?, owner_user_id = ?, name = ?, tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, note = ?, updated_by = ? WHERE id = ?')
+       ->execute([$type, $role['id'], $role['note'], $industry, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $id]);
+    // แก้บทบาท/ประเภทลูกค้า ไม่เปลี่ยนดีลเดิม — ดีลเก็บค่าของตัวเอง รายงานย้อนหลังไม่เพี้ยน (2026-11-20)
 
     // เปลี่ยน Sale ผู้ดูแล → บันทึกประวัติ (หัวหน้าดูย้อนหลังในรายละเอียดลูกค้า) + แจ้ง Sale คนใหม่ (ไม่แจ้งคนเดิม / ไม่แจ้งเมื่อเป็นส่วนกลาง)
     // ตามมาตรฐาน Salesforce Change Owner — ยืนยันจากผู้ใช้ 2026-10-09

@@ -322,7 +322,7 @@ function getCompetitorDetail(PDO $db, array $user): void {
         if ($lostToThis) {
             $rName = $d['win_loss_reason_name'] ?: 'ไม่ระบุ';
             $reasons[$rName] = ($reasons[$rName] ?? 0) + 1;
-            $g = $d['channel'] === 'ebidding' ? ($d['unit_name'] ?: null) : ($groupLabels[$d['specialization']] ?? null);
+            $g = $d['channel'] === 'ebidding' ? ($d['unit_name'] ?: null) : ($groupLabels[$d['specialization']] ?? ($d['specialization'] ?: null));
             if ($g) $groups[$g] = ($groups[$g] ?? 0) + 1;
         }
         $list[] = [

@@ -121,7 +121,7 @@ function mbCommonPrefixLength(string $a, string $b): int {
 function findDuplicateAccounts(PDO $db, string $name, ?string $taxId = null, int $excludeId = 0): array {
     $result = ['exact' => [], 'similar' => [], 'tax' => []];
     $target = normalizeAccountName($name);
-    $rows = $db->query('SELECT id, account_code, name, account_type, tax_id FROM accounts')->fetchAll(PDO::FETCH_ASSOC);
+    $rows = $db->query('SELECT a.id, a.account_code, a.name, a.account_type, a.tax_id, a.customer_role_id, cr.customer_role_name, cr.is_intermediary, a.customer_role_note, a.customer_industry_id, ci.customer_industry_name FROM accounts a LEFT JOIN customer_roles cr ON cr.customer_role_id = a.customer_role_id LEFT JOIN customer_industries ci ON ci.customer_industry_id = a.customer_industry_id')->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as $r) {
         if ((int)$r['id'] === $excludeId) continue;
         $match = accountNameMatch($target, normalizeAccountName($r['name']));
@@ -194,7 +194,7 @@ function findSimilarAccountPairs(PDO $db, bool $includeIgnored = false): array {
             // เลขภาษีเดียวกัน: เฉพาะเมื่อทั้งคู่เป็นเอกชน — หน่วยงานราชการย่อยใช้เลขของหน่วยงานแม่ร่วมกันเป็นปกติ
             // (เช่น คณะ/กองต่างๆ ของ มก. ใช้ 0994000159382) ไม่ใช่ลูกค้าซ้ำ (ยืนยันจากผู้ใช้ 2026-09-30)
             if ($reason === null && $rows[$i]['tax_id'] && $rows[$i]['tax_id'] === $rows[$j]['tax_id']
-                && $rows[$i]['account_type'] === 'private' && $rows[$j]['account_type'] === 'private') $reason = 'tax';
+                && $rows[$i]['account_type'] !== 'government' && $rows[$j]['account_type'] !== 'government') $reason = 'tax';
             if ($reason === null) continue;
             $key = $rows[$i]['id'] . '-' . $rows[$j]['id'];   // ORDER BY a.id → i มี id น้อยกว่าเสมอ
             $isIgnored = array_key_exists($key, $ignored);
@@ -217,9 +217,9 @@ function searchAccountsFuzzy(PDO $db, string $q, int $limit = 10): array {
     $qLower = mb_strtolower($q, 'UTF-8');
     $target = normalizeAccountName($q);
     $rows = $db->query("
-        SELECT a.id, a.account_code, a.name, a.account_type, a.owner_user_id, ou.full_name AS owner_name,
+        SELECT a.id, a.account_code, a.name, a.account_type, a.customer_role_id, cr.customer_role_name, cr.is_intermediary, a.customer_role_note, a.customer_industry_id, ci.customer_industry_name, a.owner_user_id, ou.full_name AS owner_name,
                (SELECT GROUP_CONCAT(e.erp_customer_code SEPARATOR ',') FROM account_erp_codes e WHERE e.account_id = a.id) AS erp_codes
-        FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id
+        FROM accounts a LEFT JOIN users ou ON ou.id = a.owner_user_id LEFT JOIN customer_roles cr ON cr.customer_role_id = a.customer_role_id LEFT JOIN customer_industries ci ON ci.customer_industry_id = a.customer_industry_id
     ")->fetchAll(PDO::FETCH_ASSOC);
     $scored = [];
     foreach ($rows as $r) {
@@ -232,6 +232,9 @@ function searchAccountsFuzzy(PDO $db, string $q, int $limit = 10): array {
         elseif (str_contains(mb_strtolower($r['name'], 'UTF-8'), $qLower)) $score = 65;   // ชื่อเดิมแบบตรงตัว (เผื่อคำที่ถูกตัดตอนทำรูปแบบ)
         elseif (accountNameMatch($target, $name) === 'similar') $score = 50;
         if ($score) $scored[] = ['id' => $r['id'], 'account_code' => $r['account_code'], 'name' => $r['name'], 'account_type' => $r['account_type'],
+                                 // บทบาทลูกค้า — ฟอร์มดีลใช้ตั้งต้นส่วน "ดีลนี้ขายแบบไหน" (2026-11-20)
+                                 'customer_role_id' => $r['customer_role_id'], 'customer_role_name' => $r['customer_role_name'],
+                                 'is_intermediary' => $r['is_intermediary'], 'customer_role_note' => $r['customer_role_note'],
                                  'owner_user_id' => $r['owner_user_id'], 'owner_name' => $r['owner_name'], '_score' => $score];
     }
     usort($scored, fn($a, $b) => [$b['_score'], $a['name']] <=> [$a['_score'], $b['name']]);
@@ -339,7 +342,7 @@ function mergeAccounts(PDO $db, int $keepId, int $mergeId, array $user, ?string 
         $phoneFromMerge = $blank($keep['phone']) && !$blank($merge['phone']);
         $noteLine = '[' . date('Y-m-d') . '] รวม ' . $merge['account_code'] . ' (' . $merge['name'] . ') เข้ารายนี้ โดย ' . ($user['full_name'] ?? ('user ' . $uid))
                   . ($reason ? ' — ' . $reason : '');
-        $db->prepare('UPDATE accounts SET tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, owner_user_id = ?, note = ?, updated_by = ? WHERE id = ?')
+        $db->prepare('UPDATE accounts SET tax_id = ?, phone = ?, phone_ext = ?, mobile = ?, address = ?, owner_user_id = ?, customer_industry_id = ?, note = ?, updated_by = ? WHERE id = ?')
            ->execute([
                $blank($keep['tax_id'])  ? $merge['tax_id']  : $keep['tax_id'],
                $phoneFromMerge ? $merge['phone'] : $keep['phone'],
@@ -347,9 +350,11 @@ function mergeAccounts(PDO $db, int $keepId, int $mergeId, array $user, ?string 
                $blank($keep['mobile'])  ? $merge['mobile']  : $keep['mobile'],
                $blank($keep['address']) ? $merge['address'] : $keep['address'],
                $keep['owner_user_id'] ?: $merge['owner_user_id'],
+               $blank($keep['customer_industry_id'] ?? null) ? ($merge['customer_industry_id'] ?? null) : $keep['customer_industry_id'],
                trim(($keep['note'] ?? '') . "\n" . $noteLine),
                $uid, $keepId,
            ]);
+        // ดีลที่ย้ายมา คงช่องทาง / ประเภท / ตลาดของตัวเอง — ดีลเก็บค่าต่อดีล ไม่ดึงจากลูกค้า (2026-11-20)
 
         // รายที่เก็บยังไม่มีผู้ดูแล → ได้ผู้ดูแลจากรายที่ถูกรวม = บันทึกประวัติผู้ดูแล (ไม่แจ้งเตือน — ยืนยันจากผู้ใช้ 2026-10-09)
         if (!$keep['owner_user_id'] && $merge['owner_user_id']) {
@@ -438,8 +443,54 @@ function findPotentialDuplicatesFor(PDO $db, int $accountId): array {
         if ((int)$r['id'] === $accountId || isset($ignoredIds[(int)$r['id']])) continue;
         $reason = accountNameMatchDetail($target, normalizeAccountName($r['name']));
         if ($reason === null && $self['tax_id'] && $self['tax_id'] === $r['tax_id']
-            && $self['account_type'] === 'private' && $r['account_type'] === 'private') $reason = 'tax';
+            && $self['account_type'] !== 'government' && $r['account_type'] !== 'government') $reason = 'tax';
         if ($reason !== null) $result[] = ['id' => (int)$r['id'], 'account_code' => $r['account_code'], 'name' => $r['name'], 'reason' => $reason];
     }
     return $result;
+}
+
+// ─── บทบาทลูกค้า + ช่องทางของดีล 3 ชั้น (ยืนยันจากผู้ใช้ 2026-11-20 — แทนแบบ 2026-11-02) ───
+// ลูกค้า = ตัวตนผู้ซื้อ/ผู้จ่ายเงิน: บทบาท (customer_roles: ผู้ใช้เอง / คนกลางแต่ละแบบ) + ประเภท (account_type — ถามเฉพาะผู้ใช้เอง)
+// ดีล = การขายครั้งนั้น: ช่องทาง / ประเภท / ตลาด / ชื่อลูกค้าปลายทาง เก็บที่ดีล ตั้งต้นจากลูกค้าแล้ว Sale ปรับได้ (api/pipeline_items.php dealChannelFromBody)
+// กลุ่มลูกค้า (customer_industries) = ตัวเลือก "ดีลนี้ขายไปตลาดไหน" ของดีล — ฟอร์มลูกค้าไม่ถามแล้ว (ช่อง accounts.customer_industry_id ยังอยู่ ไม่ใช้)
+
+// ตัวเลือกจาก master — ส่งทุกแถว ลูกค้าเก่าที่ใช้ค่าที่ซ่อนแล้วยังแสดงชื่อได้ หน้าเว็บกรองเฉพาะ is_active ตอนเลือก
+function customerOptions(PDO $db): array {
+    return [
+        'roles'      => $db->query('SELECT customer_role_id, customer_role_name, customer_role_description, is_intermediary, requires_note, is_active FROM customer_roles ORDER BY sort_order, customer_role_name')->fetchAll(PDO::FETCH_ASSOC),
+        'industries' => $db->query('SELECT customer_industry_id, customer_industry_name, customer_industry_description, requires_note, is_active FROM customer_industries ORDER BY sort_order, customer_industry_name')->fetchAll(PDO::FETCH_ASSOC),
+    ];
+}
+
+// ประเภทลูกค้าตามบทบาท — คนกลางไม่ถามประเภท ระบบบันทึก private ให้เอง (ช่อง account_type ห้ามว่าง)
+// ผู้ใช้เอง / ไม่ได้ส่งบทบาทมา ($isIntermediary = null) ต้องเลือก หน่วยงานรัฐ / หน่วยงานเอกชน / บุคคลทั่วไป
+function accountTypeForRole($type, ?int $isIntermediary): string {
+    if ($isIntermediary === 1) return 'private';
+    if (!in_array($type, ['government', 'private', 'individual'], true)) jsonResponse(false, null, 'กรุณาเลือกประเภท (หน่วยงานรัฐ / หน่วยงานเอกชน / บุคคลทั่วไป)', 400);
+    return $type;
+}
+
+// ลูกค้าทำอะไรกับของ — ค่าต้องอยู่ใน master ที่ใช้งาน (ลูกค้าเดิมที่ใช้ค่าซ่อนแล้ว คงค่าเดิมได้) / ตัวเลือกที่ requires_note ต้องพิมพ์ระบุ
+function accountRoleFromBody(PDO $db, array $body, ?string $currentId = null, ?string $currentNote = null): array {
+    if (!array_key_exists('customer_role_id', $body)) return ['id' => $currentId ?? 'end_user', 'note' => $currentNote, 'is_intermediary' => null];
+    $id = trim((string)$body['customer_role_id']);
+    $st = $db->prepare('SELECT customer_role_id, customer_role_name, is_intermediary, requires_note, is_active FROM customer_roles WHERE customer_role_id = ?');
+    $st->execute([$id]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$r || (!(int)$r['is_active'] && $id !== $currentId)) jsonResponse(false, null, 'กรุณาเลือกบทบาทลูกค้า', 400);
+    $note = trim((string)($body['customer_role_note'] ?? ''));
+    if ((int)$r['requires_note'] && $note === '') jsonResponse(false, null, 'กรุณาพิมพ์ระบุ "' . $r['customer_role_name'] . '"', 400);
+    return ['id' => $id, 'note' => (int)$r['requires_note'] ? mb_substr($note, 0, 255) : null, 'is_intermediary' => (int)$r['is_intermediary']];
+}
+
+// กลุ่มลูกค้า — ค่าต้องอยู่ใน master ที่ใช้งาน / ลูกค้าเดิมที่ใช้ค่าซ่อนแล้วคงค่าเดิมได้
+function accountIndustryFromBody(PDO $db, array $body, ?string $currentId = null): ?string {
+    if (!array_key_exists('customer_industry_id', $body)) return $currentId;
+    $id = trim((string)$body['customer_industry_id']);
+    if ($id === '') return null;
+    if ($id === $currentId) return $id;
+    $st = $db->prepare('SELECT 1 FROM customer_industries WHERE customer_industry_id = ? AND is_active = 1');
+    $st->execute([$id]);
+    if (!$st->fetchColumn()) jsonResponse(false, null, 'กลุ่มลูกค้าไม่ถูกต้อง', 400);
+    return $id;
 }

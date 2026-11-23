@@ -585,11 +585,12 @@
     <app-modal ref="appModal"></app-modal>
 
     <!-- พบลูกค้าที่อาจซ้ำ ตอนกด "+ สร้างใหม่" ในฟอร์มดีล (กันลูกค้าซ้ำ 2026-09-28) -->
-    <app-duplicate-accounts :duplicates="spDupDialog.list" pick-label="ใช้รายนี้"
-      @pick="onSpDuplicatePick" @confirm="onSpDuplicateConfirm" @close="spDupDialog.list = null"></app-duplicate-accounts>
+    <!-- หน้าต่างสร้างลูกค้าใหม่ แยกจากฟอร์มดีล — ข้อมูลดีลที่กรอกไว้ยังอยู่ (2026-11-02) -->
+    <sp-new-customer v-if="spNewCustomer.show" :initial-name="spNewCustomer.name" :options="spCustomerOptions"
+      @done="onSpNewCustomerDone" @close="spNewCustomer.show = false"></sp-new-customer>
 
     <!-- เพิ่มผู้ติดต่อใหม่ของลูกค้า (Quick Create) — บันทึกเข้าลูกค้าทันที แล้วติ๊กเข้าดีลให้ (2026-09-29) -->
-    <div v-if="spNewContact.show" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" @click.self="spNewContact.show = false">
+    <div v-if="spNewContact.show" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (spNewContact.show = false)">
       <div class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden">
         <div class="px-6 py-5 border-b border-slate-100">
           <h3 class="font-bold text-lg text-slate-800 m-0">เพิ่มผู้ติดต่อใหม่</h3>
@@ -632,7 +633,7 @@
     <!-- MODALS -->
     <!-- คำอธิบายช่องในฟอร์มดีล (ไอคอน ⓘ ข้างชื่อช่อง — 2026-10-20) ซ้อนบนหน้าต่างฟอร์ม ปิดแล้วค่าที่กรอกยังอยู่
          ใส่เฉพาะช่องที่ความหมายยืนยันแล้ว — Fee Structure / ระดับความสำคัญ / Specialization / หมวด-แบรนด์ รอผู้ใช้ยืนยันความหมายก่อน -->
-    <div v-if="spFieldHelp && spFieldHelpText[spFieldHelp]" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1100] p-4" @click.self="spFieldHelp=null">
+    <div v-if="spFieldHelp && spFieldHelpText[spFieldHelp]" class="fixed inset-0 bg-black/40 flex items-center justify-center z-[1100] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (spFieldHelp=null)">
       <div class="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl flex flex-col overflow-hidden" style="max-height:85vh">
         <div class="px-6 py-4 flex items-center justify-between border-b border-slate-100">
           <h3 class="font-bold text-lg text-slate-800 m-0">{{ spFieldHelpText[spFieldHelp].title }}</h3>
@@ -693,11 +694,11 @@
     </div>
 
     <!-- SP: Add / Edit Deal Modal -->
-    <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="!spFormSaving && closeModal()">
+    <div v-if="modal.type==='sp-form'" class="fixed inset-0 bg-black/50 flex items-stretch sm:items-center justify-center z-[1000] p-0 sm:p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (!spFormSaving && closeModal())">
       <!-- กว้าง 896px (max-w-4xl) เท่ากับหน้าต่างรายละเอียดงานประมูล/งานที่ได้รับ (ยืนยันจากผู้ใช้ 2026-10-14 — เดิม 800px, ก่อนนั้น 560px) มือถือยังเต็มจอเหมือนเดิม -->
       <!-- ความกว้าง (2026-10-20 ลองแล้ว: 672px แคบไป / 896px กว้างไป) → สร้างดีลใหม่ 768px (max-w-3xl)
            ดีลเดิม (มีหัวสรุป + แท็บ) คง 896px ให้เท่าหน้าต่างรายละเอียดงานประมูล -->
-      <div class="bg-white rounded-2xl w-full shadow-2xl flex flex-col overflow-hidden" :class="spForm.id ? 'max-w-4xl' : 'max-w-3xl'" style="max-height:92vh">
+      <div class="bg-white sm:rounded-2xl w-full h-full sm:h-auto sm:max-h-[92vh] shadow-2xl flex flex-col overflow-hidden" :class="spForm.id ? 'max-w-4xl' : 'max-w-3xl'">
         <!-- หัวสรุปอยู่กับที่ (Highlights Panel — จัดหน้าแบบ Record Page ยืนยันจากผู้ใช้ 2026-10-14): รหัส/สถานะ/ประเภทดีล/ชื่องาน/ลูกค้า/Sale + กล่องตัวเลข 4 กล่อง
              ค่าในหัวอ่านจากที่บันทึกไว้ (modal.data) ไม่ใช่ค่าที่กำลังแก้ในฟอร์ม / ดีลใหม่ (ยังไม่มีรหัส) แสดงแค่หัวข้อ ไม่มีกล่องตัวเลขและแท็บ -->
         <div class="px-6 pt-4 pb-3 border-b border-slate-100 shrink-0">
@@ -758,7 +759,14 @@
           :tabs="[{ key: 'deal', label: 'รายละเอียดดีล' }, { key: 'quote', label: 'ใบเสนอราคา', count: spQuoteSummary?.count }, { key: 'files', label: 'ไฟล์', count: spFileCount }, { key: 'history', label: 'ประวัติ' }]"></app-record-tabs>
         <!-- ระหว่างบันทึก: ล็อกทั้งฟอร์ม (แก้ไม่ได้) กันแก้ข้อมูลระหว่างส่ง — แบบ ค. ยืนยันจากผู้ใช้ 2026-10-23
              ไม่ทำสีจาง / ไม่ใช้เคอร์เซอร์รอ — ผู้ใช้บอกดูเหมือนโปรแกรมค้าง ให้หน้าตาปกติ แค่กดไม่ได้ -->
-        <div class="flex-1 overflow-y-auto p-5" :class="spFormSaving ? 'pointer-events-none select-none' : ''" :aria-busy="spFormSaving">
+        <!-- ดีลใหม่กรอกทีละขั้น ไม่ให้ Sale รู้สึกว่าฟอร์มยาว ช่องบังคับเท่าเดิม (Stepper — ยืนยันจากผู้ใช้ 2026-11-02) / แก้ดีลเดิมยังเป็นหน้าเดียว -->
+        <div v-if="!spForm.id" class="px-3 sm:px-5 pt-3">
+          <div class="text-sm font-semibold text-slate-600">ขั้น {{ spWizardStep }} จาก 9 · {{ spWizardTitles[spWizardStep - 1] }}</div>
+          <div class="grid grid-cols-9 gap-1 mt-1.5" aria-hidden="true">
+            <span v-for="n in 9" :key="n" class="h-1.5 rounded-full" :class="n <= spWizardStep ? 'bg-teal-600' : 'bg-slate-200'"></span>
+          </div>
+        </div>
+        <div ref="spFormBody" class="flex-1 overflow-y-auto p-3 sm:p-5" :class="spFormSaving ? 'pointer-events-none select-none' : ''" :aria-busy="spFormSaving">
           <!-- ═══ แท็บ รายละเอียดดีล ═══ (ไม่ใช้ชื่อ "ข้อมูลดีล" เพราะซ้ำกับกล่อง ② — 2026-10-14) (ดีลใหม่แสดงส่วนนี้อย่างเดียว) -->
           <div v-show="!spForm.id || spFormTab === 'deal'">
 
@@ -774,17 +782,20 @@
               class="shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer"><svg class="inline-block w-4 h-4 -mt-0.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/></svg>ตรวจดีลนี้</button>
           </div>
 
-          <!-- ฟอร์มแบ่งเป็นกล่องมีเลขลำดับ 1–5 ตามหลัก CRM: ลูกค้า → ดีล → ประเภท/มูลค่า → รายละเอียดสินค้า → แผนติดตาม (ยืนยันจากผู้ใช้ 2026-09-23)
-               เลือกลูกค้าก่อน เพื่อเติม "ประเภทลูกค้า" ให้อัตโนมัติ / ประเภทดีลอยู่ก่อนมูลค่า-โอกาส-วันคาดปิด เพราะเป็นตัวกำหนดตัวเลขเหล่านั้น
+          <!-- ฟอร์มแบ่งเป็นกล่องมีเลขลำดับ 1–5 ตามคำถามที่ Sale ตอบทีละข้อ: ใคร (ลูกค้า) → ขายอะไร → ที่มาและสถานะ → มูลค่าและคู่แข่ง → แผนติดตาม
+               (จัดใหม่ 2026-10-30 — เดิม 2026-09-23: ลูกค้า → ดีล → ประเภท/มูลค่า → สินค้า → แผนติดตาม)
+               ประเภท/กลุ่มลูกค้าอยู่ใต้ลูกค้าในกล่อง 1 (ดึงจากลูกค้า) / ประเภทดีลอยู่ก่อนมูลค่า-โอกาส-วันคาดปิด เพราะเป็นตัวกำหนดตัวเลขเหล่านั้น
                ป้ายชื่อทุกช่องขนาดเดียวกัน, ปุ่มเลือกทุกชุดหน้าตาเดียวกัน (สี teal ตอนเลือก), ช่องสั้นวางคู่กันบนจอกว้าง / คอลัมน์เดียวบนมือถือ -->
 
           <!-- 1 ลูกค้า -->
-          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+          <section v-show="spStepVisible(1)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
             <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
               <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
-              <h3 class="text-base font-bold text-slate-800">ลูกค้า</h3>
+              <h3 class="text-base font-bold text-slate-800">ข้อมูลลูกค้าในดีลการขายครั้งนี้</h3>
             </div>
-            <div>
+            <!-- การ์ด ลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) — ขั้น 1 แยก 3 การ์ด: ลูกค้า / ดีลนี้ขายแบบไหน / ผู้ติดต่อในดีลนี้ (ยืนยัน mockup จากผู้ใช้ 2026-11-20) -->
+            <div class="rounded-xl bg-white border border-slate-200 px-3 sm:px-4 py-3">
+              <div class="flex items-center gap-1.5 text-sm font-bold text-slate-700 pb-2 mb-3 border-b border-slate-100">ชื่อลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) <span v-if="!spForm.id" class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='customer'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ส่วนนี้คืออะไร" aria-label="คำอธิบาย ลูกค้า"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></div>
               <!-- ดีลนำเข้าย้อนหลังที่ยังไม่ผูกลูกค้า (มีแค่ชื่อพิมพ์ไว้) — บอกให้ Sale ผูก + ปุ่มค้นหาชื่อเดิมให้ทันที (ยืนยันจากผู้ใช้ 2026-10-14) / ดีลใหม่บังคับเลือกลูกค้าอยู่แล้ว -->
               <div v-if="spForm.id && !spForm.account_id && !modal.data?.account_id" class="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                 <div class="flex-1 min-w-[220px]">
@@ -794,12 +805,14 @@
                 <button v-if="modal.data?.client_name" type="button" @click="searchSpAccountByClientName"
                   class="shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer">ค้นหาชื่อนี้</button>
               </div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อลูกค้า / บริษัท <span v-if="!spForm.id" class="text-red-500">*</span></label>
+              <!-- ลูกค้า = ผู้ซื้อ / ผู้จ่ายเงิน (คนที่ Taiyo เปิดบิล) — ลูกค้าเดิมกดเลือกที่นี่ / ลูกค้าใหม่สร้างในหน้าต่างแยก
+                   เลือกแล้ว ส่วน "ดีลนี้ขายแบบไหน" ด้านล่างตั้งต้นค่าจากบทบาทของลูกค้า แล้วปรับได้ต่อดีล (ยืนยันจากผู้ใช้ 2026-11-20) -->
 
               <!-- เลือกแล้ว (หรือจองชื่อ account ใหม่ไว้ ยังไม่สร้างจริงจนกว่าจะบันทึกดีลสำเร็จ): แสดงเป็น chip -->
               <div v-if="spForm.account_id" class="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 bg-slate-50">
-                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="spForm.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ spForm.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
+                <span v-if="!spForm.account_is_intermediary" class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="spAccountTypeBadgeClass(spForm.account_type)">{{ spAccountTypeLabel(spForm.account_type) }}</span>
                 <span class="text-sm flex-1 truncate">{{ spForm.account_name }}</span>
+                <span v-if="spForm.account_role_name" class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="spForm.account_is_intermediary ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-600'">{{ spForm.account_is_intermediary ? 'คนกลาง — ' : '' }}{{ spForm.account_role_name }}</span>
                 <button type="button" @click="removeSpAccount"
                   class="border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-pointer p-1">✕</button>
               </div>
@@ -808,83 +821,58 @@
                 ลูกค้ารายนี้มี <b>{{ spForm.account_owner_name }}</b> ดูแลอยู่ — สร้างดีลได้ แต่ควรแจ้งหรือคุยกันก่อน
               </p>
 
-              <!-- ยังไม่ได้เลือก: ช่องค้นหา — ใช้ v-if ตรงๆ (เดิม v-else ไปผูกกับบรรทัดเตือน "Sale คนอื่นดูแล" ด้านบน ช่องค้นหาจึงขึ้นซ้อนใต้ลูกค้าที่เลือกแล้ว — แก้ 2026-10-14) -->
-              <div v-if="!spForm.account_id" class="relative">
-                <!-- คลิกช่อง (ยังไม่พิมพ์) = ขึ้นลูกค้าล่าสุด / พิมพ์ = ค้นหาแบบยืดหยุ่น (2026-09-29) -->
+              <!-- ยังไม่ได้เลือก: ช่องค้นหา + รายการวางในหน้า (Inline results — ยืนยันจากผู้ใช้ 2026-10-30)
+                   เดิมเป็นกล่องลอยทับฟอร์ม มีแถบเลื่อนของตัวเอง ปิดไม่ได้ถ้าไม่เลือก เลื่อนเมาส์แล้วงงว่าเลื่อนอะไร และ Sale พิมพ์ชื่อแล้วคิดว่าเสร็จ
+                   ตอนนี้: รายการดันเนื้อหาด้านล่างลง ไม่เกิน 3 ราย (ลดจาก 5 — 2026-11-23 ให้เห็นปุ่มสร้างลูกค้าใหม่โดยไม่ต้องเลื่อน) ไม่มีแถบเลื่อน ปุ่ม "เลือก" ทุกแถว / พิมพ์แล้วไม่เลือก = เตือนใต้ช่องทันที
+                   ยังไม่พิมพ์ = ลูกค้าล่าสุด (Recent Items 2026-09-29) / พิมพ์ = ค้นหาแบบยืดหยุ่น (2026-09-29) -->
+              <div v-if="!spForm.account_id">
                 <input v-model="spAccountQuery" @input="searchSpAccounts" @focus="openSpAccountDropdown" @click="openSpAccountDropdown"
-                  class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"
-                  placeholder="พิมพ์ค้นหาชื่อ / รหัสลูกค้า / รหัส ERP">
-                <div v-if="spAccountDropdownOpen" class="absolute left-0 right-0 top-[44px] bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-72 overflow-y-auto">
-                  <div v-if="!spAccountQuery.trim()" class="px-3.5 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100">
-                    {{ currentUser?.role === 'sale' ? 'ลูกค้าที่คุณเพิ่งทำดีลด้วย' : 'ลูกค้าที่มีดีลล่าสุด' }}
+                  class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 bg-white"
+                  placeholder="ค้นหาชื่อ / รหัสลูกค้า / ERP">
+                <div v-if="spAccountDropdownOpen" class="mt-1.5">
+                  <div class="text-xs font-bold text-slate-500 mb-1">
+                    <template v-if="!spAccountQuery.trim()">{{ currentUser?.role === 'sale' ? 'ลูกค้าที่คุณเพิ่งทำดีลด้วย' : 'ลูกค้าที่มีดีลล่าสุด' }}</template>
+                    <template v-else-if="spAccountResults.length">พบ {{ spAccountResults.length }}{{ spAccountResults.length >= 10 ? '+' : '' }} ราย — กดชื่อลูกค้าเพื่อเลือก</template>
                   </div>
-                  <div v-else-if="!spAccountResults.length" class="px-3.5 py-2.5 text-sm text-slate-400">ไม่พบลูกค้าที่ชื่อใกล้เคียง</div>
-                  <div v-for="a in spAccountResults" :key="a.id" @click="selectSpAccount(a)"
-                    class="px-3.5 py-2.5 cursor-pointer hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50">
-                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="a.account_type==='government' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ a.account_type==='government' ? 'ราชการ' : 'เอกชน' }}</span>
-                    <span v-if="a.account_code" class="font-mono text-[11px] text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 shrink-0">{{ a.account_code }}</span>
-                    <span class="text-sm flex-1 min-w-0">{{ a.name }}</span>
-                    <span class="text-xs shrink-0" :class="a.owner_name ? 'text-slate-500' : 'text-slate-400'">{{ a.owner_name || 'ลูกค้าส่วนกลาง' }}</span>
+                  <div v-if="spAccountQuery.trim() && !spAccountResults.length" class="text-sm text-slate-400 py-1">ไม่พบลูกค้าที่ชื่อใกล้เคียง</div>
+                  <div class="space-y-1.5">
+                    <!-- กดทั้งแถวเพื่อเลือก (ปุ่มใหญ่ เหมาะกับนิ้วบนมือถือ) / ชื่อใช้ความกว้างเต็มแถว / ป้ายประเภทอยู่บรรทัดที่ 2 / ผู้ดูแลแสดงเฉพาะเมื่อมี Sale ดูแล -->
+                    <button v-for="a in spAccountResults.slice(0, 3)" :key="a.id" type="button" @click="selectSpAccount(a)"
+                      class="w-full flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2.5 bg-white hover:border-teal-400 hover:bg-teal-50/40 cursor-pointer text-left">
+                      <span class="flex-1 min-w-0">
+                        <span class="block text-sm font-semibold text-slate-800 leading-snug">{{ a.name }}</span>
+                        <span class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 text-xs text-slate-500">
+                          <span v-if="a.account_code" class="font-mono text-teal-700">{{ a.account_code }}</span>
+                          <span v-if="Number(a.is_intermediary) !== 1" class="text-[11px] font-bold px-2 py-0.5 rounded-full" :class="spAccountTypeBadgeClass(a.account_type)">{{ spAccountTypeLabel(a.account_type) }}</span>
+                          <span v-else class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">{{ a.customer_role_name }}</span>
+                          <span v-if="a.owner_name">· ดูแล: {{ a.owner_name }}</span>
+                        </span>
+                      </span>
+                      <svg class="w-5 h-5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
                   </div>
-                  <div v-if="!spAccountQuery.trim()" class="px-3.5 py-2 text-xs text-slate-400 border-b border-slate-50">พิมพ์ชื่อ / รหัสลูกค้า / รหัส ERP เพื่อค้นหาเพิ่ม</div>
-                  <div @click="openSpAccountCreatePanel" class="px-3.5 py-2.5 cursor-pointer hover:bg-teal-50 text-teal-700 text-sm font-medium flex items-center gap-1.5">
-                    + สร้างใหม่{{ spAccountQuery.trim() ? ': "' + spAccountQuery.trim() + '"' : '' }}
-                  </div>
+                  <div v-if="spAccountResults.length > 3" class="text-xs text-slate-500 mt-1">แสดง 3 รายแรก — พิมพ์ชื่อเพิ่มเพื่อหาให้แคบลง</div>
+                  <button type="button" @click="openSpAccountCreatePanel"
+                    class="mt-1.5 block w-full text-left px-3 py-2 rounded-xl text-sm font-semibold text-teal-700 bg-transparent border border-dashed border-teal-300 hover:bg-teal-50 cursor-pointer">
+                    + ไม่มีในรายการ — สร้างลูกค้าใหม่{{ spAccountQuery.trim() ? ' "' + spAccountQuery.trim() + '"' : '' }}
+                  </button>
                 </div>
+                <!-- พิมพ์ชื่อแล้วยังไม่เลือก — เตือนทันที ไม่รอตอนกดบันทึก (Lookup มาตรฐาน CRM) -->
+                <p v-if="spAccountQuery.trim()" class="mt-1.5 mb-0 text-sm font-semibold text-amber-700">ยังไม่ได้เลือกลูกค้า — กดชื่อลูกค้าในรายการ หรือสร้างลูกค้าใหม่</p>
               </div>
 
-              <!-- แผงสร้างหน่วยงานใหม่ -->
-              <div v-if="spAccountCreating" class="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <label class="block text-xs font-semibold text-slate-500 mb-1">ชื่อหน่วยงาน/บริษัท (ใหม่)</label>
-                <input v-model="spAccountQuery" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400 bg-white mb-2">
-                <label class="block text-xs font-semibold text-slate-500 mb-1">ประเภท</label>
-                <div class="flex gap-2 mb-3">
-                  <button type="button" @click="spNewAccountType='government'"
-                    class="flex-1 border rounded-lg py-1.5 text-sm font-medium" :class="spNewAccountType==='government' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'">ราชการ</button>
-                  <button type="button" @click="spNewAccountType='private'"
-                    class="flex-1 border rounded-lg py-1.5 text-sm font-medium" :class="spNewAccountType==='private' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'">เอกชน</button>
-                </div>
-                <div class="flex gap-2">
-                  <button type="button" @click="confirmSpAccountCreate" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">เพิ่ม</button>
-                  <button type="button" @click="spAccountCreating=false" class="flex-1 bg-white ring-1 ring-slate-200 text-slate-600 rounded-lg py-1.5 text-sm font-semibold border-0 cursor-pointer">ยกเลิก</button>
-                </div>
-              </div>
             </div>
 
+            <!-- ขั้น 1 = "ใคร": ลูกค้า → ผู้ติดต่อในดีลนี้ / ดีลนี้ขายแบบไหน แยกไปขั้น 2 (ยืนยันจากผู้ใช้ 2026-11-23)
+                 "ใคร" ก่อน "ขายแบบไหน" — ผู้ติดต่อเป็นของลูกค้า / ขายแบบไหนระบบตั้งต้นจากลูกค้าแล้ว Sale แค่ตรวจ + เลือกตลาด / การ์ดไม่ใส่เลข กันซ้ำกับชิปข้อ 1–3 -->
             <!-- ผู้ติดต่อในดีลนี้ (Opportunity Contact Roles — ยืนยันจากผู้ใช้ 2026-09-28)
                  ผู้ติดต่อยังอยู่ที่ลูกค้า / ดีลติ๊กเลือกว่าใครเกี่ยวข้อง + บทบาท + คนหลัก 1 คน — ดีลใหม่ต้องมีอย่างน้อย 1 คน, ดีลเก่าไม่บังคับ
                  ใช้ติ๊กและปุ่มกด ไม่มีลากวาง (ผู้ใช้วัย 50-60) -->
-            <div v-if="spForm.account_id">
-              <label class="block text-sm font-semibold text-slate-700 mb-1">ผู้ติดต่อในดีลนี้ <span v-if="!spForm.id" class="text-red-500">*</span></label>
-              <!-- ขั้นตอนเป็นข้อ ๆ — ผู้ใช้หาช่องบทบาท/คนหลักไม่เจอ เพราะขึ้นหลังติ๊กเท่านั้น (ยืนยันจากผู้ใช้ 2026-09-29) -->
-              <!-- ขั้นตอน 3 ข้อแบบการ์ดเรียงแนวนอน (มือถือเรียงลง) — อ่านง่ายกว่าข้อความยาวเป็นย่อหน้า (ยืนยันจากผู้ใช้ 2026-09-29)
-                   ใช้ป้าย "ขั้นที่ n" ขอบเส้น ไม่ใช่วงกลมทึบ เพราะชนกับเลขหัวข้อกล่อง ① ลูกค้า จนผู้ใช้สับสน -->
-              <p class="text-sm text-slate-500 m-0 mb-2">
-                ดีล 1 ดีลเลือกผู้ติดต่อได้หลายคน ตามบทบาท เช่น ผู้ตัดสินใจ ผู้ออกแบบ ผู้จัดซื้อ
-              </p>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
-                <div class="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100/60">
-                  <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white text-slate-700 text-[11px] font-bold whitespace-nowrap">ขั้นที่ 1</span>
-                  <span class="min-w-0">
-                    <span class="block text-sm font-bold text-slate-800">ติ๊กเลือกคน</span>
-                    <span class="block text-xs text-slate-600 leading-relaxed">เลือกได้หลายคน ถ้าไม่มีในรายการ กด "+ เพิ่มผู้ติดต่อใหม่"</span>
-                  </span>
-                </div>
-                <div class="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100/60">
-                  <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white text-slate-700 text-[11px] font-bold whitespace-nowrap">ขั้นที่ 2</span>
-                  <span class="min-w-0">
-                    <span class="block text-sm font-bold text-slate-800">เลือกบทบาท</span>
-                    <span class="block text-xs text-slate-600 leading-relaxed">เช่น ผู้ตัดสินใจ ผู้ออกแบบ ผู้จัดซื้อ — ช่องขึ้นหลังติ๊ก</span>
-                  </span>
-                </div>
-                <div class="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100/60">
-                  <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white text-slate-700 text-[11px] font-bold whitespace-nowrap">ขั้นที่ 3</span>
-                  <span class="min-w-0">
-                    <span class="block text-sm font-bold text-slate-800">เลือกคนหลัก</span>
-                    <span class="block text-xs text-slate-600 leading-relaxed">เฉพาะเมื่อเลือกหลายคน · คนเดียวระบบตั้งให้เอง</span>
-                  </span>
-                </div>
+            <div v-if="spForm.account_id" class="rounded-xl bg-white border border-slate-200 px-3 sm:px-4 py-3">
+              <div class="flex items-center gap-1.5 text-sm font-bold text-slate-700 pb-2 mb-3 border-b border-slate-100">ผู้ติดต่อในดีลนี้ <span v-if="!spForm.id" class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='dealcontacts'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ส่วนนี้คืออะไร" aria-label="คำอธิบาย ผู้ติดต่อในดีลนี้"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                <button v-if="!isViewer" type="button" @click="openSpNewContact" class="ml-auto text-sm font-semibold text-teal-700 bg-transparent border-0 cursor-pointer">+ เพิ่มผู้ติดต่อใหม่</button>
               </div>
+              <!-- วิธีเลือก 3 ขั้น (ติ๊กคน → บทบาท → คนหลักในดีล) เดิมเป็นกล่องเหนือตาราง ย้ายเข้าไอคอน ⓘ ที่หัวการ์ด (ยืนยันจากผู้ใช้ 2026-11-20) -->
               <!-- ผู้ติดต่อของลูกค้า (บันทึกแล้วทุกคน) — ติ๊กคนที่อยู่ในดีล → บทบาท + คนหลัก
                    ผู้ติดต่อใหม่เพิ่มผ่านหน้าต่าง "เพิ่มผู้ติดต่อใหม่" ซึ่งบันทึกเข้าลูกค้าทันที แล้วขึ้นในรายการนี้แบบติ๊กไว้ให้ (Quick Create — 2026-09-29)
                    จอกว้าง = ตารางแถวละคน + แถบสรุปคนที่เลือก / มือถือ = การ์ดทีละคน (ยืนยันจากผู้ใช้ 2026-09-29 — ผู้ติดต่อหลายคนต้องเห็นชัด) -->
@@ -907,7 +895,7 @@
                       <th class="px-2 py-2 text-left">เบอร์</th>
                       <th class="px-2 py-2 text-left">ตำแหน่ง</th>
                       <th class="px-2 py-2 text-left w-[190px]">บทบาทในดีล</th>
-                      <th class="px-3 py-2 text-center w-[110px]">คนหลัก</th>
+                      <th class="px-3 py-2 text-center w-[110px]">คนหลักในดีล</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -958,81 +946,163 @@
                         <option value="">ไม่ระบุ</option>
                         <option v-for="r in spActiveContactRoles" :key="r.contact_role_id" :value="r.contact_role_id">{{ r.contact_role_name }}</option>
                       </select>
-                  <span v-if="spSelectedContactCount === 1" class="shrink-0 text-sm font-semibold text-teal-700">★ คนหลัก (อัตโนมัติ)</span>
+                  <span v-if="spSelectedContactCount === 1" class="shrink-0 text-sm font-semibold text-teal-700">★ คนหลักในดีล (อัตโนมัติ)</span>
                   <label v-else class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer ring-1"
                     :class="c.is_primary ? 'ring-teal-400 bg-white text-teal-700' : 'ring-slate-200 bg-white text-slate-500'">
                     <input type="radio" name="sp-primary-contact-m" :checked="c.is_primary" @change="setSpPrimaryContact(c)" class="accent-teal-600 w-4 h-4">
-                    คนหลัก
+                    คนหลักในดีล
                   </label>
                 </div>
               </div>
               <p v-if="!spContactRows.length" class="text-sm text-slate-400 m-0 mb-2">ลูกค้ารายนี้ยังไม่มีผู้ติดต่อ — กด "+ เพิ่มผู้ติดต่อใหม่"</p>
-              <button v-if="!isViewer" type="button" @click="openSpNewContact"
-                class="inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-300 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">+ เพิ่มผู้ติดต่อใหม่</button>
+            </div>
+
+          </section>
+
+          <!-- 2 ดีลนี้ขายแบบไหน — แยกจากขั้น 1 เป็นขั้นของตัวเอง (ยืนยันจากผู้ใช้ 2026-11-23: 1 ขั้น = 1 เรื่อง, ขั้น 1 ยาวเกิน)
+               ค่าตั้งต้นมาจากลูกค้าที่เลือกในขั้น 1 / งานประมูล (mirror) ไม่มีส่วนนี้ → ซ่อนทั้งขั้นตอนแก้ไขดีลเดิม -->
+          <section v-show="spStepVisible(2) && (spShowChannel || spChannelLegacy)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+              <h3 class="text-base font-bold text-slate-800">บทบาทลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) ในดีลการขายครั้งนี้</h3>
+              <button type="button" @click.prevent="spFieldHelp='segment'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายส่วน ดีลนี้ขายแบบไหน"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+            </div>
+            <!-- ป้าย "ตั้งต้นจากลูกค้า" รวมไว้ใต้หัวขั้นที่เดียว (เดิมอยู่ท้ายหัวข้อย่อยแต่ละข้อ ดูรก — ยืนยันจากผู้ใช้ 2026-11-23) / หายเมื่อ Sale เปลี่ยนเองครบทุกข้อ -->
+            <div v-if="spForm.channel_defaulted.channel || spForm.channel_defaulted.type" class="flex flex-wrap items-center gap-x-2 gap-y-1"><span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">เป็นข้อมูลตั้งต้นจากทะเบียนลูกค้า</span><span class="text-xs text-slate-500">*เปลี่ยนได้ตามบทบาทการขายแต่ละดีลจริง</span></div>
+            <!-- ดีลนี้ขายแบบไหน — 3 ชั้น (ยืนยันจากผู้ใช้ 2026-11-20 แทนแบบ "ลูกค้าปลายทาง = ลูกค้าในทะเบียน" ของ 2026-11-02)
+                 ชั้น 1 ช่องทาง → ชั้น 2 ประเภท → ชั้น 3 ตลาด (+ ชื่อลูกค้าปลายทาง พิมพ์เอง เมื่อขายผ่านคนกลาง)
+                 ค่าตั้งต้นมาจากบทบาทของลูกค้า (ป้ายส้ม "ตั้งต้นจากลูกค้า") Sale ปรับได้ต่อดีล เปลี่ยนแล้วป้ายหาย — แก้ลูกค้าทีหลัง ดีลเดิมไม่เปลี่ยน
+                 เขียว = ขายตรง, ส้ม = ผ่านคนกลาง, ม่วง = ตลาด (สีเดียวกับฟอร์มลูกค้า) / ปุ่มกด ไม่มีลากวาง (ผู้ใช้วัย 50-60) -->
+            <div v-if="spShowChannel" class="rounded-xl bg-white border border-slate-200 px-3 sm:px-4 py-3">
+
+              <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 1</span>ลูกค้ารายนี้เป็นแบบไหน <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button type="button" @click="setSpChannel('direct')" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                  :class="spForm.sales_channel === 'direct' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.sales_channel === 'direct' ? 'border-current' : 'border-slate-300'"><span v-if="spForm.sales_channel === 'direct'" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">
+                  เป็นผู้ใช้เอง<span class="block text-xs font-normal">ซื้อสินค้าไปใช้เอง (ขายตรง)</span></span></button>
+                <button type="button" @click="setSpChannel('indirect')" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                  :class="spForm.sales_channel === 'indirect' ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.sales_channel === 'indirect' ? 'border-current' : 'border-slate-300'"><span v-if="spForm.sales_channel === 'indirect'" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">
+                  เป็นคนกลาง<span class="block text-xs font-normal">ไม่ได้ใช้สินค้าเอง (คนกลาง)</span></span></button>
+              </div>
+
+              <!-- ขายตรง: ประเภทของผู้ซื้อ (บังคับ) — ตลาดย้ายไปขั้น 3 -->
+              <template v-if="spForm.sales_channel === 'direct'">
+                <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2 mt-3 pt-3 border-t border-dashed border-slate-300"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>ประเภทของผู้ซื้อ <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button v-for="t in spSegmentOptions" :key="t.value" type="button" @click="spForm.segment = t.value; spForm.channel_defaulted.type = false" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                    :class="spForm.segment === t.value ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.segment === t.value ? 'border-current' : 'border-slate-300'"><span v-if="spForm.segment === t.value" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ t.label }}</span></button>
+                </div>
+              </template>
+
+              <!-- ขายผ่านคนกลาง: ประเภทคนกลาง (บังคับ) — ตลาด + ชื่อลูกค้าปลายทาง ย้ายไปขั้น 3 -->
+              <template v-if="spForm.sales_channel === 'indirect'">
+                <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2 mt-3 pt-3 border-t border-dashed border-slate-300"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>ประเภทคนกลาง <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button v-for="r in spIntermediaryRoles" :key="r.customer_role_id" type="button" @click="setSpChannelRole(r.customer_role_id)" :title="r.customer_role_description" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                    :class="spForm.channel_role_id === r.customer_role_id ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.channel_role_id === r.customer_role_id ? 'border-current' : 'border-slate-300'"><span v-if="spForm.channel_role_id === r.customer_role_id" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ r.customer_role_name }}</span></button>
+                </div>
+                <input v-if="spChannelRole && Number(spChannelRole.requires_note) === 1" v-model="spForm.channel_role_note" @input="spForm.channel_defaulted.type = false" maxlength="255" placeholder="พิมพ์ระบุ เช่น บริษัทให้เช่าเฟอร์นิเจอร์"
+                  class="mt-2 w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+              </template>
+            </div>
+            <!-- ดีลเดิมก่อนมีส่วนนี้ (ยังไม่ระบุช่องทาง) — แสดงค่าเดิม ไม่บังคับ จนกว่าจะกดระบุ -->
+            <div v-else-if="spChannelLegacy" class="rounded-xl bg-white border border-slate-200 px-3 sm:px-4 py-3">
+              <div class="text-sm font-bold text-slate-700 mb-2">บทบาทลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) ในดีลการขายครั้งนี้</div>
+              <div class="grid grid-cols-[110px_1fr] gap-y-1.5 text-sm">
+                <span class="text-slate-500">ประเภท</span><span class="text-slate-800">{{ spForm.segment ? spSegmentLabel(spForm.segment) : '-' }}</span>
+                <span class="text-slate-500">ตลาด</span><span class="text-slate-800">{{ spForm.specialization || '-' }}{{ spForm.specialization_note ? ' (' + spForm.specialization_note + ')' : '' }}</span>
+              </div>
+              <div class="text-xs text-slate-500 mt-2">ค่าเดิมของดีลนี้ ยังไม่ระบุช่องทาง
+                <button v-if="spForm.account_id && spForm.source_type !== 'ebidding'" type="button" @click="startSpChannel" class="ml-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white ring-1 ring-teal-400 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">ระบุช่องทางของดีลนี้</button>
+              </div>
             </div>
           </section>
 
-          <!-- 2 ข้อมูลดีล -->
-          <!-- ปุ่มเลือกแบบแถบเดียว (Segmented control) + เว้นระยะระหว่างคำถามมากกว่าภายในคำถาม — ลดความลายตา (ยืนยันจากผู้ใช้ 2026-10-20) -->
-          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-5">
+          <!-- 3 ข้อมูลลูกค้าปลายทาง — แยกจากข้อ 3 ของขั้น 2 / ข้อ 1 ลูกค้าปลายทางคือใคร → ข้อ 2 ตลาด (ยืนยันจากผู้ใช้ 2026-11-23)
+               ผู้ใช้เอง = ลูกค้ารายนี้เอง (แสดงอย่างเดียว ไม่บันทึกชื่อ) + ตลาดบังคับ / คนกลาง = ชื่อ + ตลาด ไม่บังคับ (ทราบก็ใส่) / ดีลเดิมที่ยังไม่ระบุช่องทาง ตลาดเดิมแสดงในขั้น 2 -->
+          <section v-show="spStepVisible(3) && spShowChannel && spForm.sales_channel" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
             <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
-              <h3 class="text-base font-bold text-slate-800">ข้อมูลดีล</h3>
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span>
+              <h3 class="text-base font-bold text-slate-800">ข้อมูลลูกค้าปลายทาง (ขายไปตลาดไหน?)</h3>
+              <button type="button" @click.prevent="spFieldHelp='enduser'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ส่วนนี้คืออะไร" aria-label="คำอธิบาย ข้อมูลลูกค้าปลายทาง (ขายไปตลาดไหน?)"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+            </div>
+            <div class="rounded-xl bg-white border border-slate-200 px-3 sm:px-4 py-3">
+              <!-- ผู้ใช้เอง: ข้อ 1 = ลูกค้ารายนี้เอง (แสดงอย่างเดียว) / ข้อ 2 ตลาดของผู้ซื้อ (บังคับ) -->
+              <template v-if="spForm.sales_channel === 'direct'">
+                <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 1</span>ชื่อลูกค้าปลายทาง</div>
+                <div class="rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800">{{ spForm.account_name || '-' }} <span class="text-xs text-slate-500">— ลูกค้ารายนี้ซื้อไปใช้เอง</span></div>
+                <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2 mt-3 pt-3 border-t border-dashed border-slate-300"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>กลุ่มตลาดลูกค้าปลายทาง <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <button v-for="g in spMarketOptions" :key="g" type="button" @click="setSpMarket(g)" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                    :class="spForm.specialization === g ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.specialization === g ? 'border-current' : 'border-slate-300'"><span v-if="spForm.specialization === g" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ g }}<span v-if="spMarketDesc(g)" class="block text-xs font-normal">{{ spMarketDesc(g) }}</span></span></button>
+                </div>
+                <input v-if="spMarketNeedsNote" v-model="spForm.specialization_note" maxlength="255" placeholder="พิมพ์ระบุกลุ่มตลาด เช่น โรงแรม / ร้านอาหาร"
+                  class="mt-2 w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+              </template>
+              <!-- คนกลาง: ข้อ 1 ชื่อลูกค้าปลายทาง / ข้อ 2 ตลาด (ไม่บังคับทั้งคู่ — กดซ้ำปุ่มเดิมเพื่อเอาออก) -->
+              <template v-if="spForm.sales_channel === 'indirect'">
+                <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 1</span>ชื่อลูกค้าปลายทาง (ถ้ามี) <span class="text-sm font-normal text-slate-500">— ไม่บังคับ</span></div>
+                <input v-model="spForm.end_user_name" maxlength="255" placeholder="เช่น โรงพยาบาล / หน่วยงาน ที่ใช้ของจริง"
+                  class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+                <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2 mt-3 pt-3 border-t border-dashed border-slate-300"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>กลุ่มตลาดลูกค้าปลายทาง (ถ้ามี) <span class="text-sm font-normal text-slate-500">— ไม่บังคับ</span></div>
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <button v-for="g in spMarketOptions" :key="g" type="button" @click="setSpMarket(spForm.specialization === g ? '' : g)" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+                    :class="spForm.specialization === g ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.specialization === g ? 'border-current' : 'border-slate-300'"><span v-if="spForm.specialization === g" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ g }}<span v-if="spMarketDesc(g)" class="block text-xs font-normal">{{ spMarketDesc(g) }}</span></span></button>
+                </div>
+                <input v-if="spMarketNeedsNote" v-model="spForm.specialization_note" maxlength="255" placeholder="พิมพ์ระบุกลุ่มตลาด เช่น โรงแรม / ร้านอาหาร"
+                  class="mt-2 w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+              </template>
+            </div>
+          </section>
+
+          <!-- 4 ขายอะไร — ลำดับฟอร์ม ใคร → ขายอะไร → ที่มา/สถานะ → มูลค่า/คู่แข่ง → แผนติดตาม (ยืนยันจากผู้ใช้ 2026-10-30) -->
+          <section v-show="spStepVisible(4)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">4</span>
+              <h3 class="text-base font-bold text-slate-800">ขายสินค้าอะไรให้ลูกค้า</h3>
             </div>
             <div>
-              <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1.5">ชื่อโครงการ / รายการสินค้า <button type="button" @click.prevent="spFieldHelp='title'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง ชื่อโครงการ / รายการสินค้า"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
+              <label class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm font-semibold text-slate-700 mb-1.5">ชื่อโครงการ / รายการสินค้า <button type="button" @click.prevent="spFieldHelp='title'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง ชื่อโครงการ / รายการสินค้า"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
               <input v-model="spForm.title" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โต๊ะทำงาน 50 ชุด, เก้าอี้ประชุม">
               <div class="text-xs text-slate-500 mt-1">ระบุให้ชัดเจน เช่น ชนิดสินค้า จำนวน</div>
             </div>
-            <!-- แหล่งที่มาของงาน (Lead Source) + Fee — ข้อมูลของตัวดีล รู้ตั้งแต่สร้าง (มาตรฐาน CRM: Opportunity Information) ย้ายจากกล่อง 4 (2026-10-20) -->
+            <!-- หมวดสินค้า / แบรนด์ ย้ายจากกล่อง 4 เดิม — ขายอะไรต้องรู้ก่อนประเมินมูลค่า (ยืนยันจากผู้ใช้ 2026-10-30) -->
             <div>
-              <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1.5">แหล่งที่มาของงาน <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='source_type'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง แหล่งที่มาของงาน"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
-              <div class="flex flex-wrap sm:flex-nowrap gap-1 p-1 rounded-xl border border-slate-300 bg-white">
-                <button v-for="s in spSourceTypes.filter(s=>s.val!=='ebidding')" :key="s.val" type="button"
-                  class="flex-1 min-w-0 rounded-lg py-2 px-2 text-center text-[.95rem] border-0 cursor-pointer transition-colors" :class="spForm.source_type===s.val ? 'bg-teal-50 text-teal-800 font-bold ring-1 ring-teal-600' : 'bg-transparent text-slate-600 font-normal hover:bg-slate-100'"
-                  @click="spForm.source_type=s.val">{{ s.icon }} {{ s.label }}</button>
-              </div>
-            </div>
-            <!-- Fee Structure — ปุ่มแทน dropdown ให้เหมือนช่องอื่นในกล่องนี้ (ตัวเลือกน้อย กดครั้งเดียว) -->
-            <div>
-              <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1.5">Fee Structure <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='fee_structure'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง Fee Structure"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
-              <div class="flex flex-wrap sm:flex-nowrap gap-1 p-1 rounded-xl border border-slate-300 bg-white">
-                <button v-for="f in ['No fee','Referral %','Client to resell']" :key="f" type="button"
-                  class="flex-1 min-w-0 rounded-lg py-2 px-2 text-center text-[.95rem] border-0 cursor-pointer transition-colors" :class="spForm.fee_structure===f ? 'bg-teal-50 text-teal-800 font-bold ring-1 ring-teal-600' : 'bg-transparent text-slate-600 font-normal hover:bg-slate-100'"
-                  @click="spForm.fee_structure=f">{{ f }}</button>
-              </div>
-            </div>
-            <!-- เส้นประแบ่ง: บน = งานนี้คืออะไร มาจากไหน / ล่าง = สถานะการขาย -->
-            <div class="border-t border-dashed border-slate-300"></div>
-            <div>
-              <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1.5">ขั้นตอนปัจจุบัน <button type="button" @click.prevent="spFieldHelp='stage'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง ขั้นตอนปัจจุบัน"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
-              <div class="flex flex-wrap sm:flex-nowrap gap-1 p-1 rounded-xl border border-slate-300 bg-white">
-                <button v-for="st in spStages.filter(s=>!['Delivered','Lost'].includes(s.key))" :key="st.key" type="button"
-                  class="flex-1 min-w-[45%] sm:min-w-0 rounded-lg py-2 px-2 text-center text-[.95rem] border-0 cursor-pointer transition-colors" :class="spForm.stage===st.key ? 'bg-teal-50 text-teal-800 font-bold ring-1 ring-teal-600' : 'bg-transparent text-slate-600 font-normal hover:bg-slate-100'"
-                  @click="spForm.stage=st.key">{{ st.thLabel }}</button>
+              <label class="block text-sm font-semibold text-slate-700 mb-1.5">หมวดสินค้า <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></label>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button v-for="v in ['Steel','Chair','Wooden','Other']" :key="v" type="button" @click="spForm.product_category = v"
+                  class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="spForm.product_category === v ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.product_category === v ? 'border-current' : 'border-slate-300'"><span v-if="spForm.product_category === v" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ v }}</span></button>
               </div>
             </div>
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">ระดับความสำคัญ <span class="text-red-500">*</span></label>
-              <div class="flex flex-wrap sm:flex-nowrap gap-1 p-1 rounded-xl border border-slate-300 bg-white">
-                <button v-for="p in [{val:'High',label:'สูง'},{val:'Medium',label:'กลาง'},{val:'Low',label:'ต่ำ'}]" :key="p.val" type="button"
-                  class="flex-1 min-w-0 rounded-lg py-2 px-2 text-center text-[.95rem] border-0 cursor-pointer transition-colors" :class="spForm.priority===p.val ? 'bg-teal-50 text-teal-800 font-bold ring-1 ring-teal-600' : 'bg-transparent text-slate-600 font-normal hover:bg-slate-100'"
-                  @click="spForm.priority=p.val">{{ p.label }}</button>
+              <label class="block text-sm font-semibold text-slate-700 mb-1.5">แบรนด์ <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></label>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <button v-for="v in ['Taiyo','Hybrida','Motech','Smartform','Sunon','Other']" :key="v" type="button" @click="spForm.brand = v"
+                  class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="spForm.brand === v ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.brand === v ? 'border-current' : 'border-slate-300'"><span v-if="spForm.brand === v" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ v }}</span></button>
               </div>
             </div>
           </section>
 
-          <!-- 3 ประเภทดีล คู่แข่ง และมูลค่า -->
-          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+          <!-- 3 ที่มาและสถานะ (เดิมอยู่กล่อง 2 ข้อมูลดีล) — ปุ่มแยกกล่อง + คำไทยใต้ตัวเลือก (ยืนยันจากผู้ใช้ 2026-11-23 แทนปุ่มแถบเดียว 2026-10-20) -->
+          <section v-show="spStepVisible(5)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-5">
             <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span>
-              <h3 class="text-base font-bold text-slate-800">ประเภทดีล คู่แข่ง และมูลค่า</h3>
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">5</span>
+              <h3 class="text-base font-bold text-slate-800">ที่มาและประเภทดีล</h3>
+            </div>
+            <!-- แหล่งที่มาของงาน (Lead Source) + Fee — ข้อมูลของตัวดีล รู้ตั้งแต่สร้าง (มาตรฐาน CRM: Opportunity Information) ย้ายจากกล่อง 4 (2026-10-20) -->
+            <div>
+              <label class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm font-semibold text-slate-700 mb-1.5">แหล่งที่มาของงาน <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='source_type'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง แหล่งที่มาของงาน"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button v-for="s in spSourceTypes.filter(s=>s.val!=='ebidding')" :key="s.val" type="button"
+                  class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="spForm.source_type===s.val ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+                  @click="spForm.source_type=s.val"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.source_type===s.val ? 'border-current' : 'border-slate-300'"><span v-if="spForm.source_type===s.val" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ s.icon }} {{ s.label }}<span v-if="spSourceDesc[s.val]" class="block text-xs font-normal">{{ spSourceDesc[s.val] }}</span></span></button>
+              </div>
             </div>
             <!-- ประเภทดีล — โหลดจาก master table deal_types (เพิ่มประเภทใหม่ใน DB แล้วปุ่มขึ้นเองอัตโนมัติ ไม่ต้องแก้โค้ด)
                  ดีลใหม่ไม่เลือกไว้ให้ก่อน (deal_type_id='') บังคับ sale เลือกเอง กันเผลอกดสร้างแล้วงานวาง Spec ถูกบันทึกเป็นซื้อทันที (ยืนยันจากผู้ใช้ 2026-09-23)
                  คำอธิบายอยู่ในการ์ดแต่ละตัว ให้อ่านเทียบกันได้ก่อนเลือก — ดึงจาก deal_types.deal_type_description -->
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">ประเภทดีล <span class="text-red-500">*</span></label>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">ประเภทดีล <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></label>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <button v-for="dt in spDealTypeOptions" :key="dt.deal_type_id" type="button" @click="spForm.deal_type_id=dt.deal_type_id"
                   class="text-left border-2 rounded-xl p-3 cursor-pointer transition-all flex flex-col justify-start"
@@ -1048,45 +1118,38 @@
                 </button>
               </div>
             </div>
-            <!-- คู่แข่งในดีลนี้ — เลือกได้หลายราย ไม่บังคับ / อยู่ก่อนมูลค่า-โอกาสปิด เพราะจำนวนคู่แข่งเป็นตัวที่ sale ใช้ประเมินโอกาสปิดดีล
-                 รายชื่อจาก master table competitors (api/competitors.php) — เลือกได้อย่างเดียว admin เป็นคนเพิ่มรายชื่อที่หน้า competitors.html
-                 ตามมาตรฐาน CRM (ยืนยันจากผู้ใช้ 2026-09-24 — เดิมให้ sale เพิ่มเองได้ เปลี่ยนเพื่อกันชื่อซ้ำแบบสะกดต่าง) -->
+            <!-- Fee Structure — ปุ่มแทน dropdown ให้เหมือนช่องอื่นในกล่องนี้ (ตัวเลือกน้อย กดครั้งเดียว) -->
             <div>
-              <!-- บังคับเลือกตอนสร้างดีลใหม่ (ยืนยันจากผู้ใช้ 2026-09-24) — ไม่มี/ไม่รู้ ให้เลือกตัวเลือกพิเศษ (is_special) "ไม่มีคู่แข่ง"/"ยังไม่ทราบ"
-                   ซึ่งเลือกเดี่ยวๆ เท่านั้น / ตอนแก้ดีลเก่าไม่บังคับ เพราะดีลเก่ายังไม่มีข้อมูลคู่แข่ง -->
-              <label class="block text-sm font-semibold text-slate-700 mb-1">คู่แข่งในดีลนี้ <span v-if="!spForm.id" class="text-red-500">*</span> <span class="text-slate-400 font-normal">(เลือกได้หลายราย)</span></label>
-              <div class="relative">
-                <div class="w-full border border-slate-300 rounded-xl px-2 py-1.5 bg-white flex flex-wrap items-center gap-1.5 min-h-[46px] focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100">
-                  <span v-for="c in spSelectedCompetitors" :key="c.competitor_id"
-                    class="inline-flex items-center gap-1 rounded-full pl-3 pr-1 py-1 text-sm font-medium"
-                    :class="Number(c.is_special) ? 'bg-slate-200 text-slate-700' : 'bg-orange-100 text-orange-800'">
-                    {{ c.competitor_name }}
-                    <button type="button" @click="removeSpCompetitor(c.competitor_id)" :aria-label="'เอา ' + c.competitor_name + ' ออก'"
-                      class="w-5 h-5 rounded-full border-0 bg-transparent cursor-pointer leading-none"
-                      :class="Number(c.is_special) ? 'text-slate-600 hover:bg-slate-300' : 'text-orange-700 hover:bg-orange-200'">×</button>
-                  </span>
-                  <!-- เลือกแล้วปิดรายการทันที (เดิมเปิดค้างบังช่องมูลค่า เลื่อนหน้าต่างไม่ได้ — แก้ 2026-10-21) / คลิกช่องอีกครั้งเพื่อเพิ่มรายต่อไป / Esc ปิด -->
-                  <input v-model="spCompetitorQuery" @focus="spCompetitorDropdownOpen = true" @click="spCompetitorDropdownOpen = true" @input="spCompetitorDropdownOpen = true"
-                    @blur="spCompetitorDropdownOpen = false" @keydown.enter.prevent="pickFirstSpCompetitor" @keydown.esc="spCompetitorDropdownOpen = false"
-                    class="flex-1 min-w-[140px] border-0 outline-none bg-transparent px-1.5 py-1 text-base sm:text-sm"
-                    :placeholder="spSelectedCompetitors.length ? 'เพิ่มคู่แข่งอีก...' : 'พิมพ์ชื่อคู่แข่ง เช่น Practika'">
-                </div>
-                <!-- @mousedown.prevent ให้กดเลือกได้ก่อนช่องพิมพ์เสีย focus (ไม่งั้น @blur ปิดรายการก่อนคลิกทำงาน) -->
-                <div v-if="spCompetitorDropdownOpen && (spCompetitorOptions.length || spCompetitorNotFound)"
-                  class="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-56 overflow-y-auto">
-                  <div v-for="c in spCompetitorOptions" :key="c.competitor_id" @mousedown.prevent="addSpCompetitor(c)"
-                    class="px-3.5 py-2.5 cursor-pointer hover:bg-slate-50 text-sm border-b border-slate-50"
-                    :class="Number(c.is_special) ? 'text-slate-500 italic' : ''">{{ c.competitor_name }}</div>
-                  <div v-if="spCompetitorNotFound" class="px-3.5 py-2.5 text-sm text-slate-500">
-                    ไม่พบคู่แข่ง "{{ spCompetitorQuery.trim() }}" — แจ้ง admin เพื่อเพิ่มในรายการ
-                  </div>
-                </div>
+              <label class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm font-semibold text-slate-700 mb-1.5">ค่าตอบแทนคนกลาง<span class="hidden sm:inline">&nbsp;(Fee Structure)</span> <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='fee_structure'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง ค่าตอบแทนคนกลาง (Fee Structure)"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></label>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button v-for="f in ['No fee','Referral %','Client to resell']" :key="f" type="button"
+                  class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="spForm.fee_structure===f ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+                  @click="spForm.fee_structure=f"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.fee_structure===f ? 'border-current' : 'border-slate-300'"><span v-if="spForm.fee_structure===f" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ f }}<span class="block text-xs font-normal">{{ spFeeDesc[f] }}</span></span></button>
               </div>
+            </div>
+            <!-- ดีลใหม่เริ่มที่สนใจ/ติดต่อเสมอ ไม่ต้องเลือก (ยืนยันจากผู้ใช้ 2026-11-02) -->
+            <div v-if="spForm.id">
+              <label class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm font-semibold text-slate-700 mb-1.5">ขั้นตอนปัจจุบัน <button type="button" @click.prevent="spFieldHelp='stage'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง ขั้นตอนปัจจุบัน"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></label>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button v-for="st in spStages.filter(s=>!['Delivered','Lost'].includes(s.key))" :key="st.key" type="button"
+                  class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="spForm.stage===st.key ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+                  @click="spForm.stage=st.key"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.stage===st.key ? 'border-current' : 'border-slate-300'"><span v-if="spForm.stage===st.key" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ st.thLabel }}</span></button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 4 มูลค่าและคู่แข่ง (เดิมกล่อง 3 ประเภทดีล คู่แข่ง และมูลค่า) -->
+          <section v-show="spStepVisible(6)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">6</span>
+              <h3 class="text-base font-bold text-slate-800">มูลค่าและโอกาสปิดดีล</h3>
             </div>
             <!-- มูลค่า/โอกาส/วันคาดปิด — 2 คอลัมน์ (เดิม 3 คอลัมน์แคบจนคำอธิบายตกบรรทัดและช่องไม่ตรงแนว — ปรับตามผู้ใช้ 2026-09-23)
                  มีหน่วย "บาท"/"%" ต่อท้ายในช่อง ให้รู้ว่ากรอกอะไรโดยไม่ต้องอ่านป้าย -->
             <!-- จัดใหม่ 2026-10-20: มูลค่า / โอกาสปิดดีล / วันคาดปิดดีล อยู่แถวเดียวกัน (3 ค่าที่ใช้คำนวณ Weighted Pipeline) — วันส่งมอบอยู่ grid ถัดไป -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <!-- มูลค่า + วันคาดปิดดีล แถวเดียวกัน / โอกาสปิดดีลเป็นปุ่ม 10–90% เต็มแถว (ยืนยันจากผู้ใช้ 2026-11-23 — พิมพ์เองช้าบนมือถือ)
+                 ไม่มี 0% / 100% — 100% = ปิดดีลได้ / 0% = แพ้ เป็นขั้นของดีล ไม่ใช่ค่าที่เลือกตอนดีลยังเปิด / ข้อมูลจริง: ค่าที่ไม่ใช่หลักสิบมีแค่ 25% ดีลเดียว -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1">มูลค่า <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='value'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="มูลค่านี้มาจากไหน" aria-label="คำอธิบายช่อง มูลค่าดีล"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
                 <div class="relative">
@@ -1095,17 +1158,26 @@
                 </div>
               </div>
               <div>
-                <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1">โอกาสปิดดีล <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='win_probability'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง โอกาสปิดดีล"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
-                <div class="relative">
-                  <input v-model="spForm.win_probability" type="number" min="0" max="100" class="w-full border border-slate-300 rounded-xl pl-3.5 pr-10 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น 20">
-                  <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
-                </div>
-              </div>
-              <div>
                 <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1">วันคาดปิดดีล <button type="button" @click.prevent="spFieldHelp='expected_close'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง วันคาดปิดดีล"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
                 <input v-model="spForm.expected_close" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+                <!-- ปุ่มลัดวันคาดปิดดีล (ยืนยันจากผู้ใช้ 2026-11-23) — ไม่เลือกให้เอง กันกดผ่านโดยไม่คิด / 6 เดือน = งานวาง Spec ตามคำอธิบายประเภทดีล / ไม่กรอก = นับเป็นภายใน 3 เดือน -->
+                <div class="flex flex-wrap gap-1.5 mt-1.5">
+                  <button v-for="q in spClosePresets" :key="q.label" type="button" @click="spForm.expected_close = spFollowupDate(q)"
+                    class="px-3 py-1.5 rounded-lg text-sm font-semibold border cursor-pointer transition-colors" :class="spForm.expected_close && spForm.expected_close === spFollowupDate(q) ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-300 bg-white text-slate-600 hover:border-teal-400 hover:text-teal-700'">{{ q.label }}</button>
+                </div>
+                <div v-if="spForm.expected_close" class="flex flex-wrap items-center gap-2 mt-1.5">
+                  <span class="text-sm font-semibold text-teal-800">{{ spThaiDate(spForm.expected_close) }}</span>
+                  <button type="button" @click="spForm.expected_close = ''" class="text-xs text-slate-500 underline bg-transparent border-0 p-0 cursor-pointer">ล้างวัน</button>
+                </div>
               </div>
-              <div class="text-xs text-slate-500 sm:col-span-3 -mt-1">โอกาสปิดดีลและวันคาดปิด ใช้คำนวณยอดคาดการณ์ (Weighted Pipeline) — งานวาง Spec ควรใส่วันคาดปิดตามจริง</div>
+            </div>
+            <div>
+              <label class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm font-semibold text-slate-700 mb-1.5">โอกาสปิดดีล <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='win_probability'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง โอกาสปิดดีล"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span><span v-if="spProbLegacy" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ค่าเดิม {{ spForm.win_probability }}%</span></label>
+              <div class="grid grid-cols-3 sm:grid-cols-9 gap-2">
+                <button v-for="p in [10,20,30,40,50,60,70,80,90]" :key="p" type="button" @click="spForm.win_probability = p"
+                  class="border-2 rounded-xl py-2.5 px-2 text-sm font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5" :class="Number(spForm.win_probability) === p && spForm.win_probability !== '' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-4 h-4 rounded-full border-2 items-center justify-center shrink-0" :class="Number(spForm.win_probability) === p && spForm.win_probability !== '' ? 'border-current' : 'border-slate-300'"><span v-if="Number(spForm.win_probability) === p && spForm.win_probability !== ''" class="w-2 h-2 rounded-full bg-current"></span></span>{{ p }}%</button>
+              </div>
+              <div class="text-xs text-slate-500 mt-1.5">โอกาสปิดดีลและวันคาดปิด ใช้คำนวณยอดคาดการณ์ (Weighted Pipeline) — งานวาง Spec ควรใส่วันคาดปิดตามจริง</div>
             </div>
             <div v-if="['Deal Signed','Delivered'].includes(spForm.stage)" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <!-- วันคาดส่งมอบ: แสดงเมื่อปิดดีลแล้ว / ส่งสินค้าแล้ว — แก้ได้ถ้าลูกค้าเลื่อน ระบบบันทึกประวัติการเลื่อน (2026-10-07) -->
@@ -1121,61 +1193,81 @@
               <div v-if="spForm.stage === 'Delivered'" class="text-xs text-slate-500 sm:self-end sm:pb-3">ตั้งต้นเป็นวันนี้ แก้เป็นวันที่ส่งของจริงได้ (ห้ามเกินวันนี้) — ยอดรายได้รายเดือนนับตามวันนี้</div>
               <div v-if="['Deal Signed','Delivered'].includes(spForm.stage)" class="text-xs text-slate-500 sm:self-end sm:pb-3">ใส่วันโดยประมาณได้ ถ้ายังไม่แน่นอน — ฝ่ายจัดส่งใช้วางแผนล่วงหน้าก่อนออก SO · ลูกค้าเลื่อน แก้ได้ที่นี่ ระบบบันทึกประวัติให้</div>
             </div>
+            <!-- ความสำคัญ — ย้ายจากขั้น 5 คู่กับมูลค่า/โอกาสปิด (ยืนยัน mockup จากผู้ใช้ 2026-11-23) -->
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1.5">ระดับความสำคัญของดีล <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></label>
+              <div class="grid grid-cols-3 gap-2">
+                <button v-for="p in [{val:'High',label:'สูง'},{val:'Medium',label:'กลาง'},{val:'Low',label:'ต่ำ'}]" :key="p.val" type="button"
+                  class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="spForm.priority===p.val ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+                  @click="spForm.priority=p.val"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="spForm.priority===p.val ? 'border-current' : 'border-slate-300'"><span v-if="spForm.priority===p.val" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ p.label }}</span></button>
+              </div>
+            </div>
+
           </section>
 
-          <!-- 4 กลุ่มลูกค้าและสินค้า (เดิม "รายละเอียดสินค้า" — แหล่งที่มา + Fee ย้ายไปกล่อง 2 ข้อมูลดีล ยืนยันจากผู้ใช้ 2026-10-20) -->
-          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+          <!-- 7 คู่แข่งในดีลนี้ — แยกจากขั้น 6 (ยืนยันจากผู้ใช้ 2026-11-23: ขั้น 6 ยาวเกินบนมือถือ / 1 ขั้น = 1 เรื่อง / Salesforce แยกคู่แข่งเป็นรายการของตัวเอง) -->
+          <section v-show="spStepVisible(7)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
             <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">4</span>
-              <h3 class="text-base font-bold text-slate-800">กลุ่มลูกค้าและสินค้า</h3>
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">7</span>
+              <h3 class="text-base font-bold text-slate-800">คู่แข่งในดีลนี้</h3>
             </div>
-            <!-- คอลัมน์เดียว ทีละคำถาม ใช้ dropdown (เดิม 2×2 ซิกแซก — ยืนยันจากผู้ใช้ 2026-10-20: คอลัมน์เดียว แต่คง dropdown ไม่ใช้ปุ่ม) -->
+            <!-- คู่แข่งในดีลนี้ — ข้อ 1 มีคู่แข่งไหม → ข้อ 2 ติ๊กรายชื่อเฉพาะเมื่อ "มีคู่แข่ง" (ยืนยัน mockup จากผู้ใช้ 2026-11-23 — เดิมรายชื่อกับ "ยังไม่ทราบ/ไม่มีคู่แข่ง" อยู่ด้วยกัน Sale สับสนว่าเลือกแล้วหรือยัง)
+                 ไม่มี / ยังไม่ทราบ = บันทึกตัวเลือกพิเศษ CP-NONE / CP-UNKNOWN เหมือนเดิม / รายชื่อจาก master competitors เรียงตามที่ใช้บ่อย / "อื่นๆ" เก็บที่ competitor_other_note
+                 บังคับเฉพาะดีลใหม่ (ดีลเก่ายังไม่มีข้อมูลคู่แข่ง) -->
             <div>
-              <label class="flex items-center gap-1 text-sm font-semibold text-slate-700 mb-1">ประเภทลูกค้า <span class="text-red-500">*</span> <button type="button" @click.prevent="spFieldHelp='segment'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง ประเภทลูกค้า"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
-              <select v-model="spForm.segment" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
-                <option value="">-- เลือก --</option>
-                <option value="Gov">ภาครัฐ (Gov)</option><option value="Private">เอกชน (Private)</option>
-              </select>
-              <div class="text-xs text-slate-500 mt-1">เติมให้อัตโนมัติจากลูกค้าที่เลือก แก้ได้ถ้าไม่ตรง</div>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">กลุ่มลูกค้า <span class="text-red-500">*</span></label>
-              <select v-model="spForm.specialization" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
-                <option value="">-- เลือก --</option>
-                <option value="Office">Office</option><option value="Hospital &amp; Wellness">Hospital &amp; Wellness</option><option value="Education">Education</option><option value="Government">Government</option><option value="Other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">หมวดสินค้า <span class="text-red-500">*</span></label>
-              <select v-model="spForm.product_category" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
-                <option value="">-- เลือก --</option>
-                <option value="Steel">Steel</option><option value="Chair">Chair</option><option value="Wooden">Wooden</option><option value="Other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">แบรนด์ <span class="text-red-500">*</span></label>
-              <select v-model="spForm.brand" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
-                <option value="">-- เลือก --</option>
-                <option value="Taiyo">Taiyo</option><option value="Hybrida">Hybrida</option><option value="Motech">Motech</option><option value="Smartform">Smartform</option><option value="Sunon">Sunon</option><option value="Other">Other</option>
-              </select>
+              <div class="flex items-center gap-2 flex-wrap text-sm font-semibold text-slate-700 mb-1.5"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 1</span>ดีลนี้มีคู่แข่งไหม <span v-if="!spForm.id" class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button v-for="m in spCompetitorModes" :key="m.key" type="button" @click="setSpCompetitorMode(m.key)" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-center gap-2 text-left" :class="spForm.competitor_mode === m.key ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
+                  <span data-radio-dot class="flex w-5 h-5 rounded-full border-2 items-center justify-center shrink-0" :class="spForm.competitor_mode === m.key ? 'border-current' : 'border-slate-300'"><span v-if="spForm.competitor_mode === m.key" class="w-2.5 h-2.5 rounded-full bg-current"></span></span>
+                  <span class="flex-1 min-w-0">{{ m.label }}</span>
+                </button>
+              </div>
+              <div v-if="spForm.competitor_mode === 'has'" class="mt-3 pt-3 border-t border-dashed border-slate-300">
+                <div class="flex items-center gap-2 flex-wrap text-sm font-semibold text-slate-700 mb-1.5"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>คู่แข่งคือใคร <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— ติ๊กได้หลายราย</span></div>
+                <input v-if="spCompetitorChoices.length > 12" v-model="spCompetitorQuery" placeholder="ค้นหาชื่อคู่แข่ง" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white mb-2">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button v-for="c in spCompetitorChoicesShown" :key="c.competitor_id" type="button" @click="toggleSpCompetitor(c)"
+                    class="border-2 rounded-xl py-2.5 px-2 sm:px-3 text-[13px] sm:text-sm font-semibold cursor-pointer transition-colors flex items-start gap-1.5 sm:gap-2 text-left" :class="spForm.competitor_ids.includes(Number(c.competitor_id)) ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
+                    <span class="flex w-5 h-5 mt-px rounded-md border-2 items-center justify-center shrink-0" :class="spForm.competitor_ids.includes(Number(c.competitor_id)) ? 'border-current bg-current' : 'border-slate-300'"><template v-if="spForm.competitor_ids.includes(Number(c.competitor_id))"><svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></template></span>
+                    <span class="flex-1 min-w-0 break-words leading-snug">{{ c.competitor_name }}</span>
+                  </button>
+                  <button type="button" @click="toggleSpCompetitorOther" class="border-2 rounded-xl py-2.5 px-2 sm:px-3 text-[13px] sm:text-sm font-semibold cursor-pointer transition-colors flex items-start gap-1.5 sm:gap-2 text-left" :class="spForm.competitor_other_on ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">
+                    <span class="flex w-5 h-5 mt-px rounded-md border-2 items-center justify-center shrink-0" :class="spForm.competitor_other_on ? 'border-current bg-current' : 'border-slate-300'"><template v-if="spForm.competitor_other_on"><svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></template></span>
+                    <span class="flex-1 min-w-0">อื่นๆ<span class="block text-xs font-normal">ไม่มีในรายชื่อ</span></span>
+                  </button>
+                </div>
+                <input v-if="spForm.competitor_other_on" v-model="spForm.competitor_other_note" maxlength="255" placeholder="พิมพ์ชื่อคู่แข่ง (ถ้ามีหลายราย คั่นด้วย ,)" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white mt-2">
+                <div v-if="spCompetitorSummary" class="text-sm text-slate-600 mt-2">เลือกแล้ว: <span class="font-semibold text-slate-800">{{ spCompetitorSummary }}</span></div>
+              </div>
             </div>
           </section>
 
           <!-- 5 แผนติดตาม -->
-          <section class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+          <section v-show="spStepVisible(8)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
             <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">5</span>
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">8</span>
               <h3 class="text-base font-bold text-slate-800">แผนติดตาม</h3>
             </div>
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">สิ่งที่ต้องทำต่อ (Next Action)</label>
-              <input v-model="spForm.next_action" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โทรติดตาม, ส่งตัวอย่างสินค้า, นัดพรีเซนต์">
-              <div class="text-xs text-slate-500 mt-1">ระบุให้ชัดว่าต้องทำอะไร เพื่อให้ติดตามงานได้ง่าย</div>
+              <label class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm font-semibold text-slate-700 mb-1">สิ่งที่ต้องทำต่อ (Next Action) <button type="button" @click.prevent="spFieldHelp='next_action'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง สิ่งที่ต้องทำต่อ"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
+              <input ref="spNextActionInput" v-model="spForm.next_action" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น โทรติดตาม, ส่งตัวอย่างสินค้า, นัดพรีเซนต์">
+              <!-- ปุ่มคำที่ใช้บ่อย — กดแล้วใส่คำลงช่อง พิมพ์ต่อได้ (เก็บเป็นข้อความเดิม ไม่แก้ DB) -->
+              <div class="flex flex-wrap gap-1.5 mt-1.5">
+                <button v-for="t in spNextActionPresets" :key="t" type="button" @click="addSpNextAction(t)" class="px-3 py-1.5 rounded-lg text-sm font-semibold border cursor-pointer transition-colors border-slate-300 bg-white text-slate-600 hover:border-teal-400 hover:text-teal-700">+ {{ t }}</button>
+              </div>
             </div>
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">วันนัดติดตามครั้งถัดไป</label>
-              <input v-model="spForm.next_followup_date" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white sm:max-w-xs">
-              <div class="text-xs text-slate-500 mt-1">ถึงวันนัดการ์ดจะขึ้นสีส้ม เลยวันนัดจะขึ้นสีแดง — ติดตามเสร็จแล้วให้ใส่วันนัดครั้งถัดไป</div>
+              <label class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm font-semibold text-slate-700 mb-1">วันนัดติดตามครั้งถัดไป <button type="button" @click.prevent="spFieldHelp='next_followup_date'" class="inline-flex items-center justify-center w-5 h-5 -my-1 bg-transparent border-0 p-0 rounded-full cursor-pointer text-slate-400 hover:text-teal-700 hover:bg-teal-50" title="ช่องนี้คืออะไร" aria-label="คำอธิบายช่อง วันนัดติดตามครั้งถัดไป"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></label>
+              <!-- ปุ่มลัดวันนัด (แบบตั้งงานติดตามของ HubSpot) — เลือกวันเองจากปฏิทินได้ / แสดงวันที่เป็นภาษาไทย -->
+              <div class="flex flex-wrap gap-1.5 mb-2">
+                <button v-for="q in spFollowupPresets" :key="q.label" type="button" @click="spForm.next_followup_date = spFollowupDate(q)"
+                  class="px-3 py-1.5 rounded-lg text-sm font-semibold border cursor-pointer transition-colors" :class="spForm.next_followup_date && spForm.next_followup_date === spFollowupDate(q) ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-300 bg-white text-slate-600 hover:border-teal-400 hover:text-teal-700'">{{ q.label }}</button>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <input v-model="spForm.next_followup_date" type="date" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white sm:max-w-xs">
+                <span v-if="spForm.next_followup_date" class="text-sm font-semibold text-teal-800">{{ spThaiDate(spForm.next_followup_date) }}</span>
+                <button v-if="spForm.next_followup_date" type="button" @click="spForm.next_followup_date = ''" class="text-xs text-slate-500 underline bg-transparent border-0 p-0 cursor-pointer">ล้างวันนัด</button>
+              </div>
             </div>
             <div>
               <label class="block text-sm font-semibold text-slate-700 mb-1">หมายเหตุ</label>
@@ -1190,6 +1282,29 @@
               </select>
             </div>
             <div v-else class="text-sm text-slate-500">เจ้าของงาน: <span class="font-semibold text-slate-700">{{ currentUser?.full_name }}</span></div>
+          </section>
+
+          <!-- 8 ตรวจก่อนบันทึก — แยกจากขั้นแผนติดตามเป็นขั้นของตัวเอง เฉพาะดีลใหม่ (ยืนยันจากผู้ใช้ 2026-11-23) -->
+          <section v-if="!spForm.id" v-show="spStepVisible(9)" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4 space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <span class="w-7 h-7 rounded-full bg-teal-600 text-white text-sm font-bold flex items-center justify-center shrink-0">9</span>
+              <h3 class="text-base font-bold text-slate-800">ตรวจก่อนบันทึก</h3>
+            </div>
+            <div class="rounded-xl bg-amber-50 text-amber-900 text-sm px-3 py-2">ตรวจข้อมูลอีกครั้ง ถ้าผิด กด "แก้ไข" เพื่อกลับไปขั้นนั้น</div>
+            <!-- 1 กล่อง = 1 ขั้น / แสดงทุก label เสมอ ค่าที่ไม่ได้กรอกแสดง "-" (ยืนยันจากผู้ใช้ 2026-11-23) / "แก้ไข" → ไปขั้นนั้น แล้วกด "ถัดไป" กลับมาที่หน้านี้ (spReturnToReview) -->
+            <div v-for="g in spReviewGroups" :key="g.step" class="rounded-xl bg-white border border-slate-200 px-3 sm:px-4 py-2.5">
+              <div class="flex items-center gap-2 mb-1.5">
+                <span class="w-6 h-6 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center justify-center shrink-0">{{ g.step }}</span>
+                <span class="text-sm font-bold text-slate-800 flex-1 min-w-0">{{ g.title }}</span>
+                <button type="button" @click="spEditFromReview(g.step)" class="shrink-0 px-3 py-1 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-400 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">แก้ไข</button>
+              </div>
+              <div class="grid grid-cols-[96px_minmax(0,1fr)] sm:grid-cols-[130px_minmax(0,1fr)] gap-x-2 gap-y-1 text-sm">
+                <template v-for="r in g.rows" :key="r[0]">
+                  <span class="text-slate-500">{{ r[0] }}</span>
+                  <span class="break-words" :class="r[1] ? 'text-slate-800' : 'text-slate-400'">{{ r[1] || '-' }}</span>
+                </template>
+              </div>
+            </div>
           </section>
 
           </div>
@@ -1214,8 +1329,8 @@
               <div class="flex-1">
                 <div class="text-xs text-slate-700 font-semibold">{{ h.changed_by_name }}</div>
                 <div class="text-xs text-slate-500 flex items-center gap-1 flex-wrap mt-0.5">
-                  <span v-if="h.old_stage" class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{{ spStageLabel(h.old_stage, spForm.source_type) }}</span>
-                  <span v-if="h.old_stage">→</span>
+                  <span v-if="h.old_stage && h.old_stage !== h.new_stage" class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{{ spStageLabel(h.old_stage, spForm.source_type) }}</span>
+                  <span v-if="h.old_stage && h.old_stage !== h.new_stage">→</span>
                   <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :style="spStageClass(h.new_stage)">{{ spStageLabel(h.new_stage, spForm.source_type) }}</span>
                   <span v-if="h.note" class="text-slate-400">· {{ h.note }}</span>
                 </div>
@@ -1239,11 +1354,13 @@
           <button class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold border-0 cursor-pointer min-h-[44px]"
             :class="spFormDirty && !isViewer ? 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-teal-700 hover:bg-teal-800 text-white'" @click="closeModal">ปิด</button>
         </div>
-        <div v-else class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+        <div v-else class="px-3 sm:px-5 py-3 sm:py-4 border-t border-slate-100 flex items-center justify-end gap-2">
           <button class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px] disabled:cursor-default disabled:hover:bg-white" :disabled="spFormSaving" @click="closeModal">ยกเลิก</button>
           <span v-if="isViewer" class="mr-auto text-sm text-violet-700 font-semibold">👁 ดูอย่างเดียว — แก้ไขไม่ได้</span>
+          <button v-if="!spForm.id && spWizardStep > 1" type="button" class="inline-flex items-center px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]" @click="spWizardGo(spWizardStep - 1)">ย้อนกลับ</button>
+          <button v-if="!spForm.id && spWizardStep < 9 && !isViewer" type="button" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px]" @click="spWizardNext">ถัดไป</button>
           <!-- ล็อกปุ่มระหว่างบันทึก กันกดซ้ำแล้วได้ดีล 2 รายการ + วงกลมหมุน (2026-10-23) -->
-          <button v-if="!isViewer" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] disabled:cursor-default disabled:hover:bg-teal-700 gap-2" :disabled="spFormSaving" @click="submitSpForm">
+          <button v-if="!isViewer && (spForm.id || spWizardStep === 9)" class="inline-flex items-center px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] disabled:cursor-default disabled:hover:bg-teal-700 gap-2" :disabled="spFormSaving" @click="submitSpForm">
             <span v-if="spFormSaving" class="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" aria-hidden="true"></span>
             {{ spFormSaving ? 'กำลังบันทึก…' : (spForm.id ? 'บันทึกการแก้ไข' : 'สร้างงาน/ดีลใหม่') }}
           </button>
@@ -1253,7 +1370,7 @@
 
     <!-- SP: Quotation Detail Modal (ใบเสนอราคาเก่าที่นำเข้ามาเป็นงานขายตรงนี้) — overlay แยกต่างหาก ไม่แตะ modal/spForm หลัก
          กันไม่ให้ข้อมูลที่แก้ไขค้างไว้ในฟอร์ม sp-form หายไปตอนเปิด/ปิด modal นี้ซ้อนขึ้นมา (z-index สูงกว่า sp-form ให้ลอยทับอยู่บนสุด) -->
-    <div v-if="spQuotationModal.show" class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1100] p-4 overflow-y-auto" @click.self="closeSpQuotationModal">
+    <div v-if="spQuotationModal.show" class="fixed inset-0 bg-black/50 flex items-start justify-center z-[1100] p-4 overflow-y-auto" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeSpQuotationModal())">
       <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden my-8">
         <div class="bg-sky-700 text-white px-6 py-5">
           <div class="flex items-center justify-between">
@@ -1357,7 +1474,7 @@
     </div>
 
     <!-- SP: ตรวจดีลย้อนหลัง (Guided review — ยืนยันจากผู้ใช้ 2026-10-01) — sale เลือกสถานะจริงตอนนี้ / ไม่ใช่งานจริง = ลบ / ไม่ใช่งานของฉัน = โอนให้ sale คนอื่นเอง -->
-    <div v-if="modal.type==='sp-import-review'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-import-review'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
       <div class="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden flex flex-col" style="max-height:92vh">
         <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
           <div class="min-w-0">
@@ -1417,7 +1534,7 @@
     </div>
 
     <!-- SP: บันทึกส่งสินค้าแล้ว — ใส่วันที่ส่งจริง (ยืนยันจากผู้ใช้ 2026-10-07) ใช้แทนกล่องยืนยันเลื่อนขั้นเดิม -->
-    <div v-if="modal.type==='sp-delivered'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-delivered'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
       <div class="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden">
         <div class="px-6 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
           <div class="min-w-0">
@@ -1439,7 +1556,7 @@
     </div>
 
     <!-- SP: Win/Loss Modal -->
-    <div v-if="modal.type==='sp-win-loss'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-win-loss'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
       <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:92vh">
         <!-- หัวขาว + ป้ายบอกผล แบบเดียวกับ bid-pipeline.html (ปรับตามผู้ใช้ 2026-09-25) -->
         <div class="px-6 py-5 border-b border-slate-100 bg-white flex items-center justify-between">
@@ -1537,7 +1654,7 @@
     </div>
 
     <!-- งานที่ยังไม่จบ (คาดการณ์) Info Modal — รวม งานในมือ + Weighted Pipeline ไว้ modal เดียว ตรงกับปุ่ม i เดียวที่ label กลุ่ม -->
-    <div v-if="modal.type==='sp-forecast-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-forecast-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
       <div class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden">
         <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
           <h3 class="font-bold text-lg">งานที่ยังไม่จบ (คาดการณ์) คืออะไร</h3>
@@ -1576,7 +1693,7 @@
     </div>
 
     <!-- รายได้ที่ได้รับ Info Modal -->
-    <div v-if="modal.type==='sp-results-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-results-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
       <div class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden">
         <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
           <h3 class="font-bold text-lg">ผลลัพธ์ที่จบแล้ว (สรุปย้อนหลัง) คืออะไร</h3>
@@ -1616,7 +1733,7 @@
     </div>
 
     <!-- งานทั้งหมด Info Modal -->
-    <div v-if="modal.type==='sp-total-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-total-info'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
       <div class="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden">
         <div class="bg-teal-600 text-white px-6 py-5 flex items-center justify-between">
           <h3 class="font-bold text-lg">งานทั้งหมด คืออะไร</h3>
@@ -1635,7 +1752,7 @@
     </div>
 
     <!-- ตัวกรอง Modal: กรองเฉพาะ Kanban board ด้านล่าง ไม่กระทบการ์ดสถิติด้านบน (เหมือนตัวกรองช่วงเวลา) — ชื่อ/สีหัว modal ให้ตรงกับปุ่ม "ตัวกรอง" ในการ์ดรายการ (ยืนยันจากผู้ใช้ 2026-09-21) -->
-    <div v-if="modal.type==='sp-adv-filter'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @click.self="closeModal">
+    <div v-if="modal.type==='sp-adv-filter'" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && (closeModal())">
       <div class="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col overflow-hidden" style="max-height:90vh">
         <div class="bg-teal-600 px-6 py-5 flex items-center justify-between shrink-0">
           <h3 class="font-bold text-lg flex items-center gap-2 text-white">
@@ -1681,12 +1798,13 @@
               </select>
             </div>
             <div>
-              <label class="text-xs text-slate-400 font-medium block mb-1.5">ประเภทลูกค้า</label>
+              <label class="text-xs text-slate-400 font-medium block mb-1.5">ภาค</label>
               <select v-model="spFilter.segment" @change="loadSpKanban()"
                 class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
                 <option value="">ทั้งหมด</option>
-                <option value="Gov">Gov</option>
-                <option value="Private">Private</option>
+                <option value="Gov">หน่วยงานรัฐ</option>
+                <option value="Private">หน่วยงานเอกชน</option>
+                <option value="Individual">บุคคลทั่วไป</option>
               </select>
             </div>
             <div>
@@ -1694,11 +1812,7 @@
               <select v-model="spFilter.specialization" @change="loadSpKanban()"
                 class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 bg-white">
                 <option value="">ทั้งหมด</option>
-                <option value="Office">Office</option>
-                <option value="Hospital & Wellness">Hospital & Wellness</option>
-                <option value="Education">Education</option>
-                <option value="Government">Government</option>
-                <option value="Other">Other</option>
+                <option v-for="g in spIndustryFilterOptions" :key="g" :value="g">{{ g }}</option>
               </select>
             </div>
             <div>
@@ -1735,11 +1849,143 @@
 <script>
 const { createApp } = Vue;
 // ช่องในฟอร์มดีลที่ตรวจว่ามีคนเปลี่ยนหลังเปิดหน้าต่าง (กันบันทึกทับ — 2026-10-30) ต้องตรงกับ $lockFields ใน api/pipeline_items.php updateItem()
-const SP_LOCK_FIELDS = ['title', 'stage', 'value', 'win_probability', 'expected_close', 'priority', 'segment', 'product_category', 'brand',
-  'fee_structure', 'specialization', 'next_action', 'next_followup_date', 'notes', 'deal_type_id', 'assigned_to', 'account_id'];
+const SP_LOCK_FIELDS = ['title', 'stage', 'value', 'win_probability', 'expected_close', 'priority', 'product_category', 'brand',
+  'fee_structure', 'next_action', 'next_followup_date', 'notes', 'deal_type_id', 'assigned_to', 'account_id', 'sales_channel', 'channel_role_id', 'channel_role_note', 'segment', 'specialization', 'specialization_note', 'competitor_other_note', 'end_user_name'];
+/* ── SpNewCustomer: หน้าต่างสร้างลูกค้าใหม่ แยกจากฟอร์มดีล (Quick Create — ยืนยันจากผู้ใช้ 2026-11-02, ปรับตาม flow 2026-11-20) ──
+   ลูกค้า = ผู้ซื้อ / ผู้จ่ายเงิน: ชื่อ → บทบาท 2 ชั้นแบบเดียวกับหน้าลูกค้า (ผู้ใช้เอง → ประเภท / คนกลาง → ประเภทคนกลาง) → ผู้ติดต่อ 1 คน
+   ไม่ถามตลาด (ถามที่ดีล) / ลูกค้าปลายทางไม่ใช่ลูกค้าในทะเบียนแล้ว (ชื่อพิมพ์ที่ดีล) จึงไม่มีโหมดสร้างลูกค้าปลายทาง
+   เจอชื่อซ้ำ/คล้าย: ใช้รายเดิม หรือยืนยันว่าคนละราย (API ตรวจอีกชั้น 409) / ตัวเลือกมาจาก master customer_roles — ดูธง is_intermediary ห้ามเช็กชื่อ
+   @done({ account, contact }) = บันทึกหรือเลือกรายเดิมแล้ว — หน้าหลักเลือกลูกค้าให้ดีล ข้อมูลดีลที่กรอกไว้ยังอยู่ */
+const SpNewCustomer = {
+  props: { initialName: { type: String, default: '' }, options: { type: Object, required: true } },
+  emits: ['done', 'close'],
+  data() {
+    return { backdropDown: false, name: this.initialName, roleKind: '', accountType: '', roleId: '', roleNote: '',
+             contactName: '', contactPhone: '', dupList: null, saving: false, error: '' };
+  },
+  computed: {
+    intermediaryRoles() { return this.options.roles.filter(r => Number(r.is_active) === 1 && Number(r.is_intermediary) === 1); },
+    selfRole() { return this.options.roles.find(r => Number(r.is_active) === 1 && Number(r.is_intermediary) !== 1) || null; },
+    role() { return this.options.roles.find(r => r.customer_role_id === this.roleId) || null; },
+    typeOptions() { return [{ v: 'government', l: 'หน่วยงานรัฐ' }, { v: 'private', l: 'หน่วยงานเอกชน' }, { v: 'individual', l: 'บุคคลทั่วไป' }]; },
+    hasExactDup() { return (this.dupList || []).some(d => d.match_type === 'exact'); },
+  },
+  methods: {
+    setRoleKind(kind) {
+      if (this.roleKind === kind) return;
+      this.roleKind = kind;
+      this.roleNote = '';
+      this.roleId = kind === 'self' ? (this.selfRole?.customer_role_id || '') : '';
+      if (kind === 'mid') this.accountType = '';
+    },
+    validate() {
+      if (!this.name.trim()) return 'กรุณาใส่ชื่อลูกค้า';
+      if (!this.roleKind) return 'กรุณาเลือกว่าลูกค้ารายนี้เป็นผู้ใช้เอง หรือเป็นคนกลาง';
+      if (this.roleKind === 'self' && !this.accountType) return 'กรุณาเลือกประเภท (หน่วยงานรัฐ / หน่วยงานเอกชน / บุคคลทั่วไป)';
+      if (this.roleKind === 'mid' && !this.role) return 'กรุณาเลือกประเภทคนกลาง';
+      if (this.role && Number(this.role.requires_note) === 1 && !this.roleNote.trim()) return `กรุณาพิมพ์ระบุ "${this.role.customer_role_name}"`;
+      if (!this.contactName.trim()) return 'กรุณากรอกชื่อผู้ติดต่อ';
+      const phoneProblem = SharedMethods.phoneInputProblem(this.contactPhone);
+      return phoneProblem ? 'เบอร์โทร: ' + phoneProblem : '';
+    },
+    async save(confirmNotDuplicate) {
+      this.error = this.validate();
+      if (this.error) return;
+      const name = this.name.trim();
+      this.saving = true;
+      if (!confirmNotDuplicate) {
+        const dup = await apiCall('GET', 'api/accounts.php?action=check_duplicate&q=' + encodeURIComponent(name));
+        if (dup.success && dup.data.length) { this.dupList = dup.data; this.saving = false; return; }
+      }
+      // คนกลางไม่ถามประเภท — API บันทึก private ให้เอง
+      const res = await apiCall('POST', 'api/accounts.php?action=create', {
+        name, account_type: this.roleKind === 'self' ? this.accountType : 'private', customer_role_id: this.roleId, customer_role_note: this.roleNote.trim(),
+        confirm_not_duplicate: !!confirmNotDuplicate });
+      if (!res.success && res.data?.duplicates) { this.dupList = res.data.duplicates; this.saving = false; return; }
+      if (!res.success) { this.error = res.message || 'สร้างลูกค้าไม่สำเร็จ'; this.saving = false; return; }
+      let contact = null;
+      const fullName = this.contactName.trim(), phone = this.contactPhone.trim();
+      const c = await apiCall('POST', 'api/contacts.php?action=create', { account_id: res.data.id, full_name: fullName, phone });
+      if (c.success) contact = { id: c.data.id, full_name: fullName, phone: phone.replace(/[^0-9+]/g, ''), position: '' };
+      this.saving = false;
+      this.$emit('done', { account: res.data, contact });
+    },
+  },
+  template: `
+<div class="fixed inset-0 bg-black/50 flex items-stretch sm:items-center justify-center z-[1100] p-0 sm:p-4" @mousedown="backdropDown = $event.target === $event.currentTarget" @click.self="backdropDown && ($emit('close'))">
+  <div class="bg-white sm:rounded-2xl w-full h-full sm:h-auto max-w-lg shadow-2xl flex flex-col sm:max-h-[92vh]">
+    <div class="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
+      <h3 class="text-lg font-bold text-slate-800 m-0">สร้างลูกค้าใหม่</h3>
+    </div>
+    <div class="p-3 sm:p-5 overflow-y-auto flex-1 space-y-3">
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) <span class="text-red-500">*</span></label>
+        <input v-model="name" @input="dupList = null" placeholder="ชื่อหน่วยงาน / บริษัท / บุคคล" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white">
+      </div>
+      <div class="rounded-xl border border-slate-200 px-4 py-3">
+        <div class="text-sm font-bold text-slate-700 mb-2">บทบาทลูกค้า</div>
+        <!-- หัวข้อย่อย ข้อ 1 / ข้อ 2 แบบเดียวกับฟอร์มลูกค้า accounts.html (ยืนยันจากผู้ใช้ 2026-11-20) -->
+        <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 1</span>ลูกค้ารายนี้เป็นแบบไหน <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button type="button" @click="setRoleKind('self')" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+            :class="roleKind === 'self' ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="roleKind === 'self' ? 'border-current' : 'border-slate-300'"><span v-if="roleKind === 'self'" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">
+            เป็นผู้ใช้เอง<span class="block text-xs font-normal">ซื้อสินค้าไปใช้เอง (ขายตรง)</span></span></button>
+          <button type="button" @click="setRoleKind('mid')" class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left"
+            :class="roleKind === 'mid' ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="roleKind === 'mid' ? 'border-current' : 'border-slate-300'"><span v-if="roleKind === 'mid'" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">
+            เป็นคนกลาง<span class="block text-xs font-normal">ไม่ได้ใช้สินค้าเอง (คนกลาง)</span></span></button>
+        </div>
+        <div v-if="!roleKind" class="mt-3 pt-3 border-t border-dashed border-slate-300">
+          <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-400"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-slate-300 text-slate-400 bg-white shrink-0">ข้อ 2</span>ประเภท <span class="text-sm font-normal">— เลือกข้อ 1 ก่อน</span></div>
+        </div>
+        <div v-if="roleKind === 'self'" class="mt-3 pt-3 border-t border-dashed border-slate-300">
+          <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>ประเภทของลูกค้า <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button v-for="t in typeOptions" :key="t.v" type="button" @click="accountType = t.v"
+              class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="accountType === t.v ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="accountType === t.v ? 'border-current' : 'border-slate-300'"><span v-if="accountType === t.v" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ t.l }}</span></button>
+          </div>
+        </div>
+        <div v-if="roleKind === 'mid'" class="mt-3 pt-3 border-t border-dashed border-slate-300">
+          <div class="flex items-center gap-2 flex-wrap text-[.95rem] font-bold text-slate-800 mb-2"><span class="text-xs font-bold px-2 py-0.5 rounded-md border border-teal-600 text-teal-700 bg-white shrink-0">ข้อ 2</span>ประเภทคนกลาง <span class="text-red-500">*</span> <span class="text-sm font-normal text-slate-500">— กดเลือก 1 ปุ่ม</span></div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button v-for="r in intermediaryRoles" :key="r.customer_role_id" type="button" @click="roleId = r.customer_role_id" :title="r.customer_role_description"
+              class="border-2 rounded-xl py-2.5 px-3 text-sm font-semibold cursor-pointer transition-colors flex items-start gap-2 text-left" :class="roleId === r.customer_role_id ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"><span data-radio-dot class="flex w-5 h-5 mt-px rounded-full border-2 items-center justify-center shrink-0" :class="roleId === r.customer_role_id ? 'border-current' : 'border-slate-300'"><span v-if="roleId === r.customer_role_id" class="w-2.5 h-2.5 rounded-full bg-current"></span></span><span data-radio-body class="flex-1 min-w-0">{{ r.customer_role_name }}</span></button>
+          </div>
+          <input v-if="role && Number(role.requires_note) === 1" v-model="roleNote" maxlength="255" class="mt-2 w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="พิมพ์ระบุ เช่น บริษัทให้เช่าเฟอร์นิเจอร์">
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1">ชื่อผู้ติดต่อ <span class="text-red-500">*</span></label>
+          <input v-model="contactName" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="เช่น คุณสมชาย">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1">เบอร์โทร</label>
+          <input v-model="contactPhone" type="tel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white" placeholder="ไม่บังคับ">
+        </div>
+      </div>
+      <p class="text-xs text-slate-500 m-0">เลขภาษี ที่อยู่ และรหัส ERP เติมภายหลังที่หน้าลูกค้า</p>
+      <div v-if="dupList" class="p-3 rounded-xl ring-1 text-sm" :class="hasExactDup ? 'bg-rose-50 ring-rose-200 text-rose-800' : 'bg-amber-50 ring-amber-200 text-amber-900'">
+        {{ hasExactDup ? 'มีลูกค้าชื่อนี้อยู่แล้ว สร้างซ้ำไม่ได้ — ใช้รายเดิม' : 'พบลูกค้าชื่อคล้ายกัน — เป็นรายเดียวกันหรือไม่?' }}
+        <div v-for="d in dupList" :key="d.id" class="flex items-center gap-2 mt-2">
+          <span class="font-mono text-xs text-teal-700 bg-white rounded px-1.5 py-0.5">{{ d.account_code }}</span>
+          <span class="font-semibold text-slate-800 truncate flex-1">{{ d.name }}</span>
+          <button type="button" @click="$emit('done', { account: d, contact: null })" class="shrink-0 px-3 py-1.5 rounded-lg text-sm font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer">ใช้รายนี้</button>
+        </div>
+        <button v-if="!hasExactDup" type="button" @click="save(true)" class="mt-2 w-full py-2 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white border-0 cursor-pointer">คนละราย — สร้างใหม่</button>
+      </div>
+      <p v-if="error" class="text-sm font-semibold text-red-600 m-0">{{ error }}</p>
+    </div>
+    <div class="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
+      <button type="button" @click="$emit('close')" class="px-4 py-2.5 rounded-xl text-[.95rem] font-semibold bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 border-0 cursor-pointer min-h-[44px]">ยกเลิก</button>
+      <button type="button" @click="save(false)" :disabled="saving" class="px-6 py-2.5 rounded-xl text-[.95rem] font-bold bg-teal-700 hover:bg-teal-800 text-white border-0 cursor-pointer min-h-[44px] disabled:opacity-50">{{ saving ? 'กำลังบันทึก…' : 'บันทึกลูกค้า' }}</button>
+    </div>
+  </div>
+</div>
+  `,
+};
 
 createApp({
-  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppDuplicateAccounts, AppQuoteRequests, AppRecordTabs, AppDealFiles },
+  components: { AppNav, AppTabBar, AppModal, AppErpWarning, AppQuoteRequests, AppRecordTabs, AppDealFiles, SpNewCustomer },
   data() {
     return {
       authReady: false,
@@ -1752,13 +1998,26 @@ createApp({
       spStats: null,
       spSaleStats: [],
       spFieldHelp: null,   // ช่องที่เปิดคำอธิบาย ⓘ อยู่ (key ของ spFieldHelpText)
+      spCustomerOptions: { roles: [], industries: [] },   // master ลูกค้าทำอะไรกับของ + กลุ่มลูกค้า (2026-11-02)
+      spNewCustomer: { show: false, name: '' },   // หน้าต่างสร้างลูกค้าใหม่
+      backdropDown: false,   // กดเมาส์เริ่มบนพื้นหลังหน้าต่างหรือไม่ — ปิดหน้าต่างเฉพาะกด+ปล่อยบนพื้นหลัง (ลากเลือกข้อความแล้วปล่อยนอกกรอบไม่ปิด — 2026-11-23)
+      // คำไทยใต้ตัวเลือกขั้น 5 (2026-11-23) — สรุปจากคำอธิบาย ⓘ ของช่องนั้น
+      spSourceDesc: { self_sourced: 'Sale หาลูกค้าเอง', purchased_data: 'ข้อมูลจากเว็บที่ซื้อ' },
+      spFeeDesc: { 'No fee': 'ไม่มีค่าแนะนำ', 'Referral %': 'จ่ายค่านายหน้า %', 'Client to resell': 'ลูกค้าซื้อไปขายต่อ' },
+      // ขั้น 7 ปุ่มลัด (2026-11-23)
+      spNextActionPresets: ['โทรติดตาม', 'เข้าพบลูกค้า', 'ส่งใบเสนอราคา', 'ส่งตัวอย่างสินค้า', 'นัดพรีเซนต์', 'ติดตามงานวาง Spec'],
+      spClosePresets: [{ label: '2 สัปดาห์', days: 14 }, { label: '1 เดือน', months: 1 }, { label: '3 เดือน', months: 3 }, { label: '6 เดือน', months: 6 }, { label: '1 ปี', months: 12 }],
+      spFollowupPresets: [{ label: 'พรุ่งนี้', days: 1 }, { label: '3 วัน', days: 3 }, { label: '1 สัปดาห์', days: 7 }, { label: '2 สัปดาห์', days: 14 }, { label: '1 เดือน', months: 1 }, { label: '2 เดือน', months: 2 }, { label: '6 เดือน', months: 6 }],
+      spReturnToReview: false,   // กด "แก้ไข" จากขั้น 8 → กดถัดไปแล้วกลับขั้น 8 (2026-11-23)
+      spWizardStep: 1,   // ดีลใหม่กรอกทีละขั้น (Stepper 2026-11-02)
+      spWizardTitles: ['ข้อมูลลูกค้าในดีลการขายครั้งนี้', 'บทบาทลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) ในดีลการขายครั้งนี้', 'ข้อมูลลูกค้าปลายทาง (ขายไปตลาดไหน?)', 'ขายสินค้าอะไรให้ลูกค้า', 'ที่มาและประเภทดีล', 'มูลค่าและโอกาสปิดดีล', 'คู่แข่งในดีลนี้', 'แผนติดตาม', 'ตรวจก่อนบันทึก'],
       spFieldHelpText: {
         // แหล่งที่มา + Fee — ความหมายยืนยันจากผู้ใช้ 2026-10-20 / เว็บซื้อข้อมูล ยังไม่มีเว็บจริง (ตัวเลือกเผื่ออนาคต)
         source_type: { title: 'แหล่งที่มาของงาน', intro: 'งานนี้มาจากไหน — ใช้ดูว่างานส่วนใหญ่ได้มาจากช่องทางไหน', rows: [
           ['Sales Hunt งานเอง', 'Sale หาลูกค้าเอง เช่น โทร เข้าพบ ลูกค้าเก่า หรือมีคนแนะนำ'],
           ['เว็บซื้อข้อมูล', 'ได้ข้อมูลโครงการหรือรายชื่อลูกค้าจากเว็บที่บริษัทซื้อข้อมูล'],
         ] },
-        fee_structure: { title: 'Fee Structure', intro: 'ดีลนี้มีค่าตอบแทนให้คนกลางหรือไม่', rows: [
+        fee_structure: { title: 'ค่าตอบแทนคนกลาง (Fee Structure)', intro: 'ดีลนี้มีค่าตอบแทนให้คนกลางหรือไม่', rows: [
           ['No fee', 'ขายตรงกับลูกค้า ไม่มีค่าแนะนำหรือค่าคอมมิชชันให้ใคร'],
           ['Referral %', 'มีผู้แนะนำงานให้ (เช่น สถาปนิก ผู้ออกแบบ คนรู้จัก) บริษัทจ่ายค่าแนะนำเป็น % ของยอดขาย'],
           ['Client to resell', 'ลูกค้าซื้อไปขายต่อหรือรวมในงานของตัวเอง (เช่น ผู้รับเหมา ตัวแทนจำหน่าย)'],
@@ -1799,9 +2058,28 @@ createApp({
           ['ไม่ใส่วันคาดปิด', 'ระบบนับรวมใน "ภายใน 3 เดือน" — ถ้าดีลแบบนี้มีเยอะ ยอด 3 เดือนจะสูงกว่าความจริง'],
           ['ควรใส่เมื่อ', 'รู้กำหนดซื้อของลูกค้า เช่น งานวาง Spec ที่รองบประมาณ ให้ใส่วันคาดปิดตามจริง'],
         ] },
-        segment: { title: 'ประเภทลูกค้า', intro: 'ลูกค้าเป็นหน่วยงานรัฐหรือบริษัทเอกชน — ระบบเติมให้จากข้อมูลลูกค้าที่เลือกในกล่อง ① แก้ได้ถ้าไม่ตรง', rows: [
-          ['ภาครัฐ (Gov)', 'หน่วยงานราชการ รัฐวิสาหกิจ โรงเรียน / โรงพยาบาลรัฐ'],
-          ['เอกชน (Private)', 'บริษัท ห้างร้าน โรงพยาบาล / โรงเรียนเอกชน'],
+        // ดีลนี้ขายแบบไหน — 3 ชั้น (ยืนยันจากผู้ใช้ 2026-11-20)
+        segment: { title: 'บทบาทลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน) ในดีลการขายครั้งนี้', intro: 'ระบบตั้งต้นค่าจากลูกค้าที่เลือก (ป้ายส้ม "เป็นข้อมูลตั้งต้นจากทะเบียนลูกค้า") ปรับได้ตามงานจริงของดีลนี้ — แก้ข้อมูลลูกค้าทีหลัง ดีลนี้ไม่เปลี่ยน', rows: [
+          ['เป็นผู้ใช้เอง (ขายตรง)', 'ผู้ซื้อใช้ของเอง — เลือกประเภท (หน่วยงานรัฐ / หน่วยงานเอกชน / บุคคลทั่วไป)'],
+          ['เป็นคนกลาง', 'ผู้ซื้อไม่ได้ใช้ของเอง เช่น ผู้รับเหมาซื้อไปทำงานให้โรงพยาบาล — เลือกประเภทคนกลาง'],
+          ['ลูกค้าเป็นคนกลาง แต่ซื้อใช้เอง', 'กด "เป็นผู้ใช้เอง" ได้ เช่น ผู้รับเหมาซื้อเข้าออฟฟิศตัวเอง'],
+        ] },
+        // คำอธิบายที่เคยวางใต้ช่องในขั้น 1 ย้ายมาไว้ในไอคอน ⓘ (ยืนยันจากผู้ใช้ 2026-11-20)
+        // ขั้น 7 แผนติดตาม — คำอธิบายเดิมใต้ช่องย้ายมาไว้ใน ⓘ (ยืนยันจากผู้ใช้ 2026-11-23)
+        next_action: { title: 'สิ่งที่ต้องทำต่อ (Next Action)', intro: 'ระบุให้ชัดว่าต้องทำอะไร เพื่อให้ติดตามงานได้ง่าย', rows: [] },
+        next_followup_date: { title: 'วันนัดติดตามครั้งถัดไป', intro: 'ติดตามเสร็จแล้วให้ใส่วันนัดครั้งถัดไป', rows: [
+          ['ถึงวันนัด', 'การ์ดดีลขึ้นสีส้ม'],
+          ['เลยวันนัด', 'การ์ดดีลขึ้นสีแดง'],
+        ] },
+        customer: { title: 'ชื่อลูกค้า (ผู้ซื้อ / ผู้จ่ายเงิน)', intro: 'ออกใบเสนอราคา / SO / หน้าบัญชี ERP ในชื่อนี้', rows: [] },
+        enduser: { title: 'ข้อมูลลูกค้าปลายทาง (ขายไปตลาดไหน?)', intro: 'ลูกค้าปลายทาง = คนที่ใช้ของจริง — ลูกค้าเป็นผู้ใช้เอง = ลูกค้ารายนี้เอง (ตลาดบังคับ) / ลูกค้าเป็นคนกลาง = คนที่คนกลางซื้อไปให้ (ไม่บังคับ ทราบก็ใส่)', rows: [
+          ['ชื่อลูกค้าปลายทาง', 'ผู้ใช้เอง = ลูกค้ารายนี้ ระบบใส่ให้ / คนกลาง = พิมพ์ชื่อถ้าทราบ เช่น โรงพยาบาล / หน่วยงาน ที่ใช้ของจริง'],
+          ['กลุ่มตลาดลูกค้าปลายทาง', 'กลุ่มของคนที่ใช้ของจริง — กรณีคนกลาง กดซ้ำที่ปุ่มเดิมเพื่อเอาออก'],
+        ] },
+        dealcontacts: { title: 'ผู้ติดต่อในดีลนี้', intro: 'ดีล 1 ดีลเลือกผู้ติดต่อได้หลายคน ตามบทบาท เช่น ผู้ตัดสินใจ ผู้ออกแบบ ผู้จัดซื้อ', rows: [
+          ['ขั้นที่ 1 ติ๊กเลือกคน', 'เลือกได้หลายคน ถ้าไม่มีในรายการ กด "+ เพิ่มผู้ติดต่อใหม่"'],
+          ['ขั้นที่ 2 เลือกบทบาท', 'เช่น ผู้ตัดสินใจ ผู้ออกแบบ ผู้จัดซื้อ — ช่องขึ้นหลังติ๊ก'],
+          ['ขั้นที่ 3 เลือกคนหลักในดีล', 'เฉพาะเมื่อเลือกหลายคน · คนเดียวระบบตั้งให้เอง'],
         ] },
       },
       spFilter: { assigned_to: '', source_type: '', period: 'all', priority: '', product_category: '', brand: '', client_q: '', value_min: '', value_max: '', segment: '', specialization: '' },
@@ -1814,12 +2092,11 @@ createApp({
       spReviewTransferOpen: false,   // หน้าต่างตรวจดีลย้อนหลัง: เปิดส่วนโอนให้ sale คนอื่น (2026-10-01)
       spReviewTransferTo: '',
       reviewSales: [],               // รายชื่อ sale ให้เลือกโอน (โหลดครั้งแรกที่เปิดหน้าต่างตรวจ)
-spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:'', expected_close:'', next_action:'', next_followup_date:'', deal_type_id:'', competitor_ids:[], notes:'' },
+spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'', product_category:'', brand:'', fee_structure:'', specialization:'', specialization_note:'', value:'', win_probability:'', expected_close:'', next_action:'', next_followup_date:'', deal_type_id:'', competitor_ids:[], competitor_other_on:false, competitor_other_note:'', competitor_mode:'', notes:'', sales_channel:'', apply_channel:false, channel_role_id:'', channel_role_note:'', end_user_name:'', channel_defaulted:{ channel:false, type:false }, account_role_id:'', account_role_note:'', account_role_name:'', account_is_intermediary:false },
       spFormHistory: [],
       dealTypes: [], // master ประเภทดีล จาก api/pipeline_items.php?action=deal_types
       competitors: [], // master คู่แข่ง จาก api/competitors.php?action=list (โหลดครั้งเดียว ค้นหาฝั่งหน้าเว็บ)
       spSavedCompetitors: [], // คู่แข่งที่บันทึกไว้ของดีลที่เปิดแก้ — แสดงที่หัว modal
-      spDupDialog: { list: null, name: '' },   // หน้าต่างพบลูกค้าที่อาจซ้ำ (2026-09-28)
       spNewContact: { show: false, full_name: '', phone: '', position: '', saving: false, existing: null },   // หน้าต่างเพิ่มผู้ติดต่อใหม่ (2026-09-29)
       spContactRows: [],      // ผู้ติดต่อของลูกค้า + คนใหม่ ในฟอร์มดีล (ติ๊ก/บทบาท/คนหลัก) — ผู้ติดต่อในดีล 2026-09-28
       contactRoles: [],       // master บทบาท จาก api/pipeline_items.php?action=contact_roles
@@ -1830,8 +2107,6 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       spAccountResults: [],
       spRecentAccounts: null,   // ลูกค้าล่าสุด โหลดครั้งแรกที่คลิกช่อง (ต่อการเปิดฟอร์ม 1 ครั้ง) — 2026-09-29
       spAccountDropdownOpen: false,
-      spAccountCreating: false,
-      spNewAccountType: '',
       spWinLossForm: { id:null, stage:'', title:'', reason:'', note:'', value:'', winner_competitor_id:'', winning_price:'', deal_competitor_ids:[] },
       winLossReasons: [], // master เหตุผลแพ้/ชนะ (api/win_loss_reasons.php) — ใช้เฉพาะ applies_to = sales / both
       // modal แยกต่างหากสำหรับดูรายละเอียดใบเสนอราคาเก่า — ไม่ใช้ modal.type/modal.data ร่วมกับ sp-form
@@ -1880,6 +2155,46 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       return Object.values(this.spKanban || {}).flat().filter(c => c && Number(c.is_import) === 1).length;
     },
     // ลูกค้าที่เลือกมี Sale คนอื่นเป็นผู้ดูแล (ไม่ใช่ลูกค้าส่วนกลาง และไม่ใช่ sale ของดีลนี้)
+    // ── ดีลนี้ขายแบบไหน (2026-11-20) ──
+    // แสดงส่วนนี้เมื่อเลือกลูกค้าแล้ว — ดีลเดิมที่ยังไม่ระบุช่องทางไม่ถาม จนกว่าจะกด "ระบุช่องทางของดีลนี้" / งานประมูลไม่ใช้
+    spShowChannel() {
+      const f = this.spForm;
+      return !!f.account_id && f.source_type !== 'ebidding' && (!f.id || !!f.sales_channel || f.apply_channel);
+    },
+    spChannelLegacy() {
+      const f = this.spForm;
+      return !!f.id && !f.sales_channel && !f.apply_channel;
+    },
+    // ตัวเลือกดูจากธง is_intermediary ของ customer_roles ห้ามเช็กจากชื่อ — ตัวที่ซ่อนแล้วยังแสดงถ้าดีลนี้ใช้อยู่
+    spSelfRole() { return this.spCustomerOptions.roles.find(r => Number(r.is_intermediary) !== 1 && Number(r.is_active) === 1) || null; },
+    spIntermediaryRoles() {
+      return this.spCustomerOptions.roles.filter(r => Number(r.is_intermediary) === 1 && (Number(r.is_active) === 1 || r.customer_role_id === this.spForm.channel_role_id));
+    },
+    spChannelRole() { return this.spCustomerOptions.roles.find(r => r.customer_role_id === this.spForm.channel_role_id) || null; },
+    spSegmentOptions() { return [{ value: 'Gov', label: 'หน่วยงานรัฐ' }, { value: 'Private', label: 'หน่วยงานเอกชน' }, { value: 'Individual', label: 'บุคคลทั่วไป' }]; },
+    // ตลาด = ชื่อจาก customer_industries (ดีลเก็บเป็นชื่อในช่อง specialization) — ตัวที่ซ่อนแล้วยังแสดงถ้าเป็นค่าที่บันทึกไว้ของดีลนี้
+    // ตลาดที่เลือกต้องพิมพ์ระบุ (customer_industries.requires_note เช่น อื่นๆ — 2026-11-23) ห้ามเช็คจากชื่อ
+    spMarketNeedsNote() {
+      const g = this.spCustomerOptions.industries.find(x => x.customer_industry_name === this.spForm.specialization);
+      return !!g && Number(g.requires_note) === 1;
+    },
+    spMarketOptions() {
+      const saved = this.modal.data?.specialization || '';
+      return this.spCustomerOptions.industries.filter(g => Number(g.is_active) === 1 || g.customer_industry_name === saved).map(g => g.customer_industry_name);
+    },
+    // ข้อความสรุปก่อนบันทึก เช่น "ขายตรง · หน่วยงานรัฐ · Hospital & Wellness" / "ขายผ่านคนกลาง · ผู้รับเหมา · Office"
+    spChannelSummary() {
+      const f = this.spForm;
+      if (!f.sales_channel) return '';
+      const parts = f.sales_channel === 'direct'
+        ? ['ขายตรง', this.spSegmentLabel(f.segment)]
+        : ['ขายผ่านคนกลาง', (this.spChannelRole?.customer_role_name || '') + (f.channel_role_note ? ' (' + f.channel_role_note + ')' : '')];
+      return [...parts, f.specialization ? f.specialization + (f.specialization_note ? ' (' + f.specialization_note + ')' : '') : ''].filter(Boolean).join(' · ');
+    },
+    // ตัวกรองกลุ่มลูกค้า: ค่าจาก master + Government ที่ดีลเดิมยังมีอยู่
+    spIndustryFilterOptions() {
+      return [...this.spCustomerOptions.industries.map(g => g.customer_industry_name), 'Government'];
+    },
     spAccountOwnedByOther() {
       const owner = Number(this.spForm?.account_owner_id || 0);
       if (!owner) return false;
@@ -1905,6 +2220,65 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
         Number(c.is_active) === 1
         && !this.spForm.competitor_ids.includes(Number(c.competitor_id))
         && c.competitor_name.toLowerCase().replace(/\s+/g, '').includes(q));
+    },
+    // ปุ่มติ๊กคู่แข่ง (2026-11-23): คู่แข่งจริงที่ใช้งานอยู่ + รายที่ดีลนี้เลือกไว้แล้ว (แม้ซ่อนไปแล้ว) เรียงตามจำนวนดีลที่ใช้ มากไปน้อย
+    // โอกาสปิดดีลเดิมที่ไม่ตรงปุ่ม 10–90% (เช่น 25%, 100% ของดีลที่ปิดแล้ว) — แสดงป้าย "ค่าเดิม" (2026-11-23)
+    spProbLegacy() {
+      const v = this.spForm.win_probability;
+      return v !== '' && v !== null && v !== undefined && ![10,20,30,40,50,60,70,80,90].includes(Number(v));
+    },
+    // ขั้น 8 ตรวจก่อนบันทึก — ข้อมูลแยกตามขั้น 1–7 (2026-11-23)
+    spReviewGroups() {
+      const f = this.spForm;
+      const contacts = this.spSelectedContactsOrdered.map(c => (c.is_primary ? '★ ' : '') + c.full_name + (c.contact_role_id ? ' (' + this.spRoleName(c.contact_role_id) + ')' : '')).join(', ');
+      const roleKind = { direct: 'ผู้ใช้เอง', indirect: 'คนกลาง' }[f.sales_channel] || '';
+      const roleType = f.sales_channel === 'direct' ? (f.segment ? this.spSegmentLabel(f.segment) : '')
+        : f.sales_channel === 'indirect' ? ((this.spChannelRole?.customer_role_name || '') + (f.channel_role_note ? ' (' + f.channel_role_note + ')' : '')) : '';
+      // ลูกค้าปลายทาง: ผู้ใช้เอง = ลูกค้ารายนี้ (แบบเดียวกับขั้น 3) / คนกลาง = ชื่อที่พิมพ์
+      const endUser = f.sales_channel === 'direct' ? f.account_name : f.end_user_name;
+      const market = f.specialization ? f.specialization + (f.specialization_note ? ' (' + f.specialization_note + ')' : '') : '';
+      const source = this.spSourceTypes.find(x => x.val === f.source_type)?.label || '';
+      const dealType = this.dealTypes.find(x => x.deal_type_id === f.deal_type_id)?.deal_type_name || '';
+      const prio = { High: 'สูง', Medium: 'กลาง', Low: 'ต่ำ' }[f.priority] || '';
+      const valueText = f.value !== '' && f.value !== null && f.value !== undefined ? this.formatPrice(f.value) : '';
+      // ไม่เลือกเจ้าของงาน = ระบบบันทึกเป็นผู้ที่ login (ดู submitSpForm) จึงแสดงชื่อตัวเอง
+      const owner = (f.assigned_to && this.salesUsers.find(u => String(u.id) === String(f.assigned_to))?.full_name) || this.currentUser?.full_name || '';
+      const groups = [
+        { step: 1, title: 'ลูกค้าและผู้ติดต่อ', rows: [['ลูกค้า', f.account_name], ['ผู้ติดต่อ', contacts]] },
+        { step: 2, title: 'บทบาทลูกค้า', rows: [['ลูกค้าเป็น', roleKind], ['ประเภท', roleType]] },
+        { step: 3, title: 'ลูกค้าปลายทาง', rows: [['ชื่อลูกค้าปลายทาง', endUser], ['กลุ่มตลาด', market]] },
+        { step: 4, title: 'สินค้า', rows: [['รายการสินค้า', f.title], ['หมวด / แบรนด์', [f.product_category, f.brand].filter(Boolean).join(' / ')]] },
+        { step: 5, title: 'ที่มาและประเภทดีล', rows: [['ที่มา', source], ['ประเภทดีล', dealType], ['ค่าตอบแทนคนกลาง', f.fee_structure]] },
+        { step: 6, title: 'มูลค่าและโอกาสปิดดีล', rows: [['มูลค่า', valueText], ['โอกาสปิดดีล', f.win_probability !== '' && f.win_probability != null ? f.win_probability + '%' : ''], ['คาดปิดดีล', f.expected_close ? this.spThaiDate(f.expected_close) : ''], ['ความสำคัญ', prio]] },
+        { step: 7, title: 'คู่แข่ง', rows: [['มีคู่แข่งไหม', { has: 'มีคู่แข่ง', none: 'ไม่มีคู่แข่ง', unknown: 'ยังไม่ทราบ' }[f.competitor_mode] || ''], ['คู่แข่ง', f.competitor_mode === 'has' ? this.spCompetitorSummary : '']] },
+        { step: 8, title: 'แผนติดตาม', rows: [['สิ่งที่ต้องทำต่อ', String(f.next_action || '').trim()], ['นัดติดตาม', f.next_followup_date ? this.spThaiDate(f.next_followup_date) : ''], ['หมายเหตุ', f.notes], ['เจ้าของงาน', owner]] },
+      ];
+      return groups;   // แสดงครบทุกกล่องเสมอ — ข้อมูลไหนยังไม่กำหนดเห็นเป็น "-"
+    },
+    // ข้อ 1 ตัวเลือก มีคู่แข่ง / ไม่มีคู่แข่ง / ยังไม่ทราบ (2026-11-23)
+    spCompetitorModes() {
+      return [{ key: 'has', label: 'มีคู่แข่ง' }, { key: 'none', label: 'ไม่มีคู่แข่ง' }, { key: 'unknown', label: 'ยังไม่ทราบ' }];
+    },
+    spCompetitorChoices() {
+      return this.competitors
+        .filter(c => Number(c.is_special) !== 1 && (Number(c.is_active) === 1 || this.spForm.competitor_ids.includes(Number(c.competitor_id))))
+        .slice().sort((x, y) => Number(y.deal_count || 0) - Number(x.deal_count || 0) || String(x.competitor_name).localeCompare(String(y.competitor_name)));
+    },
+    // ช่องค้นหา (เกิน 12 ราย) กรองชื่อ — รายที่ติ๊กไว้แล้วแสดงเสมอ
+    spCompetitorChoicesShown() {
+      const q = this.spCompetitorQuery.trim().toLowerCase().replace(/\s+/g, '');
+      if (!q) return this.spCompetitorChoices;
+      return this.spCompetitorChoices.filter(c => this.spForm.competitor_ids.includes(Number(c.competitor_id)) || c.competitor_name.toLowerCase().replace(/\s+/g, '').includes(q));
+    },
+    // บรรทัดสรุป "เลือกแล้ว: ..."
+    spCompetitorSummary() {
+      const names = this.spSelectedCompetitors.map(c => c.competitor_name);
+      if (this.spForm.competitor_other_on) names.push('อื่นๆ' + (String(this.spForm.competitor_other_note || '').trim() ? ' (' + this.spForm.competitor_other_note.trim() + ')' : ''));
+      return names.join(', ');
+    },
+    // ตัวเลือกพิเศษ "ไม่มีคู่แข่ง" / "ยังไม่ทราบ" — ปุ่มลัดใต้ช่องคู่แข่ง (2026-10-30)
+    spSpecialCompetitors() {
+      return this.competitors.filter(c => Number(c.is_active) === 1 && Number(c.is_special) === 1);
     },
     // พิมพ์แล้วไม่เจอรายไหนเลย → แสดงข้อความให้แจ้ง admin (sale เพิ่มคู่แข่งเองไม่ได้ — admin คุมรายชื่อ)
     spCompetitorNotFound() {
@@ -2629,6 +3003,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
 
     async openSpForm(card) {
       this.spFormTab = 'deal';
+      this.spWizardStep = 1;
+      this.spReturnToReview = false;
       this.spFormBase = null; this.spFormSnapshot = ''; this.spConflict = null;
       this.spQuoteSummary = null;
       this.spFormHistory = [];
@@ -2651,18 +3027,18 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
           expected_delivery_date: card.expected_delivery_date || '',
           delivered_date: card.delivered_date || '',
           next_action: card.next_action || '', notes: card.notes || '',
-          next_followup_date: card.next_followup_date || '', deal_type_id: card.deal_type_id || 'normal', competitor_ids: [],
+          next_followup_date: card.next_followup_date || '', deal_type_id: card.deal_type_id || 'normal', competitor_ids: [], competitor_other_on: !!card.competitor_other_note, competitor_other_note: card.competitor_other_note || '', competitor_mode: '',
+          ...this.spChannelFieldsFromItem(card),
         };
       } else {
-        this.spForm = { id:null, source_type:'self_sourced', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'', product_category:'', brand:'', fee_structure:'', specialization:'', value:'', win_probability:'', expected_close:'', next_action:'', next_followup_date:'', deal_type_id:'', competitor_ids:[], notes:'' };
+        this.spForm = { id:null, source_type:'self_sourced', title:'', client_name:'', account_id:null, account_is_new:false, account_name:'', account_type:'', contact_name:'', contact_phone:'', contact_position:'', assigned_to:'', stage:'Interest', segment:'', priority:'', product_category:'', brand:'', fee_structure:'', specialization:'', specialization_note:'', value:'', win_probability:'', expected_close:'', next_action:'', next_followup_date:'', deal_type_id:'', competitor_ids:[], competitor_other_on:false, competitor_other_note:'', competitor_mode:'', notes:'', sales_channel:'', apply_channel:false, channel_role_id:'', channel_role_note:'', end_user_name:'', channel_defaulted:{ channel:false, type:false }, account_role_id:'', account_role_note:'', account_role_name:'', account_is_intermediary:false };
       }
       this.spAccountQuery = '';
       this.spAccountResults = [];
       this.spRecentAccounts = null;
       this.spAccountDropdownOpen = false;
-      this.spAccountCreating = false;
-      this.spNewAccountType = '';
       this.modal = { type: 'sp-form', data: card };
+      if (!card) this.openSpAccountDropdown();   // รายการวางในหน้า — ดีลใหม่ขึ้นลูกค้าล่าสุดทันที (2026-10-30)
 
       if (card) {
         try {
@@ -2671,12 +3047,17 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
             this.spFormHistory = res.item.history || [];
             this.spSavedCompetitors = res.item.competitors || [];
             this.spForm.competitor_ids = this.spSavedCompetitors.map(c => Number(c.competitor_id));
+            this.spForm.competitor_other_note = res.item.competitor_other_note || '';
+            this.spForm.competitor_other_on = !!this.spForm.competitor_other_note;
+            this.spForm.competitor_mode = this.spCompetitorModeFromIds();
             // ผู้ติดต่อทั้งหมดของลูกค้า — คนที่อยู่ในดีลนี้ติ๊กไว้พร้อมบทบาท/คนหลัก (ผู้ติดต่อในดีล 2026-09-28)
             this.spContactRows = this.buildSpContactRows(res.item.account_contacts || [], res.item.deal_contacts || []);
             // ค่าล่าสุดจากฐานข้อมูล = จุดตั้งต้นของการกันบันทึกทับ / การ์ดในรายการอาจเก่ากว่า (โหลดไว้ก่อน) → ช่องที่ยังไม่แตะใช้ค่าล่าสุด
             for (const k of SP_LOCK_FIELDS) {
               if (this.spForm[k] === this.spFormFieldFromItem(k, card)) this.spForm[k] = this.spFormFieldFromItem(k, res.item);
             }
+            // บทบาทของลูกค้า ค่าล่าสุด (ใช้ตั้งต้นส่วน ดีลนี้ขายแบบไหน เมื่อกดระบุช่องทาง) — ช่องของดีลเองอัปเดตในลูปด้านบนแล้ว
+            Object.assign(this.spForm, this.spAccountRoleFieldsFromItem(res.item));
             this.spFormBase = this.spBaseFromItem(res.item);
           }
         } catch {}
@@ -2692,6 +3073,23 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       if (k === 'deal_type_id') return v || 'normal';
       if (k === 'priority') return v || 'Medium';
       return v ?? '';
+    },
+    // ค่าฟอร์มส่วน "ดีลนี้ขายแบบไหน" จากแถวดีล (การ์ด / api one) — ค่าที่บันทึกไว้ของดีล ไม่ใช่ค่าตั้งต้น จึงไม่มีป้ายส้ม (2026-11-20)
+    spChannelFieldsFromItem(item) {
+      return {
+        sales_channel: item?.sales_channel || '', apply_channel: false,
+        channel_role_id: item?.channel_role_id || '', channel_role_note: item?.channel_role_note || '',
+        segment: item?.segment || '', specialization: item?.specialization || '', specialization_note: item?.specialization_note || '', end_user_name: item?.end_user_name || '',
+        channel_defaulted: { channel: false, type: false },
+        ...this.spAccountRoleFieldsFromItem(item),
+      };
+    },
+    // บทบาทของลูกค้าที่ผูกกับดีล — ใช้ตั้งต้นส่วน "ดีลนี้ขายแบบไหน"
+    spAccountRoleFieldsFromItem(item) {
+      return {
+        account_role_id: item?.account_role_id || '', account_role_note: item?.account_role_note || '',
+        account_role_name: item?.account_role_name || '', account_is_intermediary: Number(item?.account_is_intermediary) === 1,
+      };
     },
     spBaseFromItem(item) {
       return Object.fromEntries(SP_LOCK_FIELDS.map(k => [k, item?.[k] ?? null]));
@@ -2709,6 +3107,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       if (!res.success) { await this.showAlert(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
       const item = res.item;
       for (const c of (this.spConflict?.conflicts || [])) this.spForm[c.field] = this.spFormFieldFromItem(c.field, item);
+      if ((this.spConflict?.conflicts || []).some(c => ['sales_channel', 'channel_role_id', 'segment'].includes(c.field))) this.spForm.channel_defaulted = { channel: false, type: false };
       this.spFormBase = this.spBaseFromItem(item);
       this.modal.data = { ...this.modal.data, ...item };
       this.spFormHistory = item.history || [];
@@ -2719,7 +3118,6 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     // คลิกช่องลูกค้า: ยังไม่พิมพ์ → ลูกค้าล่าสุด (Recent Items — ยืนยันจากผู้ใช้ 2026-09-29) / พิมพ์ไว้แล้ว → เปิดผลค้นหาเดิม
     // ลูกค้าประจำอยู่บนสุดเสมอ เลือกได้โดยไม่ต้องพิมพ์ ลดการกดสร้างใหม่ซ้ำ
     async openSpAccountDropdown() {
-      if (this.spAccountCreating) return;
       if (this.spAccountQuery.trim()) { this.spAccountDropdownOpen = true; return; }
       if (this.spRecentAccounts === null) {
         const res = await apiCall('GET', 'api/accounts.php?action=recent');
@@ -2732,7 +3130,6 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
 
     // ปุ่ม "ค้นหาชื่อนี้" ของดีลนำเข้าที่ยังไม่ผูกลูกค้า — ใส่ชื่อที่พิมพ์ไว้เดิมในช่องค้นหาแล้วค้นแบบยืดหยุ่นทันที (2026-10-14)
     searchSpAccountByClientName() {
-      this.spAccountCreating = false;
       this.spAccountQuery = this.modal.data?.client_name || '';
       this.searchSpAccounts();
     },
@@ -2755,12 +3152,13 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spForm.account_owner_id = a.owner_user_id || null;   // ผู้ดูแลลูกค้า — ใช้แจ้งเตือนเท่านั้น (2026-09-30)
       this.spForm.account_owner_name = a.owner_name || '';
       this.spForm.client_name = a.name;
-      // เติม "ประเภทลูกค้า" (segment) จากประเภทหน่วยงาน — เดิมให้เลือกซ้ำเองจนข้อมูลขัดกัน (ลูกค้าราชการ แต่ดีลบันทึกเป็น Private)
-      // ยังแก้เองได้ในฟอร์มถ้าไม่ตรง (ยืนยันจากผู้ใช้ 2026-09-23)
-      const segmentByAccountType = { government: 'Gov', private: 'Private' };
-      if (segmentByAccountType[a.account_type]) this.spForm.segment = segmentByAccountType[a.account_type];
+      // บทบาทของลูกค้า = ค่าตั้งต้นของส่วน "ดีลนี้ขายแบบไหน" (2026-11-20) — ดีลเดิมที่ยังไม่ระบุช่องทาง ไม่ตั้งให้จนกว่าจะกดระบุ
+      this.spForm.account_role_id = a.customer_role_id || '';
+      this.spForm.account_role_note = a.customer_role_note || '';
+      this.spForm.account_role_name = a.customer_role_name || '';
+      this.spForm.account_is_intermediary = Number(a.is_intermediary) === 1;
+      if (this.spShowChannel) this.applySpChannelDefaults();
       this.spAccountDropdownOpen = false;
-      this.spAccountCreating = false;
       this.spAccountQuery = '';
       this.loadSpAccountContacts(a.id);
     },
@@ -2772,48 +3170,173 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spForm.account_type = '';
       this.spForm.account_owner_id = null;
       this.spForm.account_owner_name = '';
+      this.spForm.account_role_id = '';
+      this.spForm.account_role_note = '';
+      this.spForm.account_role_name = '';
+      this.spForm.account_is_intermediary = false;
     },
+    // ── ดีลนี้ขายแบบไหน (2026-11-20) ──
+    spSegmentFromAccountType(type) { return type === 'government' ? 'Gov' : (type === 'individual' ? 'Individual' : (type === 'private' ? 'Private' : '')); },
+    spSegmentLabel(segment) { return segment === 'Gov' ? 'หน่วยงานรัฐ' : (segment === 'Individual' ? 'บุคคลทั่วไป' : (segment === 'Private' ? 'หน่วยงานเอกชน' : '')); },
+    spAccountTypeLabel(type) { return type === 'government' ? 'หน่วยงานรัฐ' : (type === 'individual' ? 'บุคคลทั่วไป' : 'หน่วยงานเอกชน'); },
+    spAccountTypeBadgeClass(type) { return type === 'government' ? 'bg-amber-100 text-amber-700' : (type === 'individual' ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'); },
+    // ตั้งต้นจากลูกค้า: ลูกค้าเป็นคนกลาง = ขายผ่านคนกลาง + ประเภทคนกลางของลูกค้า / ผู้ใช้เอง = ขายตรง + ประเภทของลูกค้า
+    // ตลาด และชื่อลูกค้าปลายทาง ไม่ตั้งต้น (ลูกค้าไม่เก็บ) — ที่กรอกไว้แล้วคงไว้
+    applySpChannelDefaults() {
+      const f = this.spForm;
+      if (f.account_is_intermediary) {
+        f.sales_channel = 'indirect'; f.channel_role_id = f.account_role_id; f.channel_role_note = f.account_role_note; f.segment = '';
+      } else {
+        f.sales_channel = 'direct'; f.channel_role_id = this.spSelfRole?.customer_role_id || ''; f.channel_role_note = ''; f.segment = this.spSegmentFromAccountType(f.account_type);
+      }
+      f.channel_defaulted = { channel: true, type: f.account_is_intermediary ? !!f.channel_role_id : !!f.segment };
+    },
+    // Sale เปลี่ยนช่องทางเอง → ป้าย "ตั้งต้นจากลูกค้า" ของช่องทางหาย / ชั้น 2 ตั้งต้นจากลูกค้าเฉพาะเมื่อตรงกับบทบาทของลูกค้า
+    setSpChannel(kind) {
+      const f = this.spForm;
+      if (f.sales_channel === kind) return;
+      f.sales_channel = kind;
+      if (kind === 'direct') {
+        f.channel_role_id = this.spSelfRole?.customer_role_id || ''; f.channel_role_note = '';
+        f.segment = f.account_is_intermediary ? '' : this.spSegmentFromAccountType(f.account_type);
+        f.channel_defaulted = { channel: false, type: !f.account_is_intermediary && !!f.segment };
+      } else {
+        f.segment = '';
+        f.channel_role_id = f.account_is_intermediary ? f.account_role_id : ''; f.channel_role_note = f.account_is_intermediary ? f.account_role_note : '';
+        f.channel_defaulted = { channel: false, type: f.account_is_intermediary && !!f.channel_role_id };
+      }
+    },
+    setSpChannelRole(roleId) {
+      if (this.spForm.channel_role_id === roleId) return;
+      this.spForm.channel_role_id = roleId;
+      this.spForm.channel_role_note = '';
+      this.spForm.channel_defaulted.type = false;
+    },
+    // ดีลเดิมที่ยังไม่ระบุช่องทาง: กดแล้วเปิดส่วนนี้ ตั้งต้นจากลูกค้า (ตลาดเดิมของดีลคงไว้ถ้ายังอยู่ในตัวเลือก)
+    startSpChannel() {
+      this.spForm.apply_channel = true;
+      this.applySpChannelDefaults();
+    },
+    // ลูกค้าใหม่สร้างในหน้าต่างแยก แล้วกลับมาที่ดีล ข้อมูลที่กรอกไว้ยังอยู่ (Quick Create — ยืนยันจากผู้ใช้ 2026-11-02)
     openSpAccountCreatePanel() {
-      this.spAccountCreating = true;
-      this.spAccountDropdownOpen = false;
-      this.spNewAccountType = '';
+      this.spNewCustomer = { show: true, name: this.spAccountQuery.trim() };
     },
-    // สร้างลูกค้าใหม่ทันทีตอนกดยืนยัน (มาตรฐาน CRM — ยืนยันจากผู้ใช้ 2026-09-29) เพื่อให้เพิ่มผู้ติดต่อใหม่ได้ทันที
-    // เดิม "จอง" ชื่อไว้แล้วสร้างตอนบันทึกดีล (2026-09-22 กันลูกค้าค้าง) — ตอนนี้มีกฎกันซ้ำแล้ว ลูกค้าที่ไม่มีดีลถือเป็นข้อมูลจริงที่ผ่านตรวจซ้ำ
-    async confirmSpAccountCreate() {
-      const name = this.spAccountQuery.trim();
-      if (!name) { await this.showAlert('กรุณาระบุชื่อหน่วยงาน/บริษัท', 'error'); return; }
-      if (!this.spNewAccountType) { await this.showAlert('กรุณาเลือกประเภทหน่วยงาน', 'error'); return; }
-      // กันลูกค้าซ้ำ (2026-09-28): ตรวจก่อนจองชื่อ — ชื่อตรงกันต้องใช้รายเดิม / ชื่อคล้ายหรือเลขภาษีซ้ำต้องกดยืนยันว่าเป็นคนละราย
-      // API สร้างลูกค้าตรวจซ้ำอีกชั้นตอนบันทึกดีล (api/accounts.php guardDuplicateAccount)
-      const dup = await apiCall('GET', 'api/accounts.php?action=check_duplicate&q=' + encodeURIComponent(name));
-      if (dup.success && dup.data.length) {
-        this.spDupDialog = { list: dup.data, name };
+    onSpNewCustomerDone({ account, contact }) {
+      this.spNewCustomer.show = false;
+      this.selectSpAccount(account);
+      if (contact) this.addOrSelectSpContact(contact);   // ติ๊กผู้ติดต่อที่เพิ่งสร้างเข้าดีล — ไม่เด้งหน้าต่างเพิ่มผู้ติดต่อซ้ำ
+    },
+    // วันนัดจากปุ่มลัด — นับจากวันนี้ตามเวลาเครื่อง (ไม่ใช้ toISOString กันวันเลื่อนจาก UTC)
+    spFollowupDate(q) {
+      const d = new Date();
+      if (q.months) d.setMonth(d.getMonth() + q.months); else d.setDate(d.getDate() + q.days);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+    // วันที่ภาษาไทย เช่น "จ. 30 พ.ย. 2569"
+    spThaiDate(iso) {
+      const [y, m, d] = String(iso || '').split('-').map(Number);
+      if (!y || !m || !d) return '';
+      return new Date(y, m - 1, d).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    },
+    // ปุ่มคำที่ใช้บ่อย: ช่องว่าง = ใส่คำ / มีข้อความแล้ว = ต่อท้ายด้วย " / " (ไม่ซ้ำคำเดิม) แล้วโฟกัสช่องให้พิมพ์ต่อ
+    addSpNextAction(t) {
+      const cur = String(this.spForm.next_action || '').trim();
+      if (!cur) this.spForm.next_action = t + ' ';
+      else if (!cur.includes(t)) this.spForm.next_action = cur + ' / ' + t + ' ';
+      this.$nextTick(() => { const el = this.$refs.spNextActionInput; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+    },
+    // เลือกตลาด — เปลี่ยนตัวเลือกแล้วล้างข้อความระบุ "อื่นๆ" เดิม
+    setSpMarket(name) {
+      if (this.spForm.specialization !== name) this.spForm.specialization_note = '';
+      this.spForm.specialization = name;
+    },
+    // คำอธิบายภาษาไทยใต้ปุ่มตลาด (customer_industries.customer_industry_description — ยืนยันจากผู้ใช้ 2026-11-23)
+    spMarketDesc(name) {
+      const g = this.spCustomerOptions.industries.find(x => x.customer_industry_name === name);
+      return g ? (g.customer_industry_description || '') : '';
+    },
+    async loadSpCustomerOptions() {
+      const res = await apiCall('GET', 'api/accounts.php?action=customer_options');
+      if (res.success) this.spCustomerOptions = res.data;
+    },
+    // ── ขั้นตอนสร้างดีล (Stepper — ยืนยันจากผู้ใช้ 2026-11-02) ──
+    spStepVisible(n) { return !!this.spForm.id || this.spWizardStep === n; },
+    spWizardGo(n) {
+      this.spWizardStep = n;
+      this.$nextTick(() => { if (this.$refs.spFormBody) this.$refs.spFormBody.scrollTop = 0; });
+    },
+    async spWizardNext() {
+      const message = this.spStepError(this.spWizardStep);
+      if (message) { await this.showAlert(message, 'error'); return; }
+      // มาแก้จากหน้าตรวจ: ตรวจขั้นที่เหลือก่อนกลับ — ขั้นไหนยังไม่ผ่าน (เช่น เปลี่ยนเป็นคนกลางแล้วต้องเลือกประเภทใหม่) ไปขั้นนั้นแทน
+      if (this.spReturnToReview) {
+        for (let step = this.spWizardStep + 1; step <= 8; step++) {
+          if (this.spStepError(step)) { this.spWizardGo(step); return; }
+        }
+        this.spReturnToReview = false;
+        this.spWizardGo(9);
         return;
       }
-      await this.createSpAccountNow(name, false);
+      this.spWizardGo(this.spWizardStep + 1);
     },
-
-    // บันทึกลูกค้าใหม่ลง DB แล้วเลือกให้ดีลนี้ — API ตรวจกันซ้ำอีกชั้น (409 → หน้าต่างพบลูกค้าที่อาจซ้ำ)
-    async createSpAccountNow(name, confirmNotDuplicate) {
-      const res = await apiCall('POST', 'api/accounts.php?action=create',
-        { name, account_type: this.spNewAccountType, confirm_not_duplicate: confirmNotDuplicate });
-      if (!res.success && res.data?.duplicates) { this.spDupDialog = { list: res.data.duplicates, name }; return; }
-      if (!res.success) { await this.showAlert(res.message || 'สร้างหน่วยงาน/บริษัทไม่สำเร็จ', 'error'); return; }
-      this.selectSpAccount({ id: res.data.id, name: res.data.name, account_type: res.data.account_type, owner_user_id: res.data.owner_user_id });
+    spEditFromReview(step) {
+      this.spReturnToReview = true;
+      this.spWizardGo(step);
     },
-
-    // เลือกรายเดิมจากหน้าต่างพบลูกค้าซ้ำ → ผูกดีลกับลูกค้ารายนั้นแทนการสร้างใหม่
-    onSpDuplicatePick(d) {
-      this.spDupDialog.list = null;
-      this.selectSpAccount(d);
-    },
-
-    // ยืนยันว่าเป็นคนละราย → สร้างลูกค้าใหม่ทันทีพร้อม confirm_not_duplicate (ระบบจดหมายเหตุว่าใครยืนยัน)
-    async onSpDuplicateConfirm() {
-      const name = this.spDupDialog.name;
-      this.spDupDialog.list = null;
-      await this.createSpAccountNow(name, true);
+    // ข้อความเตือนของแต่ละขั้น ว่าง = ผ่าน — เรียงตามช่องบนลงล่าง / ช่องบังคับเท่าเดิม ใช้ทั้งปุ่มถัดไปและตอนบันทึก
+    spStepError(step) {
+      const f = this.spForm;
+      const isEmpty = v => v === '' || v === null || v === undefined;
+      if (step === 1) {
+        if (!f.id && !f.account_id) return 'กรุณาเลือกลูกค้า หรือสร้างลูกค้าใหม่';
+        if (!f.id && !this.spContactRows.some(c => c.selected)) return 'กรุณาเลือกหรือเพิ่มผู้ติดต่อในดีลอย่างน้อย 1 คน';
+      }
+      if (step === 2) {
+        // ดีลนี้ขายแบบไหน (2026-11-20): ขายตรง = ประเภท + ตลาด บังคับ / ผ่านคนกลาง = ประเภทคนกลาง บังคับ (ตลาด + ชื่อลูกค้าปลายทาง ไม่บังคับ)
+        if (this.spShowChannel) {
+          if (!f.sales_channel) return 'กรุณาเลือกว่าลูกค้ารายนี้เป็นผู้ใช้เอง หรือเป็นคนกลาง';
+          if (f.sales_channel === 'direct') {
+            if (!f.segment) return 'กรุณาเลือกประเภท (หน่วยงานรัฐ / หน่วยงานเอกชน / บุคคลทั่วไป)';
+          } else {
+            if (!f.channel_role_id) return 'กรุณาเลือกประเภทคนกลาง';
+            if (this.spChannelRole && Number(this.spChannelRole.requires_note) === 1 && !String(f.channel_role_note || '').trim()) return `กรุณาพิมพ์ระบุ "${this.spChannelRole.customer_role_name}"`;
+          }
+        }
+      }
+      if (step === 3) {
+        // ตลาด (2026-11-23 แยกจากขั้น 2): ผู้ใช้เองบังคับ / คนกลางไม่บังคับ
+        if (this.spShowChannel && f.sales_channel === 'direct' && !this.spMarketOptions.includes(f.specialization)) return 'กรุณาเลือกกลุ่มตลาดลูกค้าปลายทาง';
+        if (this.spShowChannel && this.spMarketNeedsNote && !String(f.specialization_note || '').trim()) return `กรุณาพิมพ์ระบุกลุ่มตลาด "${f.specialization}"`;
+      }
+      if (step === 4) {
+        // ชื่อโครงการไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23)
+        if (isEmpty(f.product_category)) return 'กรุณาเลือก "หมวดสินค้า"';
+        if (isEmpty(f.brand)) return 'กรุณาเลือก "แบรนด์"';
+      }
+      if (step === 5) {
+        // ไม่มีค่าเริ่มต้นให้ ความสำคัญ / ประเภทดีล / Fee / โอกาสปิดดีล — กันเผลอกดผ่านแล้วได้ค่าที่ไม่ได้ตั้งใจ (ยืนยันจากผู้ใช้ 2026-09-23)
+        if (!f.source_type)   return 'กรุณาเลือกแหล่งที่มาของงาน';
+        if (!f.deal_type_id)  return 'กรุณาเลือกประเภทดีล';
+        if (!f.fee_structure) return 'กรุณาเลือก "ค่าตอบแทนคนกลาง (Fee Structure)"';
+      }
+      if (step === 6) {
+        if (isEmpty(f.value)) return 'กรุณากรอก "มูลค่า (บาท)"';
+        if (isEmpty(f.win_probability)) return 'กรุณาเลือกโอกาสปิดดีล';
+        if (!f.priority) return 'กรุณาเลือกระดับความสำคัญของดีล';
+        // วันคาดปิดดีลไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23) — ไม่ระบุ = นับเป็น "ภายใน 3 เดือน" ใน Weighted Pipeline
+        // เปลี่ยนเป็นปิดดีลแล้วต้องมีวันคาดส่งมอบ (API ตรวจซ้ำ) — ดีลที่ปิดไปก่อนมีกฎ แก้ฟอร์มได้โดยไม่บังคับย้อนหลัง
+        if (f.stage === 'Deal Signed' && this.modal?.data?.stage !== 'Deal Signed' && !f.expected_delivery_date) return 'กรุณาระบุวันที่คาดว่าจะส่งมอบ (ใส่วันประมาณได้)';
+        if (f.stage === 'Delivered' && this.modal?.data?.stage !== 'Delivered' && !f.delivered_date) return 'กรุณาระบุวันที่ส่งสินค้าจริง';
+        if (f.stage === 'Delivered' && f.delivered_date > this.todayIso()) return 'วันที่ส่งสินค้าจริงต้องไม่เกินวันนี้';
+      }
+      if (step === 7) {
+        // คู่แข่งบังคับเฉพาะดีลใหม่ (ดีลเก่ายังไม่มีข้อมูลคู่แข่ง — ยืนยันจากผู้ใช้ 2026-09-24)
+        if (f.competitor_other_on && !String(f.competitor_other_note || '').trim()) return 'กรุณาพิมพ์ชื่อคู่แข่ง "อื่นๆ"';
+        if (!f.id && !f.competitor_mode) return 'กรุณาเลือกว่าดีลนี้มีคู่แข่งไหม';
+        if (f.competitor_mode === 'has' && !f.competitor_ids.length && !f.competitor_other_on) return 'กรุณาติ๊กคู่แข่งอย่างน้อย 1 ราย';
+        if (!f.id && !f.competitor_ids.length && !f.competitor_other_on) return 'กรุณาเลือกคู่แข่ง (ถ้าไม่มีหรือไม่ทราบ ให้เลือก "ไม่มีคู่แข่ง" หรือ "ยังไม่ทราบ")';
+      }
+      return '';
     },
 
     // แท็บไฟล์แจ้งจำนวนไฟล์ — จำนวนเปลี่ยนหลังโหลดครั้งแรก = แนบ/ลบไฟล์ → โหลดประวัติดีลใหม่ (มีแถว "แนบไฟล์ / ลบไฟล์") (2026-10-20)
@@ -2827,51 +3350,31 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     },
 
     async submitSpForm() {
-      // ลำดับการเช็คตรงกับลำดับช่องในฟอร์ม (ลูกค้า → ผู้ติดต่อ → ชื่อโครงการ → ...) ให้เตือนช่องบนสุดที่ยังขาดก่อน
-      if (!this.spForm.id) {
-        if (!this.spForm.account_id) { await this.showAlert('กรุณาเลือกหรือสร้างหน่วยงาน/บริษัท', 'error'); return; }
-        if (!this.spContactRows.some(c => c.selected)) { await this.showAlert('กรุณาเลือกหรือเพิ่มผู้ติดต่อในดีลอย่างน้อย 1 คน', 'error'); return; }
-      }
-      // เรียงคำเตือนตามลำดับช่องบนลงล่าง (กล่อง ② → ③ → ④) — จัดใหม่หลังย้ายแหล่งที่มา/Fee ไปกล่อง ② (ยืนยันจากผู้ใช้ 2026-10-20)
-      // ไม่มีค่าเริ่มต้นให้ ความสำคัญ / ประเภทดีล / Fee / โอกาสปิดดีล — กันเผลอกดผ่านแล้วได้ค่าที่ไม่ได้ตั้งใจ (ยืนยันจากผู้ใช้ 2026-09-23)
-      const isEmpty = v => v === '' || v === null || v === undefined;
-      // ② ข้อมูลดีล
-      // ชื่อโครงการไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23 — อนาคตอาจกลับมาบังคับ) ไม่ใส่ = เก็บค่าว่าง แสดงตามจริง
-      if (!this.spForm.source_type)   { await this.showAlert('กรุณาเลือกแหล่งที่มาของงาน', 'error'); return; }
-      if (!this.spForm.fee_structure) { await this.showAlert('กรุณาเลือก "Fee Structure"', 'error'); return; }
-      if (!this.spForm.priority)      { await this.showAlert('กรุณาเลือกระดับความสำคัญ', 'error'); return; }
-      // ③ ประเภทดีล คู่แข่ง และมูลค่า
-      if (!this.spForm.deal_type_id)  { await this.showAlert('กรุณาเลือกประเภทดีล', 'error'); return; }
-      // คู่แข่งบังคับเฉพาะดีลใหม่ (ดีลเก่ายังไม่มีข้อมูลคู่แข่ง — ยืนยันจากผู้ใช้ 2026-09-24)
-      if (!this.spForm.id && !this.spForm.competitor_ids.length) {
-        await this.showAlert('กรุณาเลือกคู่แข่ง (ถ้าไม่มีหรือไม่ทราบ ให้เลือก "ไม่มีคู่แข่ง" หรือ "ยังไม่ทราบ")', 'error'); return;
-      }
-      for (const f of [
-        { key: 'value',           label: 'มูลค่า (บาท)' },
-        { key: 'win_probability', label: 'โอกาสปิดดีล (%)' },
-        // วันคาดปิดดีลไม่บังคับ (ยืนยันจากผู้ใช้ 2026-10-23) — ไม่ระบุ = นับเป็น "ภายใน 3 เดือน" ใน Weighted Pipeline (api/pipeline_items.php)
-      ]) {
-        if (isEmpty(this.spForm[f.key])) { await this.showAlert(`กรุณากรอก "${f.label}"`, 'error'); return; }
-      }
-      // เปลี่ยนเป็นปิดดีลแล้วต้องมีวันคาดส่งมอบ (API ตรวจซ้ำ) — ดีลที่ปิดไปก่อนมีกฎ แก้ฟอร์มได้โดยไม่บังคับย้อนหลัง
-      const wasDealSigned = this.modal?.data?.stage === 'Deal Signed';
-      if (this.spForm.stage === 'Deal Signed' && !wasDealSigned && !this.spForm.expected_delivery_date) { await this.showAlert('กรุณาระบุวันที่คาดว่าจะส่งมอบ (ใส่วันประมาณได้)', 'error'); return; }
-      if (this.spForm.stage === 'Delivered' && this.modal?.data?.stage !== 'Delivered' && !this.spForm.delivered_date) { await this.showAlert('กรุณาระบุวันที่ส่งสินค้าจริง', 'error'); return; }
-      if (this.spForm.stage === 'Delivered' && this.spForm.delivered_date > this.todayIso()) { await this.showAlert('วันที่ส่งสินค้าจริงต้องไม่เกินวันนี้', 'error'); return; }
-      // ④ กลุ่มลูกค้าและสินค้า
-      for (const f of [
-        { key: 'segment',          label: 'ประเภทลูกค้า' },
-        { key: 'specialization',   label: 'กลุ่มลูกค้า' },
-        { key: 'product_category', label: 'หมวดสินค้า' },
-        { key: 'brand',            label: 'แบรนด์' },
-      ]) {
-        if (isEmpty(this.spForm[f.key])) { await this.showAlert(`กรุณาเลือก "${f.label}"`, 'error'); return; }
+      for (const step of [1, 2, 3, 4, 5, 6, 7]) {
+        const message = this.spStepError(step);
+        if (message) {
+          if (!this.spForm.id) this.spWizardGo(step);
+          await this.showAlert(message, 'error');
+          return;
+        }
       }
 
       const payload = { ...this.spForm };
       if (!['Deal Signed', 'Delivered'].includes(payload.stage)) delete payload.expected_delivery_date;   // ขั้นที่ยังไม่ปิด ไม่ส่ง (ไม่ล้างค่าเดิม)
       if (payload.stage !== 'Delivered' || !payload.delivered_date) delete payload.delivered_date;   // ดีลส่งเก่าที่ไม่มีวันที่ ไม่ส่งค่าว่างไปล้าง
       delete payload.contact_name; delete payload.contact_phone; delete payload.contact_position;
+      if (!payload.competitor_other_on) payload.competitor_other_note = '';   // ไม่ติ๊ก อื่นๆ = ล้างข้อความ (2026-11-23)
+      delete payload.competitor_other_on;
+      delete payload.competitor_mode;
+      if (typeof payload.next_action === 'string') payload.next_action = payload.next_action.trim();   // ปุ่มคำที่ใช้บ่อยเว้นวรรคท้ายไว้ให้พิมพ์ต่อ
+      // ส่วน "ดีลนี้ขายแบบไหน" (2026-11-20): API ตัดสินช่องทางจากประเภทที่เลือก (channel_role_id) / ตลาดส่งเป็นรหัส deal_industry_id
+      // ดีลเดิมที่ยังไม่ระบุช่องทาง ไม่ส่งช่องเหล่านี้ (ไม่แตะค่าเดิม) จนกว่าจะกด "ระบุช่องทางของดีลนี้"
+      payload.apply_channel = this.spShowChannel;
+      payload.deal_industry_id = this.spCustomerOptions.industries.find(g => g.customer_industry_name === this.spForm.specialization)?.customer_industry_id || '';
+      if (!this.spMarketNeedsNote) payload.specialization_note = '';
+      delete payload.specialization; delete payload.sales_channel; delete payload.channel_defaulted;
+      if (!payload.apply_channel) { delete payload.segment; delete payload.channel_role_id; delete payload.channel_role_note; delete payload.end_user_name; delete payload.deal_industry_id; delete payload.specialization_note; }
+      delete payload.account_role_id; delete payload.account_role_note; delete payload.account_role_name; delete payload.account_is_intermediary;
       if (payload.account_id) payload.deal_contacts = this.spDealContactsPayload();
       if (!payload.assigned_to) payload.assigned_to = this.currentUser.id;
       payload.win_probability = Math.min(100, Math.max(0, Number(payload.win_probability) || 0)) / 100;
@@ -3014,6 +3517,7 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
     },
 
     async loadDealTypes() {
+      this.loadSpCustomerOptions();
       const res = await apiCall('GET', 'api/pipeline_items.php?action=deal_types');
       if (res.success) this.dealTypes = res.items;
     },
@@ -3034,6 +3538,48 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       }
       this.spCompetitorQuery = '';
       this.spCompetitorDropdownOpen = false;
+    },
+    // ตัวเลือกพิเศษตามรหัส (ห้ามเช็คชื่อ — admin แก้ชื่อได้)
+    spSpecialCompetitorId(code) {
+      const c = this.competitors.find(x => x.competitor_code === code);
+      return c ? Number(c.competitor_id) : null;
+    },
+    // ค่าข้อ 1 จากคู่แข่งที่บันทึกไว้ (ดีลเดิม)
+    spCompetitorModeFromIds() {
+      const ids = this.spForm.competitor_ids;
+      if (ids.includes(this.spSpecialCompetitorId('CP-NONE'))) return 'none';
+      if (ids.includes(this.spSpecialCompetitorId('CP-UNKNOWN'))) return 'unknown';
+      return (ids.length || this.spForm.competitor_other_on) ? 'has' : '';
+    },
+    // เลือกข้อ 1: ไม่มี / ยังไม่ทราบ = ตัวเลือกพิเศษตัวเดียว ล้างรายชื่อ + อื่นๆ / มีคู่แข่ง = เอาตัวเลือกพิเศษออก
+    setSpCompetitorMode(mode) {
+      this.spForm.competitor_mode = mode;
+      if (mode === 'has') {
+        const specials = [this.spSpecialCompetitorId('CP-NONE'), this.spSpecialCompetitorId('CP-UNKNOWN')];
+        this.spForm.competitor_ids = this.spForm.competitor_ids.filter(x => !specials.includes(x));
+        return;
+      }
+      const id = this.spSpecialCompetitorId(mode === 'none' ? 'CP-NONE' : 'CP-UNKNOWN');
+      this.spForm.competitor_ids = id ? [id] : [];
+      this.spForm.competitor_other_on = false;
+      this.spForm.competitor_other_note = '';
+    },
+    // ติ๊ก / เอาติ๊กออก (2026-11-23) — ตัวเลือกพิเศษเลือกเดี่ยว ๆ: เลือกแล้วล้างคู่แข่งอื่นและ "อื่นๆ"
+    toggleSpCompetitor(c) {
+      const id = Number(c.competitor_id);
+      if (this.spForm.competitor_ids.includes(id)) { this.removeSpCompetitor(id); return; }
+      this.addSpCompetitor(c);
+      if (Number(c.is_special) === 1) { this.spForm.competitor_other_on = false; this.spForm.competitor_other_note = ''; }
+    },
+    // "อื่นๆ" ติ๊กแล้วเอาตัวเลือกพิเศษออก / เอาติ๊กออกแล้วล้างข้อความ
+    toggleSpCompetitorOther() {
+      this.spForm.competitor_other_on = !this.spForm.competitor_other_on;
+      if (this.spForm.competitor_other_on) {
+        const isSpecial = cid => Number(this.competitors.find(x => Number(x.competitor_id) === cid)?.is_special) === 1;
+        this.spForm.competitor_ids = this.spForm.competitor_ids.filter(x => !isSpecial(x));
+      } else {
+        this.spForm.competitor_other_note = '';
+      }
     },
     removeSpCompetitor(id) {
       this.spForm.competitor_ids = this.spForm.competitor_ids.filter(x => x !== Number(id));
