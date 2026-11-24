@@ -4,6 +4,9 @@
 // GET  by_deal   — กล่อง "ใบเสนอราคา" ในดีล (AppQuoteRequests ใน shared/app.js) — คำขอของดีล + ขอได้ไหม
 // POST create    — Sale เจ้าของดีล / admin ขอใบเสนอราคา
 // POST cancel    — ยกเลิกคำขอที่ยังไม่ออกใบ
+// POST add_files — แนบไฟล์เพิ่มให้คำขอที่ยังไม่ออกใบ (multipart)
+// ไฟล์ที่ส่งให้ธุรการ (2026-11-24): create / add_files รับ multipart — file_ids[] (ไฟล์ที่มีในดีล) + files[] / new_file_categories[] (ไฟล์ใหม่)
+//   ไฟล์ใหม่เก็บเข้าไฟล์ของดีล แล้วผูกกับคำขอผ่าน quote_request_files — คำขอละไม่เกิน 5 ไฟล์ (includes/quote_request_helper.php)
 // ระบบใบเสนอราคาเรียก api/quote_requests_ext.php (token) แยกต่างหาก — กติกาอยู่ที่ includes/quote_request_helper.php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
@@ -27,6 +30,7 @@ switch ($method) {
         switch ($action) {
             case 'create': createQuoteRequest($db, $user); break;
             case 'cancel': cancelQuoteRequest($db, $user); break;
+            case 'add_files': addQuoteRequestFiles($db, $user); break;
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -47,7 +51,8 @@ function listQuoteRequests(PDO $db, array $user): void {
                  qr.requested_at DESC
         LIMIT 500");
     $stmt->execute($params);
-    jsonResponse(true, attachQuoteViewUrls($db, $stmt->fetchAll(PDO::FETCH_ASSOC), $user));
+    $rows = attachQuoteViewUrls($db, $stmt->fetchAll(PDO::FETCH_ASSOC), $user);
+    jsonResponse(true, attachQuoteRequestFiles($db, $rows));
 }
 
 function dealQuoteRequests(PDO $db, array $user): void {
@@ -58,12 +63,17 @@ function dealQuoteRequests(PDO $db, array $user): void {
     $stmt = $db->prepare(quoteRequestSelectSql() . ' WHERE qr.pipeline_item_id = ? ORDER BY qr.requested_at DESC');
     $stmt->execute([$deal['id']]);
     $requests = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($requests as &$r) $r['can_cancel'] = in_array($r['status'], QUOTE_REQUEST_OPEN_STATUSES, true) && canCancelQuoteRequest($user, $r);
+    $canRequest = canRequestQuote($user, $deal);
+    foreach ($requests as &$r) {
+        $isOpen = in_array($r['status'], QUOTE_REQUEST_OPEN_STATUSES, true);
+        $r['can_cancel'] = $isOpen && canCancelQuoteRequest($user, $r);
+        $r['can_add_files'] = $isOpen && $canRequest;   // แนบไฟล์เพิ่มได้จนกว่าธุรการจะออกใบ
+    }
     unset($r);
+    $requests = attachQuoteRequestFiles($db, $requests);
     $requests = attachQuoteViewUrls($db, $requests, $user);
     $requests = attachQuoteRevisions($db, $requests, $user);   // ทุก Rev ของใบ — 1 Rev = 1 การ์ด (แบบ ข 2026-10-29)
 
-    $canRequest = canRequestQuote($user, $deal);
     jsonResponse(true, [
         'requests'     => $requests,
         'can_request'  => $canRequest,
@@ -72,11 +82,21 @@ function dealQuoteRequests(PDO $db, array $user): void {
         'value_from_quotes' => $deal['source_type'] !== 'ebidding',
         // ใบที่ออกแล้วของดีลนี้ — ให้เลือกตอน "ขอแก้ไขใบเดิม" (Revision)
         'quotations'   => array_values(array_unique(array_filter(array_column($requests, 'quotation_id')))),
+        // ไฟล์ของดีลให้ติ๊กเลือกในฟอร์มขอใบ + ประเภทไฟล์ของไฟล์ใหม่ (เฉพาะคนที่ขอใบได้)
+        'deal_files'      => $canRequest ? quoteRequestDealFiles($db, (int)$deal['id']) : [],
+        'file_categories' => $canRequest ? quoteRequestFileCategories($db) : [],
+        'max_files'       => QUOTE_REQUEST_MAX_FILES,
+        'default_file_category' => QUOTE_REQUEST_FILE_CATEGORY,
     ]);
 }
 
+/** body ของ POST: multipart (มีไฟล์) = $_POST / JSON = getJsonBody() */
+function quoteRequestBody(): array {
+    return stripos((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/form-data') !== false ? $_POST : getJsonBody();
+}
+
 function createQuoteRequest(PDO $db, array $user): void {
-    $body = getJsonBody();
+    $body = quoteRequestBody();
     $deal = quoteRequestDeal($db, trim($body['project_code'] ?? ''));
     if (!$deal) jsonResponse(false, null, 'ไม่พบงาน', 404);
     if (!canRequestQuote($user, $deal)) jsonResponse(false, null, 'ขอใบเสนอราคาได้เฉพาะ Sale เจ้าของงาน', 403);
@@ -107,6 +127,10 @@ function createQuoteRequest(PDO $db, array $user): void {
         $neededBy = $neededByInput;
     }
 
+    // ไฟล์ที่ส่งให้ธุรการ: ตรวจครบก่อน แล้วค่อยย้ายเข้า storage (ไม่ผ่าน = ยังไม่มีอะไรถูกบันทึก)
+    $files = collectQuoteRequestFiles($db, (int)$deal['id'], $body);
+    $files['uploads'] = storeQuoteRequestUploads($files['uploads']);
+
     $db->beginTransaction();
     try {
         $code = nextQuoteRequestCode($db, (int)$user['id']);
@@ -116,15 +140,18 @@ function createQuoteRequest(PDO $db, array $user): void {
            ->execute([$code, $deal['id'], $deal['project_code'], $requestType, $refQuotation, $issueBy,
                       $note !== '' ? $note : null, $neededBy, $user['id'], $user['id'], $user['id']]);
         $id = (int)$db->lastInsertId();
+        $fileCount = linkQuoteRequestFiles($db, $deal, $id, $code, (int)$user['id'], $files);
         $db->commit();
     } catch (Throwable $e) {
         $db->rollBack();
+        discardStoredDealFiles(array_column($files['uploads'], 'stored'));   // ไม่ทิ้งไฟล์ค้าง
         throw $e;
     }
 
     $msg = $issueBy === 'salesadmin'
         ? "ส่งคำขอ {$code} ให้ธุรการขายแล้ว — ระบบแจ้งธุรการให้แล้ว"
         : "สร้างคำขอ {$code} แล้ว — เปิดระบบใบเสนอราคาแล้วเลือกคำขอนี้เพื่อออกใบ";
+    if ($fileCount) $msg .= " (แนบไฟล์ {$fileCount} ไฟล์)";
     if ($issueBy === 'salesadmin') {
         respondThenContinue(['quote_request_code' => $code], $msg);   // แจ้ง LINE หลังตอบหน้าเว็บ ผู้ใช้ไม่ต้องรอ
         notifyQuoteRequested($db, $id, $user);
@@ -152,4 +179,39 @@ function cancelQuoteRequest(PDO $db, array $user): void {
         exit;
     }
     jsonResponse(true, null, $msg);
+}
+
+/**
+ * แนบไฟล์เพิ่มให้คำขอที่ยังไม่ออกใบ (รอออกใบ / รับเรื่องแล้ว) — Sale เจ้าของดีล / admin (สิทธิ์เดียวกับการขอใบ)
+ * multipart: quote_request_code + file_ids[] และ/หรือ files[] / new_file_categories[] — รวมกับที่ผูกไว้แล้วไม่เกิน 5 ไฟล์
+ */
+function addQuoteRequestFiles(PDO $db, array $user): void {
+    $body = quoteRequestBody();
+    $stmt = $db->prepare(quoteRequestSelectSql() . ' WHERE qr.quote_request_code = ?');
+    $stmt->execute([trim((string)($body['quote_request_code'] ?? ''))]);
+    $req = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$req) jsonResponse(false, null, 'ไม่พบคำขอ', 404);
+    $deal = quoteRequestDeal($db, (string)$req['project_code']);
+    if (!$deal || (int)$deal['id'] !== (int)$req['pipeline_item_id']) jsonResponse(false, null, 'ไม่พบงาน', 404);
+    if (!canRequestQuote($user, $deal)) jsonResponse(false, null, 'แนบไฟล์ได้เฉพาะ Sale เจ้าของงาน', 403);
+    if (!in_array($req['status'], QUOTE_REQUEST_OPEN_STATUSES, true)) jsonResponse(false, null, 'คำขอนี้' . QUOTE_REQUEST_STATUS_LABELS[$req['status']] . ' แนบไฟล์เพิ่มไม่ได้', 400);
+
+    $linked = $db->prepare('SELECT pipeline_item_file_id FROM quote_request_files WHERE quote_request_id = ?');
+    $linked->execute([$req['quote_request_id']]);
+    $linkedIds = array_map('intval', $linked->fetchAll(PDO::FETCH_COLUMN));
+
+    $files = collectQuoteRequestFiles($db, (int)$deal['id'], $body, count($linkedIds), $linkedIds);
+    if (!$files['picked'] && !$files['uploads']) jsonResponse(false, null, 'กรุณาเลือกไฟล์', 400);
+    $files['uploads'] = storeQuoteRequestUploads($files['uploads']);
+
+    $db->beginTransaction();
+    try {
+        $count = linkQuoteRequestFiles($db, $deal, (int)$req['quote_request_id'], $req['quote_request_code'], (int)$user['id'], $files);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        discardStoredDealFiles(array_column($files['uploads'], 'stored'));
+        throw $e;
+    }
+    jsonResponse(true, null, "แนบไฟล์เพิ่มให้คำขอ {$req['quote_request_code']} แล้ว {$count} ไฟล์");
 }

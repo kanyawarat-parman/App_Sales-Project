@@ -6,7 +6,8 @@
 // ใช้ร่วมกันโดย api/quote_requests.php (คนที่ login) และ api/quote_requests_ext.php (ระบบใบเสนอราคา ใช้ token)
 require_once __DIR__ . '/code_helper.php';
 require_once __DIR__ . '/notify_helper.php';
-require_once __DIR__ . '/delivery_helper.php';   // thaiShortDate() — วันที่ต้องการใบในข้อความแจ้งเตือน
+require_once __DIR__ . '/delivery_helper.php';
+require_once __DIR__ . '/deal_file_helper.php';   // ไฟล์ที่ส่งให้ธุรการกับคำขอ = ไฟล์ของดีล (2026-11-24)   // thaiShortDate() — วันที่ต้องการใบในข้อความแจ้งเตือน
 
 const QUOTE_REQUEST_DIRECT_STAGES = ['Interest', 'Send PI', 'Negotiating'];
 const QUOTE_REQUEST_BID_STAGES    = ['ชนะการประมูล'];
@@ -288,6 +289,169 @@ function quoteRequestContacts(PDO $db, int $pipelineItemId): array {
     return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
+/* ── ไฟล์ที่ส่งให้ธุรการกับคำขอ (แบบ Salesforce Files — ยืนยันจากผู้ใช้ 2026-11-24, sql/add_quote_request_files.sql) ──
+   ไฟล์จริงอยู่ที่ไฟล์ของดีล (pipeline_item_files / แท็บ "ไฟล์") — คำขอแค่ผูกผ่าน quote_request_files (1 ไฟล์ผูกได้หลายคำขอ)
+   Sale เลือกไฟล์ที่มีในดีล และ/หรืออัปโหลดใหม่ (เข้าไฟล์ของดีลเองอัตโนมัติ) / คำขอละไม่เกิน 5 ไฟล์ ไฟล์ละไม่เกิน 20 MB
+   เปิดไฟล์ผ่าน api/deal_files.php?action=download ต้อง login ตามปกติ (ไม่มีลิงก์เปิดได้โดยไม่ login) */
+const QUOTE_REQUEST_MAX_FILES     = 5;
+const QUOTE_REQUEST_FILE_CATEGORY = 'quote_ref';   // ประเภทตั้งต้นของไฟล์ที่อัปโหลดจากฟอร์มขอใบ ("ข้อมูลขอใบเสนอราคา")
+
+/**
+ * เติม files ให้แต่ละคำขอ: [{id, original_name, mime_type, file_size, file_category_name, deleted, download_url, view_url}]
+ * $absolute = true → ลิงก์เต็ม APP_URL (ระบบใบเสนอราคาเปิดจากเว็บอื่น) + &qr= ให้ไปหน้า login แล้วกลับมาที่คำขอนั้น
+ * ไฟล์ที่ถูกลบแล้วยังแสดงชื่อ (deleted = true, ไม่มีลิงก์) — ยังไม่ได้รัน SQL = files ว่าง
+ */
+function attachQuoteRequestFiles(PDO $db, array $rows, bool $absolute = false): array {
+    $ids = array_values(array_unique(array_map('intval', array_column($rows, 'quote_request_id'))));
+    $byRequest = [];
+    if ($ids) {
+        try {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            $st = $db->prepare("SELECT qrf.quote_request_id, f.pipeline_item_file_id AS id, f.original_name, f.mime_type, f.file_size,
+                                       c.file_category_name, f.deleted_at
+                                FROM quote_request_files qrf
+                                JOIN pipeline_item_files f ON f.pipeline_item_file_id = qrf.pipeline_item_file_id
+                                JOIN file_categories c ON c.file_category_id = f.file_category_id
+                                WHERE qrf.quote_request_id IN ($in)
+                                ORDER BY qrf.quote_request_file_id");
+            $st->execute($ids);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $f) $byRequest[(int)$f['quote_request_id']][] = $f;
+        } catch (PDOException $e) {
+            error_log('[quote] attachQuoteRequestFiles (ยังไม่ได้รัน sql/add_quote_request_files.sql?): ' . $e->getMessage());
+        }
+    }
+    $base = $absolute ? rtrim((string)(defined('APP_URL') ? APP_URL : ''), '/') . '/' : '';
+    foreach ($rows as &$r) {
+        $files = [];
+        foreach ($byRequest[(int)$r['quote_request_id']] ?? [] as $f) {
+            $deleted = $f['deleted_at'] !== null;
+            $url = $base . 'api/deal_files.php?action=download&id=' . (int)$f['id'] . ($absolute ? '&qr=' . rawurlencode($r['quote_request_code']) : '');
+            $canPreview = in_array($f['mime_type'], ['application/pdf', 'image/jpeg', 'image/png'], true);
+            $files[] = [
+                'id' => (int)$f['id'], 'original_name' => $f['original_name'], 'mime_type' => $f['mime_type'], 'file_size' => (int)$f['file_size'],
+                'file_category_name' => $f['file_category_name'], 'deleted' => $deleted,
+                'download_url' => $deleted ? null : $url,
+                'view_url'     => $deleted || !$canPreview ? null : $url . '&inline=1',
+            ];
+        }
+        $r['files'] = $files;
+    }
+    unset($r);
+    return $rows;
+}
+
+/** ไฟล์ของดีลที่ยังใช้งานอยู่ ให้ Sale ติ๊กเลือกในฟอร์มขอใบ — ใหม่สุดก่อน + คำขอที่เคยใช้ไฟล์นั้น */
+function quoteRequestDealFiles(PDO $db, int $pipelineItemId): array {
+    $st = $db->prepare("SELECT f.pipeline_item_file_id AS id, f.original_name, f.mime_type, f.file_size, c.file_category_name,
+                               u.full_name AS created_by_name, f.created_at
+                        FROM pipeline_item_files f
+                        JOIN file_categories c ON c.file_category_id = f.file_category_id
+                        LEFT JOIN users u ON u.id = f.created_by
+                        WHERE f.pipeline_item_id = ? AND f.deleted_at IS NULL
+                        ORDER BY f.created_at DESC, f.pipeline_item_file_id DESC");
+    $st->execute([$pipelineItemId]);
+    $links = dealFileQuoteLinks($db, $pipelineItemId);
+    $files = $st->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($files as &$f) {
+        $f['id'] = (int)$f['id'];
+        $f['file_size'] = (int)$f['file_size'];
+        $f['quote_request_codes'] = array_column($links[$f['id']] ?? [], 'quote_request_code');
+    }
+    unset($f);
+    return $files;
+}
+
+/** ประเภทไฟล์ที่ใช้งานอยู่ (ให้เลือกประเภทของไฟล์ใหม่ในฟอร์มขอใบ — ค่าตั้งต้น quote_ref) */
+function quoteRequestFileCategories(PDO $db): array {
+    return $db->query('SELECT file_category_id, file_category_name FROM file_categories WHERE is_active = 1 ORDER BY sort_order, file_category_name')
+              ->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * ไฟล์ที่ส่งมากับคำขอ (multipart) → ['picked' => [file id ที่ตรวจแล้ว], 'uploads' => [[file, mime, category_id, category_name], ...]]
+ * ตรวจครบทุกอย่างก่อนย้ายไฟล์: ไฟล์ที่เลือกต้องเป็นของดีลนี้และยังไม่ถูกลบ / ไฟล์ใหม่ชนิด+ขนาดถูก / ประเภทถูก / รวมกับที่ผูกอยู่แล้วไม่เกิน 5
+ * ไม่ผ่าน = ตอบ error แล้วจบ (ยังไม่มีอะไรถูกบันทึก)
+ */
+function collectQuoteRequestFiles(PDO $db, int $pipelineItemId, array $body, int $alreadyLinked = 0, array $alreadyLinkedIds = []): array {
+    $picked = array_values(array_unique(array_filter(array_map('intval', (array)($body['file_ids'] ?? [])))));
+    $picked = array_values(array_diff($picked, $alreadyLinkedIds));   // ผูกไว้แล้ว ไม่นับซ้ำ
+    if ($picked) {
+        $in = implode(',', array_fill(0, count($picked), '?'));
+        $st = $db->prepare("SELECT pipeline_item_file_id FROM pipeline_item_files WHERE pipeline_item_id = ? AND deleted_at IS NULL AND pipeline_item_file_id IN ($in)");
+        $st->execute(array_merge([$pipelineItemId], $picked));
+        if (count($st->fetchAll(PDO::FETCH_COLUMN)) !== count($picked)) jsonResponse(false, null, 'ไฟล์ที่เลือกบางไฟล์ไม่อยู่ในดีลนี้หรือถูกลบไปแล้ว — กรุณาเปิดฟอร์มใหม่', 400);
+    }
+
+    // $_FILES['files'] แบบหลายไฟล์ → รายการทีละไฟล์ / ประเภทของแต่ละไฟล์ส่งมาใน new_file_categories[] ลำดับเดียวกัน
+    $uploads = [];
+    $raw = $_FILES['files'] ?? null;
+    $categories = (array)($body['new_file_categories'] ?? []);
+    if ($raw && is_array($raw['name'])) {
+        foreach ($raw['name'] as $i => $name) {
+            if ($raw['error'][$i] === UPLOAD_ERR_NO_FILE) continue;
+            $file = ['name' => $name, 'type' => $raw['type'][$i], 'tmp_name' => $raw['tmp_name'][$i], 'error' => $raw['error'][$i], 'size' => $raw['size'][$i]];
+            $categoryId = trim((string)($categories[$i] ?? '')) ?: QUOTE_REQUEST_FILE_CATEGORY;
+            $categoryName = activeFileCategoryName($db, $categoryId);
+            if ($categoryName === null) {
+                jsonResponse(false, null, $categoryId === QUOTE_REQUEST_FILE_CATEGORY
+                    ? 'ยังไม่ได้ติดตั้งประเภทไฟล์ "ข้อมูลขอใบเสนอราคา" (sql/add_quote_request_files.sql) — แจ้งผู้ดูแลระบบ'
+                    : 'ประเภทไฟล์ของ ' . $name . ' ไม่ถูกต้อง', 400);
+            }
+            $uploads[] = ['file' => $file, 'mime' => validateUploadedDealFile($file), 'category_id' => $categoryId, 'category_name' => $categoryName];
+        }
+    }
+
+    if ($alreadyLinked + count($picked) + count($uploads) > QUOTE_REQUEST_MAX_FILES) {
+        jsonResponse(false, null, 'ส่งไฟล์กับคำขอได้ไม่เกิน ' . QUOTE_REQUEST_MAX_FILES . ' ไฟล์' . ($alreadyLinked ? " (ผูกไว้แล้ว {$alreadyLinked} ไฟล์)" : ''), 400);
+    }
+    return ['picked' => $picked, 'uploads' => $uploads];
+}
+
+/** ย้ายไฟล์ใหม่เข้า storage (หลังตรวจครบแล้ว) — คืนรายการเดิมพร้อม stored */
+function storeQuoteRequestUploads(array $uploads): array {
+    foreach ($uploads as &$u) $u['stored'] = storeUploadedDealFile($u['file'], $u['mime']);
+    unset($u);
+    return $uploads;
+}
+
+/**
+ * บันทึกไฟล์ใหม่เข้าไฟล์ของดีล + ผูกไฟล์ทั้งหมดกับคำขอ + ประวัติดีล (เรียกภายใน transaction ของผู้เรียก) — คืนจำนวนไฟล์ที่ผูกเพิ่ม
+ */
+function linkQuoteRequestFiles(PDO $db, array $deal, int $quoteRequestId, string $code, int $userId, array $files): int {
+    $ins = $db->prepare('INSERT IGNORE INTO quote_request_files (quote_request_id, pipeline_item_file_id, created_by, updated_by) VALUES (?, ?, ?, ?)');
+    $count = 0;
+    foreach ($files['uploads'] as $u) {
+        $fileId = insertDealFileRow($db, $deal, $userId, $u['stored'], $u['category_id'], $u['category_name'], null, " — ส่งให้ธุรการกับคำขอ {$code}");
+        $ins->execute([$quoteRequestId, $fileId, $userId, $userId]);
+        $count++;
+    }
+    if ($files['picked']) {
+        $names = [];
+        $nameSt = $db->prepare('SELECT original_name FROM pipeline_item_files WHERE pipeline_item_file_id = ?');
+        foreach ($files['picked'] as $fileId) {
+            $ins->execute([$quoteRequestId, $fileId, $userId, $userId]);
+            if ($ins->rowCount() > 0) {
+                $count++;
+                $nameSt->execute([$fileId]);
+                $names[] = (string)$nameSt->fetchColumn();
+            }
+        }
+        if ($names) logDealFileHistory($db, $deal, $userId, "ส่งไฟล์ในดีลให้ธุรการกับคำขอ {$code}: " . implode(', ', $names));
+    }
+    return $count;
+}
+
+/** จำนวนไฟล์ที่ผูกกับคำขอ (ใช้ในข้อความแจ้งเตือน) — ยังไม่ได้รัน SQL = 0 */
+function quoteRequestFileCount(PDO $db, int $quoteRequestId): int {
+    try {
+        $st = $db->prepare('SELECT COUNT(*) FROM quote_request_files WHERE quote_request_id = ?');
+        $st->execute([$quoteRequestId]);
+        return (int)$st->fetchColumn();
+    } catch (PDOException $e) {
+        return 0;
+    }
+}
+
 /**
  * ยกเลิกคำขอที่ค้างอยู่ของดีลที่ไม่อยู่ในสถานะที่ขอได้แล้ว (ปิดดีล / แพ้ / ส่งมอบ / ยกเลิกงาน)
  * เรียกหลังเปลี่ยนสถานะดีลทุกจุด (api/pipeline_items.php updateItem, api/assignments.php updateAssignment)
@@ -324,10 +488,12 @@ function notifyQuoteRequested(PDO $db, int $quoteRequestId, array $user): void {
         $type  = $req['request_type'] === 'revision' ? "ขอแก้ไขใบ {$req['ref_quotation_id']}" : 'ขอใบเสนอราคาใหม่';
         $title = mb_strlen($req['title']) > 80 ? mb_substr($req['title'], 0, 80) . '...' : $req['title'];
         $note  = trim((string)$req['request_note']);
+        $fileCount = quoteRequestFileCount($db, $quoteRequestId);   // ไฟล์ที่ Sale ส่งมากับคำขอ (2026-11-24) — ไม่ส่งตัวไฟล์ไปในข้อความ
         $data = [
             'title'      => "📄 {$req['sale_name']} {$type}",
             'body'       => "{$req['quote_request_code']} · {$req['project_code']} {$title}"
-                          . ($req['needed_by_date'] ? ' · ต้องการภายใน ' . thaiShortDate($req['needed_by_date']) : ''),
+                          . ($req['needed_by_date'] ? ' · ต้องการภายใน ' . thaiShortDate($req['needed_by_date']) : '')
+                          . ($fileCount ? " · แนบไฟล์ {$fileCount} ไฟล์" : ''),
             'ref_type'   => 'quote_request',
             'ref_id'     => $quoteRequestId,
             'page'       => 'quote-requests.html?code=' . rawurlencode($req['quote_request_code']),
@@ -335,7 +501,8 @@ function notifyQuoteRequested(PDO $db, int $quoteRequestId, array $user): void {
             'line_body'  => "{$req['quote_request_code']} · {$req['project_code']}\n{$title}\nลูกค้า: " . ($req['customer_name'] ?: '-')
                           . "\nประเภทงาน: {$kind}\nSale: {$req['sale_name']}"
                           . ($req['needed_by_date'] ? "\nต้องการใบภายใน: " . thaiShortDate($req['needed_by_date']) : '')
-                          . ($note !== '' ? "\nรายละเอียด: " . mb_substr($note, 0, 300) : ''),
+                          . ($note !== '' ? "\nรายละเอียด: " . mb_substr($note, 0, 300) : '')
+                          . ($fileCount ? "\n📎 แนบไฟล์ {$fileCount} ไฟล์ — เปิดดูในคำขอ" : ''),
         ];
         $admins = $db->query("SELECT id FROM users WHERE role = 'salesadmin' AND is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
         foreach ($admins as $adminId) notify($db, 'quote_requested', (int)$adminId, $data, (int)$user['id']);

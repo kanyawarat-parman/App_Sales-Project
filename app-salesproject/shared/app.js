@@ -1416,7 +1416,8 @@ const AppBidAccountPicker = {
    - ขายตรง: ขอได้ตอน สนใจ / ส่ง PI / ต่อรอง — งานประมูล: ขอได้เฉพาะ "ชนะการประมูล" (API ตัดสิน ส่ง block_reason มา)
    - Sale เลือก "ให้ธุรการออก" (แจ้งธุรการ + ต้องมีรายละเอียด) หรือ "ออกเอง" / ใบใหม่ หรือ แก้ไขใบเดิม (Revision)
    - ค้างได้ทีละ 1 คำขอต่อดีล / ยกเลิกได้ก่อนออกใบ (ต้องมีเหตุผล)
-   ใช้: <app-quote-requests :project-code="..." @changed="..." @summary="..."></app-quote-requests> — โหลดเองจาก api/quote_requests.php?action=by_deal
+   - ไฟล์ที่ส่งให้ธุรการ (2026-11-24): ติ๊กไฟล์ในดีล + อัปโหลดใหม่ (AppQuoteFilePicker) / การ์ดแสดงไฟล์ (AppQuoteRequestFiles) / แนบเพิ่มได้จนออกใบ
+   ใช้: <app-quote-requests :project-code="..." @changed="..." @summary="..." @files-changed="..."></app-quote-requests> — โหลดเองจาก api/quote_requests.php?action=by_deal
    วางในแท็บ "ใบเสนอราคา" ของหน้าต่างรายละเอียด (Record Page: หัวสรุป + แท็บ — ยืนยันจากผู้ใช้ 2026-10-14) ปุ่มขอใบอยู่มุมขวาบนของกล่อง
    @summary ส่งสรุป {short, sub, cls, count} (หรือ null) ให้หน้าที่ใช้แสดงกล่อง "ใบเสนอราคา" บนหัวสรุป + ตัวเลขบนแท็บ
    ใช้ใน sales-pipeline.html, bid-pipeline.html, my-assignments.html / ข้อความแจ้งผลใช้ showAlert ของหน้าหลัก ($root) */
@@ -1510,13 +1511,8 @@ const AppDealFiles = {
     fileUrl(f, inline) { return 'api/deal_files.php?action=download&id=' + f.id + (inline ? '&inline=1' : ''); },
     canPreview(f) { return ['application/pdf', 'image/jpeg', 'image/png'].includes(f.mime_type); },
     isImage(f) { return ['image/jpeg', 'image/png'].includes(f.mime_type); },
-    kindOf(f) {
-      if (f.mime_type === 'application/pdf') return { label: 'PDF', cls: 'bg-red-50 text-red-700' };
-      if (f.mime_type.startsWith('image/')) return { label: 'รูป', cls: 'bg-sky-50 text-sky-700' };
-      if (/sheet|excel/.test(f.mime_type)) return { label: 'Excel', cls: 'bg-emerald-50 text-emerald-700' };
-      if (/word/.test(f.mime_type)) return { label: 'Word', cls: 'bg-blue-50 text-blue-700' };
-      return { label: 'ไฟล์', cls: 'bg-slate-100 text-slate-600' };
-    },
+    kindOf(f) { return dealFileKind(f.mime_type); },
+    quoteStatusText(q) { return q.status === 'issued' ? ' · ออกใบแล้ว' : (q.status === 'cancelled' ? ' · ยกเลิก' : ''); },
   },
   template: `
 <section v-if="pipelineItemId" class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
@@ -1575,6 +1571,12 @@ const AppDealFiles = {
         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
         {{ f.file_category_name }}
       </span>
+      <!-- คำขอใบเสนอราคาที่ใช้ไฟล์นี้ (ป้าย QR — 2026-11-24) -->
+      <span v-for="q in (f.quote_requests || [])" :key="q.quote_request_code" :title="'ส่งให้ธุรการกับคำขอ ' + q.quote_request_code"
+        class="inline-flex items-center gap-1 px-2 py-0.5 mb-1 ml-1 rounded-lg bg-purple-50 text-purple-700 text-xs font-bold">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        <span class="font-mono">{{ q.quote_request_code }}</span>{{ quoteStatusText(q) }}
+      </span>
       <div><a :href="fileUrl(f, canPreview(f))" target="_blank" rel="noopener" class="text-sm font-semibold text-teal-700 hover:underline break-all">{{ f.original_name }}</a></div>
       <div class="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <!-- เอาป้ายชนิดไฟล์ + ขนาดออก (ผู้ใช้ขอ 2026-10-20) — ชนิดดูจากไอคอน/รูปย่อด้านซ้าย -->
@@ -1582,6 +1584,7 @@ const AppDealFiles = {
         <span>· {{ formatDateTimeThai(f.created_at) }}</span>
       </div>
       <div v-if="f.comment" class="text-sm text-slate-700 mt-1 whitespace-pre-line">{{ f.comment }}</div>
+      <div v-if="f.locked_by_quote && !f.can_delete" class="text-xs text-slate-500 mt-1">ใช้ออกใบเสนอราคาแล้ว — ลบได้เฉพาะหัวหน้าหรือผู้ดูแลระบบ</div>
     </div>
     <div class="shrink-0 flex flex-col sm:flex-row gap-1.5 text-xs">
       <a :href="fileUrl(f, false)" class="px-2.5 py-1.5 rounded-lg ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50 no-underline text-center">ดาวน์โหลด</a>
@@ -1629,14 +1632,154 @@ const AppQuoteCancelReason = {
 </div>`,
 };
 
+/* ── ไฟล์ที่ส่งให้ธุรการกับคำขอใบเสนอราคา (แบบ Salesforce Files — ยืนยันจากผู้ใช้ 2026-11-24) ──
+   ไฟล์จริงอยู่ที่ไฟล์ของดีล (แท็บ "ไฟล์") คำขอแค่ผูกไฟล์ (quote_request_files) — คำขอละไม่เกิน 5 ไฟล์ ไฟล์ละไม่เกิน 20 MB
+   เปิดไฟล์ผ่าน api/deal_files.php?action=download ต้อง login ตามปกติ */
+const DEAL_FILE_MAX_MB = 20;
+const DEAL_FILE_ACCEPT = '.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx';
+// ชนิดไฟล์ → ป้าย + สี (ชุดเดียวกับแท็บไฟล์ของดีล AppDealFiles และหน้าจัดการไฟล์)
+function dealFileKind(mime) {
+  mime = mime || '';
+  if (mime === 'application/pdf') return { label: 'PDF', cls: 'bg-red-50 text-red-700' };
+  if (mime.startsWith('image/')) return { label: 'รูป', cls: 'bg-sky-50 text-sky-700' };
+  if (/sheet|excel/.test(mime)) return { label: 'Excel', cls: 'bg-emerald-50 text-emerald-700' };
+  if (/word/.test(mime)) return { label: 'Word', cls: 'bg-blue-50 text-blue-700' };
+  return { label: 'ไฟล์', cls: 'bg-slate-100 text-slate-600' };
+}
+
+/* AppQuoteFilePicker: เลือกไฟล์ส่งให้ธุรการ — ① ติ๊กไฟล์ที่มีในดีล ② อัปโหลดไฟล์ใหม่ (เลือกประเภทได้ ค่าตั้งต้น "ข้อมูลขอใบเสนอราคา")
+   ใช้: <app-quote-file-picker :selection="obj" :files="..." :categories="..." :default-category="..." :max="5" :existing="0">
+   selection = { file_ids: [], newFiles: [{file, category}] } ของหน้าที่ใช้ (component แก้ค่าข้างในให้) / existing = จำนวนที่ผูกไว้แล้ว (แนบเพิ่ม) */
+const AppQuoteFilePicker = {
+  props: {
+    selection: { type: Object, required: true },
+    files: { type: Array, default: () => [] },
+    categories: { type: Array, default: () => [] },
+    defaultCategory: { type: String, default: 'quote_ref' },
+    max: { type: Number, default: 5 },
+    existing: { type: Number, default: 0 },
+  },
+  data() { return { accept: DEAL_FILE_ACCEPT }; },
+  computed: {
+    total() { return this.selection.file_ids.length + this.selection.newFiles.length; },
+    left() { return this.max - this.existing - this.total; },
+  },
+  methods: {
+    formatDateTimeThai,
+    formatFileSize: SharedMethods.formatFileSize,
+    kind(mime) { return dealFileKind(mime); },
+    isPicked(id) { return this.selection.file_ids.includes(id); },
+    toggle(id) {
+      const i = this.selection.file_ids.indexOf(id);
+      if (i >= 0) { this.selection.file_ids.splice(i, 1); return; }
+      if (this.left <= 0) return this.$root.showAlert('ส่งไฟล์กับคำขอได้ไม่เกิน ' + this.max + ' ไฟล์', 'error');
+      this.selection.file_ids.push(id);
+    },
+    onPick(e) {
+      const picked = Array.from(e.target.files || []);
+      e.target.value = '';
+      for (const f of picked) {
+        if (f.size > DEAL_FILE_MAX_MB * 1024 * 1024) { this.$root.showAlert('ไฟล์ ' + f.name + ' ใหญ่เกิน ' + DEAL_FILE_MAX_MB + ' MB', 'error'); continue; }
+        if (this.left <= 0) { this.$root.showAlert('ส่งไฟล์กับคำขอได้ไม่เกิน ' + this.max + ' ไฟล์', 'error'); break; }
+        this.selection.newFiles.push({ file: f, category: this.defaultCategory });
+      }
+    },
+    removeNew(i) { this.selection.newFiles.splice(i, 1); },
+    newKind(n) {
+      const ext = (n.file.name.split('.').pop() || '').toLowerCase();
+      return dealFileKind({ pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', xls: 'excel', xlsx: 'excel', doc: 'word', docx: 'word' }[ext] || '');
+    },
+  },
+  template: `
+<div class="space-y-3">
+  <div class="text-sm font-semibold text-slate-700">ไฟล์ที่ส่งให้ธุรการใช้ทำใบ <span class="font-normal text-slate-400">(ไม่บังคับ · ไม่เกิน {{ max }} ไฟล์ ไฟล์ละไม่เกิน 20 MB)</span></div>
+  <div v-if="files.length">
+    <div class="text-sm text-slate-600 mb-1.5">① ติ๊กเลือกไฟล์ที่มีในดีลนี้</div>
+    <div class="space-y-1.5">
+      <button v-for="f in files" :key="f.id" type="button" @click="toggle(f.id)"
+        class="w-full flex items-center gap-3 text-left px-3 py-2 rounded-xl border-2 cursor-pointer min-h-[52px]"
+        :class="isPicked(f.id) ? 'border-teal-600 bg-teal-50' : 'border-slate-200 bg-white hover:border-slate-400'">
+        <span class="shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center" :class="isPicked(f.id) ? 'bg-teal-700 border-teal-700 text-white' : 'border-slate-400 bg-white'">
+          <svg v-if="isPicked(f.id)" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-bold" :class="kind(f.mime_type).cls">{{ kind(f.mime_type).label }}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-semibold text-slate-800 break-all">{{ f.original_name }}</span>
+          <span class="block text-xs text-slate-500">{{ f.file_category_name }} · {{ f.created_by_name || '-' }} · {{ formatDateTimeThai(f.created_at) }}<template v-if="f.quote_request_codes && f.quote_request_codes.length"> · เคยใช้กับ {{ f.quote_request_codes.join(', ') }}</template></span>
+        </span>
+      </button>
+    </div>
+  </div>
+  <div>
+    <div class="text-sm text-slate-600 mb-1.5">{{ files.length ? '② ' : '' }}อัปโหลดไฟล์ใหม่ <span class="text-slate-400">— เก็บเข้าแท็บ "ไฟล์" ของดีลนี้ด้วย</span></div>
+    <label class="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:border-teal-500 cursor-pointer">
+      <input type="file" multiple class="hidden" :accept="accept" @change="onPick">
+      <span class="px-4 py-2 rounded-lg bg-teal-700 text-white text-sm font-bold whitespace-nowrap">+ เลือกไฟล์</span>
+      <span class="text-sm text-slate-400">Excel, PDF, รูป (JPG/PNG), Word</span>
+    </label>
+    <div v-for="(n, i) in selection.newFiles" :key="i" class="mt-2 px-3 py-2.5 rounded-xl ring-1 ring-teal-300 bg-white">
+      <div class="flex items-center gap-3">
+        <span class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-bold" :class="newKind(n).cls">{{ newKind(n).label }}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-semibold text-slate-800 break-all">{{ n.file.name }}</span>
+          <span class="block text-xs text-slate-500">{{ formatFileSize(n.file.size) }} · ไฟล์ใหม่</span>
+        </span>
+        <button type="button" @click="removeNew(i)" class="shrink-0 px-3 py-2 rounded-lg ring-1 ring-red-200 text-red-600 text-sm bg-white border-0 cursor-pointer min-h-[40px]">เอาออก</button>
+      </div>
+      <div v-if="categories.length" class="flex flex-wrap items-center gap-1.5 mt-2">
+        <span class="text-xs text-slate-500">ประเภทไฟล์:</span>
+        <button v-for="c in categories" :key="c.file_category_id" type="button" @click="n.category = c.file_category_id"
+          class="px-2.5 py-1 rounded-lg border-2 text-xs font-semibold cursor-pointer"
+          :class="n.category === c.file_category_id ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'">{{ c.file_category_name }}</button>
+      </div>
+    </div>
+  </div>
+  <div v-if="total" class="text-sm font-semibold text-teal-800">เลือกแล้ว {{ total }} ไฟล์<span v-if="existing"> (ผูกไว้แล้ว {{ existing }} ไฟล์)</span></div>
+</div>`,
+};
+
+/* AppQuoteRequestFiles: รายการไฟล์ที่ส่งมากับคำขอ — ปุ่มเปิดดู (PDF/รูป) / ดาวน์โหลด / ไฟล์ที่ถูกลบแล้วแสดงชื่อ "ไฟล์ถูกลบแล้ว" (ไม่หายเงียบ)
+   ใช้ใน AppQuoteRequests (การ์ดคำขอในดีล) และหน้าต่างรายละเอียดของ quote-requests.html */
+const AppQuoteRequestFiles = {
+  props: { files: { type: Array, default: () => [] } },
+  methods: {
+    formatFileSize: SharedMethods.formatFileSize,
+    kind(mime) { return dealFileKind(mime); },
+  },
+  template: `
+<div v-if="files.length" class="space-y-1.5">
+  <div class="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+    <svg class="w-4 h-4 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+    ไฟล์ที่ส่งให้ธุรการ ({{ files.length }})
+  </div>
+  <div v-for="f in files" :key="f.id" class="flex flex-wrap sm:flex-nowrap items-center gap-2.5 px-3 py-2 rounded-xl ring-1 ring-slate-200" :class="f.deleted ? 'bg-slate-50' : 'bg-white'">
+    <span class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-bold" :class="f.deleted ? 'bg-slate-100 text-slate-400' : kind(f.mime_type).cls">{{ kind(f.mime_type).label }}</span>
+    <span class="min-w-0 flex-1">
+      <span class="block text-sm font-semibold break-all" :class="f.deleted ? 'text-slate-400 line-through' : 'text-slate-800'">{{ f.original_name }}</span>
+      <span class="block text-xs" :class="f.deleted ? 'text-red-600 font-semibold' : 'text-slate-500'">{{ f.deleted ? 'ไฟล์ถูกลบแล้ว' : f.file_category_name + ' · ' + formatFileSize(f.file_size) }}</span>
+    </span>
+    <span v-if="!f.deleted" class="flex gap-1.5 w-full sm:w-auto">
+      <a v-if="f.view_url" :href="f.view_url" target="_blank" rel="noopener" @click.stop
+        class="flex-1 sm:flex-none text-center px-3 py-2 rounded-xl ring-1 ring-teal-300 text-teal-700 text-sm font-semibold bg-white hover:bg-teal-50 no-underline min-h-[40px]">เปิดดู ↗</a>
+      <a :href="f.download_url" @click.stop
+        class="flex-1 sm:flex-none text-center px-3 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-bold no-underline min-h-[40px]">ดาวน์โหลด</a>
+    </span>
+  </div>
+</div>`,
+};
+
 const AppQuoteRequests = {
-  components: { AppQuoteCancelReason },
+  components: { AppQuoteCancelReason, AppQuoteFilePicker, AppQuoteRequestFiles },
   props: ['projectCode'],
-  emits: ['changed', 'summary'],
+  // files-changed = ส่ง/แนบไฟล์แล้ว (ไฟล์ใหม่เข้าไฟล์ของดีล) ให้หน้าที่ใช้โหลดแท็บ "ไฟล์" ใหม่ (2026-11-24)
+  emits: ['changed', 'summary', 'files-changed'],
   data() {
     return {
       loading: false, info: null, showForm: false, saving: false,
       form: { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: '', request_note: '', needed_by_date: '' },
+      // ไฟล์ที่ส่งให้ธุรการ (แบบ Salesforce Files — 2026-11-24): ไฟล์ในดีลที่ติ๊ก + ไฟล์ใหม่ [{file, category}]
+      formFiles: { file_ids: [], newFiles: [] },
+      addCode: '', addFiles: { file_ids: [], newFiles: [] }, addSaving: false,   // แนบไฟล์เพิ่มให้คำขอที่ยังไม่ออกใบ
       cancelCode: '', cancelReason: '',
     };
   },
@@ -1681,7 +1824,49 @@ const AppQuoteRequests = {
     },
     openForm() {
       this.form = { issue_by: 'salesadmin', request_type: 'new', ref_quotation_id: this.info?.quotations?.[0] || '', request_note: '', needed_by_date: '' };
+      this.formFiles = { file_ids: [], newFiles: [] };
+      this.addCode = '';
       this.showForm = true;
+      this.refreshDealFiles();
+    },
+    // รายการไฟล์ของดีลล่าสุด (อาจเพิ่งแนบในแท็บ "ไฟล์") — แทนเฉพาะส่วนไฟล์ ไม่โหลดการ์ดคำขอใหม่
+    async refreshDealFiles() {
+      if (!this.projectCode) return;
+      const res = await apiCall('GET', 'api/quote_requests.php?action=by_deal&project_code=' + encodeURIComponent(this.projectCode));
+      if (res.success && this.info) {
+        this.info.deal_files = res.data.deal_files;
+        this.info.file_categories = res.data.file_categories;
+      }
+    },
+    fileCount(sel) { return sel.file_ids.length + sel.newFiles.length; },
+    // ไฟล์ที่เลือก → FormData: file_ids[] (ไฟล์ในดีล) + files[] / new_file_categories[] (ไฟล์ใหม่ ลำดับเดียวกัน)
+    appendFiles(fd, sel) {
+      sel.file_ids.forEach(id => fd.append('file_ids[]', id));
+      sel.newFiles.forEach(n => { fd.append('files[]', n.file); fd.append('new_file_categories[]', n.category); });
+    },
+    // ไฟล์ในดีลที่ยังไม่ได้ผูกกับคำขอนี้ (แนบเพิ่ม)
+    addableDealFiles(r) {
+      const linked = new Set((r.files || []).map(f => f.id));
+      return (this.info?.deal_files || []).filter(f => !linked.has(f.id));
+    },
+    startAddFiles(r) {
+      this.addCode = r.quote_request_code;
+      this.addFiles = { file_ids: [], newFiles: [] };
+      this.refreshDealFiles();
+    },
+    async saveAddFiles(r) {
+      if (!this.fileCount(this.addFiles)) return this.$root.showAlert('กรุณาเลือกไฟล์', 'error');
+      const fd = new FormData();
+      fd.append('quote_request_code', r.quote_request_code);
+      this.appendFiles(fd, this.addFiles);
+      this.addSaving = true;
+      const res = await apiUpload('api/quote_requests.php?action=add_files', fd);
+      this.addSaving = false;
+      if (!res.success) return this.$root.showAlert(res.message || 'แนบไฟล์ไม่สำเร็จ', 'error');
+      this.addCode = '';
+      await this.load();
+      this.$emit('files-changed');
+      this.$root.showAlert(res.message);
     },
     async submit() {
       if (this.form.request_type === 'revision' && !this.form.ref_quotation_id) return this.$root.showAlert('กรุณาเลือกใบเสนอราคาเดิมที่ต้องการแก้ไข', 'error');
@@ -1693,12 +1878,23 @@ const AppQuoteRequests = {
       this.saving = true;
       const body = { project_code: this.projectCode, ...this.form };
       if (body.issue_by !== 'salesadmin') body.needed_by_date = '';
-      const res = await apiCall('POST', 'api/quote_requests.php?action=create', body);
+      // มีไฟล์ = ส่งแบบ multipart (คำขอ + ไฟล์ บันทึกพร้อมกันครั้งเดียว) / ไม่มีไฟล์ = JSON แบบเดิม
+      const hasFiles = this.fileCount(this.formFiles) > 0;
+      let res;
+      if (hasFiles) {
+        const fd = new FormData();
+        Object.entries(body).forEach(([k, v]) => fd.append(k, v ?? ''));
+        this.appendFiles(fd, this.formFiles);
+        res = await apiUpload('api/quote_requests.php?action=create', fd);
+      } else {
+        res = await apiCall('POST', 'api/quote_requests.php?action=create', body);
+      }
       this.saving = false;
       if (!res.success) return this.$root.showAlert(res.message || 'ส่งคำขอไม่สำเร็จ', 'error');
       this.showForm = false;
       await this.load();
       this.$emit('changed');
+      if (hasFiles) this.$emit('files-changed');
       this.$root.showAlert(res.message);
     },
     startCancel(r) { this.cancelCode = r.quote_request_code; this.cancelReason = ''; },
@@ -1762,9 +1958,14 @@ const AppQuoteRequests = {
         <textarea v-model="form.request_note" rows="3" placeholder="เช่น เก้าอี้รุ่น … 50 ตัว, ส่วนลด, เงื่อนไขการชำระเงิน"
           class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-base sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 bg-white resize-y"></textarea>
       </div>
+      <!-- ไฟล์ที่ส่งให้ธุรการ (แบบ Salesforce Files — 2026-11-24): ติ๊กไฟล์ในดีล + อัปโหลดใหม่ -->
+      <div class="pt-3 border-t border-teal-100">
+        <app-quote-file-picker :selection="formFiles" :files="info.deal_files || []" :categories="info.file_categories || []"
+          :default-category="info.default_file_category || 'quote_ref'" :max="info.max_files || 5"></app-quote-file-picker>
+      </div>
       <div class="flex justify-end gap-2">
         <button type="button" @click="showForm=false" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer min-h-[40px]">ยกเลิก</button>
-        <button type="button" @click="submit" :disabled="saving" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer min-h-[40px] disabled:opacity-50">{{ saving ? 'กำลังส่ง…' : 'ส่งคำขอ' }}</button>
+        <button type="button" @click="submit" :disabled="saving" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer min-h-[40px] disabled:opacity-50">{{ saving ? 'กำลังส่ง…' : (fileCount(formFiles) ? 'ส่งคำขอ + ' + fileCount(formFiles) + ' ไฟล์' : 'ส่งคำขอ') }}</button>
       </div>
     </div>
 
@@ -1792,6 +1993,7 @@ const AppQuoteRequests = {
         <span v-if="v.quote_net_amount !== null" class="font-normal text-slate-500"> · รวม VAT {{ formatPrice(v.quote_net_amount) }}</span>
       </div>
       <div v-if="vi === r.revisions.length - 1 && r.request_note" class="text-sm text-slate-700 mt-1.5 whitespace-pre-line">{{ r.request_note }}</div>
+      <app-quote-request-files v-if="vi === r.revisions.length - 1" :files="r.files || []" class="mt-2"></app-quote-request-files>
       <div class="text-xs text-slate-500 mt-1.5 space-y-0.5">
         <template v-if="vi === r.revisions.length - 1">
           <div>ขอโดย {{ r.requested_by_name }} · {{ formatDateTimeThai(r.requested_at) }}</div>
@@ -1819,6 +2021,20 @@ const AppQuoteRequests = {
       </div>
       <div v-if="neededBy(r)" class="text-sm mt-1" :class="neededBy(r).cls">{{ neededBy(r).text }}</div>
       <div v-if="r.request_note" class="text-sm text-slate-700 mt-1.5 whitespace-pre-line">{{ r.request_note }}</div>
+      <app-quote-request-files :files="r.files || []" class="mt-2"></app-quote-request-files>
+      <!-- แนบไฟล์เพิ่ม — ได้จนกว่าธุรการจะออกใบ (2026-11-24) -->
+      <template v-if="r.can_add_files">
+        <button v-if="addCode !== r.quote_request_code" type="button" @click="startAddFiles(r)"
+          class="mt-2 text-sm font-semibold text-teal-700 underline bg-transparent border-0 p-0 cursor-pointer">+ แนบไฟล์เพิ่ม</button>
+        <div v-else class="mt-2 rounded-xl border-2 border-teal-200 bg-teal-50/40 p-3 space-y-3">
+          <app-quote-file-picker :selection="addFiles" :files="addableDealFiles(r)" :categories="info.file_categories || []"
+            :default-category="info.default_file_category || 'quote_ref'" :max="info.max_files || 5" :existing="(r.files || []).length"></app-quote-file-picker>
+          <div class="flex justify-end gap-2">
+            <button type="button" @click="addCode = ''" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white ring-1 ring-slate-200 text-slate-600 border-0 cursor-pointer min-h-[40px]">ยกเลิก</button>
+            <button type="button" @click="saveAddFiles(r)" :disabled="addSaving" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-teal-700 hover:bg-teal-800 border-0 cursor-pointer min-h-[40px] disabled:opacity-50">{{ addSaving ? 'กำลังอัปโหลด…' : 'แนบไฟล์' + (fileCount(addFiles) ? ' ' + fileCount(addFiles) + ' ไฟล์' : '') }}</button>
+          </div>
+        </div>
+      </template>
       <div class="text-xs text-slate-500 mt-1.5 space-y-0.5">
         <div>ขอโดย {{ r.requested_by_name }} · {{ formatDateTimeThai(r.requested_at) }}</div>
         <div v-if="r.accepted_at">รับเรื่องโดย {{ r.accepted_by_name || '-' }} · {{ formatDateTimeThai(r.accepted_at) }}</div>

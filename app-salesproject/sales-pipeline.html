@@ -1313,12 +1313,12 @@
                ใบเสนอราคางานโครงการต้องออกจากคำขอในดีลเท่านั้น — ส่งคำขอ/ยกเลิกแล้วโหลดการ์ดใหม่ (ป้าย "รอออกใบ") / mount ไว้ตลอด (v-show) ให้หัวสรุปได้ตัวเลขทันที -->
           <div v-show="spForm.id && spFormTab === 'quote'">
             <app-quote-requests v-if="spForm.id && spForm.project_code" :project-code="spForm.project_code"
-              @changed="loadSpKanban()" @summary="spQuoteSummary = $event"></app-quote-requests>
+              @changed="loadSpKanban()" @summary="spQuoteSummary = $event" @files-changed="$refs.spDealFiles?.load()"></app-quote-requests>
           </div>
 
           <!-- ═══ แท็บ ไฟล์ ═══ ไฟล์แนบของดีล + ประเภท + หมายเหตุ (2026-10-20) — ผูกด้วย id ดีล เห็นทุกสถานะ / แนบหรือลบแล้วโหลดประวัติใหม่ -->
           <div v-show="spForm.id && spFormTab === 'files'">
-            <app-deal-files v-if="spForm.id" :pipeline-item-id="spForm.id" @count="onSpFileCount"></app-deal-files>
+            <app-deal-files v-if="spForm.id" ref="spDealFiles" :pipeline-item-id="spForm.id" @count="onSpFileCount"></app-deal-files>
           </div>
 
           <!-- ═══ แท็บ ประวัติ ═══ -->
@@ -1845,7 +1845,7 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=101"></script>
+<script src="shared/app.js?v=104"></script>
 <script>
 const { createApp } = Vue;
 // ช่องในฟอร์มดีลที่ตรวจว่ามีคนเปลี่ยนหลังเปิดหน้าต่าง (กันบันทึกทับ — 2026-10-30) ต้องตรงกับ $lockFields ใน api/pipeline_items.php updateItem()

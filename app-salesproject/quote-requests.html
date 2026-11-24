@@ -69,6 +69,8 @@
                 <span class="text-xs font-semibold px-2 py-0.5 rounded" :class="r.source_type === 'ebidding' ? 'bg-indigo-50 text-indigo-700' : 'bg-teal-50 text-teal-700'">{{ r.source_type === 'ebidding' ? 'งานประมูล' : 'ขายตรง' }}</span>
                 <span v-if="r.request_type === 'revision'" class="text-xs font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800">แก้ไขใบ {{ r.ref_quotation_id }}</span>
                 <span v-if="r.issue_by === 'sale'" class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">Sale ออกเอง</span>
+                <!-- ไฟล์ที่ Sale ส่งมากับคำขอ (2026-11-24) — กดการ์ดเปิดรายละเอียดเพื่อดาวน์โหลด -->
+                <span v-if="(r.files || []).length" class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200">ไฟล์แนบ {{ r.files.length }}</span>
                 <span class="ml-auto text-sm font-semibold" :class="waitClass(r)">{{ waitText(r) }}</span>
               </div>
               <div class="font-bold text-[1rem] text-slate-800 mt-2 leading-snug">{{ r.title }}</div>
@@ -122,6 +124,8 @@
             <div class="text-sm font-semibold text-slate-700 mb-1">รายละเอียดที่ขอ</div>
             <div class="text-sm text-slate-800 whitespace-pre-line bg-slate-50 rounded-xl px-3.5 py-2.5">{{ modal.data.request_note }}</div>
           </div>
+          <!-- ไฟล์ที่ Sale ส่งให้ธุรการใช้ทำใบ (แบบ Salesforce Files — 2026-11-24) — Excel ดาวน์โหลด / PDF รูป เปิดดูได้ -->
+          <app-quote-request-files :files="modal.data.files || []"></app-quote-request-files>
           <!-- log: ขอ → รับเรื่อง → ออกใบ / ยกเลิก -->
           <div>
             <div class="text-sm font-semibold text-slate-700 mb-1">ลำดับเหตุการณ์</div>
@@ -177,11 +181,11 @@
 </div>
 
 <script src="shared/vue.global.prod.js"></script>
-<script src="shared/app.js?v=101"></script>
+<script src="shared/app.js?v=104"></script>
 <script>
 const { createApp } = Vue;
 createApp({
-  components: { AppNav, AppModal, AppQuoteCancelReason },
+  components: { AppNav, AppModal, AppQuoteCancelReason, AppQuoteRequestFiles },
   data() {
     return {
       authReady: false,

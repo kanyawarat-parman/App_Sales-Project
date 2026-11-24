@@ -4,6 +4,7 @@
 //   token ว่าง = ปิด API นี้ / token ต้องอยู่ฝั่ง server ของระบบใบเสนอราคา (Web.config) ห้ามส่งไปที่ browser
 // GET  locked_sale_ids — รหัส Sale (users.sale_id) ที่ใบเสนอราคาต้องออกจากคำขอเท่านั้น (ล็อกระดับ 2 ตาม Salemanid)
 // GET  pending         — คำขอที่ยังไม่ออกใบ (รอออกใบ / รับเรื่องแล้ว) — ระบบใบเสนอราคากรองตามสิทธิ์ QuotationDelegate เอง
+//                        + files [{original_name, file_category_name, deleted, download_url, view_url}] ลิงก์เต็ม APP_URL (ต้อง login ระบบงานขาย — 2026-11-24)
 // GET  check           — ตรวจคำขอก่อนบันทึกใบ (code + salemanid) ใช้ใน quotation_save.aspx.cs
 // POST accept          — ธุรการกด "ออกใบ" จากรายการ = รับเรื่อง (log ข้อ 2)
 // POST issued          — บันทึกจริงใบตามคำขอ → ปิดคำขอ + ขายตรง Interest→Send PI + มูลค่าดีล = GrossAmountNet + แจ้ง Sale (ระยะ 3)
@@ -75,7 +76,8 @@ function pendingQuoteRequests(PDO $db): void {
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as &$r) $r['contacts'] = quoteRequestContacts($db, (int)$r['pipeline_item_id']);
     unset($r);
-    jsonResponse(true, $rows);
+    // ไฟล์ที่ Sale ส่งมากับคำขอ (2026-11-24) — ลิงก์เต็มไประบบงานขาย ธุรการต้อง login ระบบงานขายก่อนเปิด (ยืนยันจากผู้ใช้)
+    jsonResponse(true, attachQuoteRequestFiles($db, $rows, true));
 }
 
 /**
@@ -95,6 +97,7 @@ function checkQuoteRequest(PDO $db): void {
     elseif (!in_array($req['stage'], quoteRequestStages($req['source_type']), true)) $reason = "ดีล {$req['project_code']} ปิดแล้ว ({$req['stage']})";
     elseif (trim((string)$req['sale_id']) !== $salemanId)            $reason = "Sale ในใบเสนอราคา ({$salemanId}) ไม่ตรงกับเจ้าของดีล ({$req['sale_name']} รหัส {$req['sale_id']})";
 
+    if ($req) $req = attachQuoteRequestFiles($db, [$req], true)[0];   // ไฟล์ที่ Sale ส่งมา — แสดงที่หัวฟอร์มออกใบ (2026-11-24)
     jsonResponse(true, ['valid' => $reason === null, 'reason' => $reason, 'request' => $req ?: null]);
 }
 

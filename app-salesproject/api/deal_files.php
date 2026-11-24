@@ -16,24 +16,18 @@
  *
  * สิทธิ์: ดู = ทุกคนที่เปิดดีลได้ (sale เห็นเฉพาะดีลตัวเอง) / แนบ = sale เจ้าของดีล, ธุรการขาย, admin
  *        ลบ = ผู้แนบไฟล์นั้น, admin, หัวหน้า / กู้คืน = admin, หัวหน้า / ลบถาวร = admin
+ *        ไฟล์ที่ผูกกับคำขอใบเสนอราคา (quote_request_files — 2026-11-24): คำขอออกใบแล้ว = ผู้แนบลบเองไม่ได้ (admin/หัวหน้าได้)
+ *        ผูกคำขอใดก็ตาม = ลบถาวรไม่ได้ / list คืน quote_requests [{quote_request_code, status}] ให้แสดงป้าย QR-…
+ *        download&qr=QR-… ตอนยังไม่ login → หน้า login แล้วกลับไปคำขอนั้น (ลิงก์จากระบบใบเสนอราคา)
  *        ไฟล์ที่ลบแล้วเปิดได้เฉพาะ admin, หัวหน้า / เก็บไว้จนกว่า admin จะลบถาวร (ไม่ลบอัตโนมัติ)
  * ไฟล์จริงเก็บที่ storage/deal_files/ ชื่อสุ่ม 32 ตัวไม่มีนามสกุล (เดาไม่ได้ เปิดตรงไม่ได้) — ส่งออกผ่าน action=download เท่านั้น
  */
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/deal_file_helper.php';   // ค่าคงที่ชนิด/ขนาดไฟล์ + บันทึกไฟล์ (ใช้ร่วมกับคำขอใบเสนอราคา)
 
-const DEAL_FILE_MAX_BYTES = 20 * 1024 * 1024;   // 20 MB ต่อไฟล์ (ผู้ใช้ยืนยัน 2026-10-20)
-const DEAL_FILE_DIR       = __DIR__ . '/../storage/deal_files/';
-// ชนิดไฟล์ที่รับ (ตรวจจากเนื้อไฟล์จริงด้วย finfo ไม่เชื่อนามสกุล) => นามสกุลที่ใช้ตอนดาวน์โหลด
-const DEAL_FILE_TYPES = [
-    'application/pdf' => 'pdf',
-    'image/jpeg'      => 'jpg',
-    'image/png'       => 'png',
-    'application/vnd.ms-excel' => 'xls',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
-    'application/msword' => 'doc',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
-];
+// ลิงก์ดาวน์โหลดที่เปิดจากที่อื่น (เช่น ระบบใบเสนอราคา) ตอนยังไม่ login → ไปหน้า login แล้วกลับมาที่คำขอนั้น (ยืนยันจากผู้ใช้ 2026-11-24: ต้อง login ก่อนตามปกติ)
+if (($_GET['action'] ?? '') === 'download' && $_SERVER['REQUEST_METHOD'] === 'GET') redirectDownloadToLogin();
 
 $user   = requireAuth();
 $db     = (new Database())->getConnection();
@@ -74,18 +68,6 @@ function dealForUser(PDO $db, array $user, int $itemId): array {
     return $deal;
 }
 
-/** แนบไฟล์ได้: sale เจ้าของดีล / ธุรการขาย / admin (หัวหน้าดูอย่างเดียว) */
-function canUploadDealFile(array $user, array $deal): bool {
-    if (in_array($user['role'], ['admin', 'salesadmin'], true)) return true;
-    return $user['role'] === 'sale' && (int)$deal['assigned_to'] === (int)$user['id'];
-}
-
-/** บันทึกประวัติดีล (แนบ/ลบไฟล์) — stage เดิม = stage ใหม่ แบบเดียวกับ delivery_helper */
-function logDealFileHistory(PDO $db, array $deal, int $userId, string $note): void {
-    $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
-       ->execute([$deal['id'], $deal['project_code'], $userId, $deal['stage'], $deal['stage'], $note]);
-}
-
 function listFileCategories(PDO $db): void {
     $rows = $db->query('SELECT file_category_id, file_category_name, file_category_description FROM file_categories WHERE is_active = 1 ORDER BY sort_order, file_category_name')
                ->fetchAll(PDO::FETCH_ASSOC);
@@ -105,8 +87,11 @@ function listDealFiles(PDO $db, array $user): void {
     ");
     $st->execute([$deal['id']]);
     $files = $st->fetchAll(PDO::FETCH_ASSOC);
+    $links = dealFileQuoteLinks($db, (int)$deal['id']);   // คำขอใบเสนอราคาที่ใช้ไฟล์นี้ (ป้าย QR-… — 2026-11-24)
     foreach ($files as &$f) {
-        $f['can_delete'] = canDeleteDealFile($user, $f);
+        $f['quote_requests'] = $links[(int)$f['id']] ?? [];
+        $f['locked_by_quote'] = dealFileLockedByQuote($f['quote_requests']);
+        $f['can_delete'] = canDeleteDealFile($user, $f, $f['locked_by_quote']);
     }
     unset($f);
     jsonResponse(true, ['files' => $files, 'can_upload' => canUploadDealFile($user, $deal)]);
@@ -117,48 +102,31 @@ function uploadDealFile(PDO $db, array $user): void {
     if (!canUploadDealFile($user, $deal)) jsonResponse(false, null, 'ไม่มีสิทธิ์แนบไฟล์ในดีลนี้', 403);
 
     $category = trim((string)($_POST['file_category_id'] ?? ''));
-    $chk = $db->prepare('SELECT file_category_name FROM file_categories WHERE file_category_id = ? AND is_active = 1');
-    $chk->execute([$category]);
-    $categoryName = $chk->fetchColumn();
-    if (!$categoryName) jsonResponse(false, null, 'กรุณาเลือกประเภทไฟล์', 400);
+    $categoryName = activeFileCategoryName($db, $category);
+    if ($categoryName === null) jsonResponse(false, null, 'กรุณาเลือกประเภทไฟล์', 400);
 
     $file = $_FILES['file'] ?? null;
-    if (!$file || $file['error'] === UPLOAD_ERR_NO_FILE) jsonResponse(false, null, 'กรุณาเลือกไฟล์', 400);
-    if (in_array($file['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true) || $file['size'] > DEAL_FILE_MAX_BYTES) {
-        jsonResponse(false, null, 'ไฟล์ใหญ่เกิน 20 MB', 400);
-    }
-    if ($file['error'] !== UPLOAD_ERR_OK) jsonResponse(false, null, 'อัปโหลดไฟล์ไม่สำเร็จ ลองใหม่อีกครั้ง', 400);
-
-    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
-    if (!isset(DEAL_FILE_TYPES[$mime])) jsonResponse(false, null, 'รองรับเฉพาะ PDF, รูป (JPG/PNG), Excel และ Word', 400);
-
-    $originalName = trim(basename(str_replace('\\', '/', (string)$file['name'])));
-    if ($originalName === '') $originalName = 'file.' . DEAL_FILE_TYPES[$mime];
-    if (mb_strlen($originalName) > 255) $originalName = mb_substr($originalName, -255);
+    if (!$file) jsonResponse(false, null, 'กรุณาเลือกไฟล์', 400);
+    $stored = storeUploadedDealFile($file);
     $comment = trim((string)($_POST['comment'] ?? ''));
-
-    if (!is_dir(DEAL_FILE_DIR) && !mkdir(DEAL_FILE_DIR, 0775, true)) jsonResponse(false, null, 'ไม่พบที่เก็บไฟล์บนเซิร์ฟเวอร์ (storage/deal_files)', 500);
-    $storedName = bin2hex(random_bytes(16));
-    if (!move_uploaded_file($file['tmp_name'], DEAL_FILE_DIR . $storedName)) jsonResponse(false, null, 'บันทึกไฟล์ไม่สำเร็จ', 500);
 
     try {
         $db->beginTransaction();
-        $db->prepare('INSERT INTO pipeline_item_files (pipeline_item_id, project_code, file_category_id, original_name, stored_name, mime_type, file_size, comment, created_by, updated_by)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-           ->execute([$deal['id'], $deal['project_code'], $category, $originalName, $storedName, $mime, (int)$file['size'], $comment !== '' ? $comment : null, $user['id'], $user['id']]);
-        logDealFileHistory($db, $deal, (int)$user['id'], "แนบไฟล์ {$originalName} ({$categoryName})");
+        insertDealFileRow($db, $deal, (int)$user['id'], $stored, $category, $categoryName, $comment);
         $db->commit();
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
-        @unlink(DEAL_FILE_DIR . $storedName);   // บันทึกข้อมูลไม่สำเร็จ ไม่ทิ้งไฟล์ค้าง
+        discardStoredDealFiles([$stored]);   // บันทึกข้อมูลไม่สำเร็จ ไม่ทิ้งไฟล์ค้าง
         throw $e;
     }
     jsonResponse(true, null, 'แนบไฟล์แล้ว');
 }
 
-/** ลบ (ย้ายไปไฟล์ที่ลบแล้ว) ได้: ผู้แนบไฟล์นั้น / admin / หัวหน้า */
-function canDeleteDealFile(array $user, array $file): bool {
-    return in_array($user['role'], ['admin', 'manager'], true) || (int)$file['created_by'] === (int)$user['id'];
+/** ลบ (ย้ายไปไฟล์ที่ลบแล้ว) ได้: ผู้แนบไฟล์นั้น / admin / หัวหน้า
+ *  ไฟล์ที่ใช้ออกใบเสนอราคาไปแล้ว ($lockedByQuote) ลบได้เฉพาะ admin / หัวหน้า (กฎ Taiyo — ยืนยันจากผู้ใช้ 2026-11-24) */
+function canDeleteDealFile(array $user, array $file, bool $lockedByQuote = false): bool {
+    if (in_array($user['role'], ['admin', 'manager'], true)) return true;
+    return !$lockedByQuote && (int)$file['created_by'] === (int)$user['id'];
 }
 
 /** ไฟล์ + ชื่อประเภท ตาม id — ไม่พบ = ตอบ 404 แล้วจบ */
@@ -176,7 +144,11 @@ function deleteDealFile(PDO $db, array $user): void {
     $file = findDealFile($db, (int)($body['id'] ?? 0));
     $deal = dealForUser($db, $user, (int)$file['pipeline_item_id']);
     if ($file['deleted_at'] !== null) jsonResponse(false, null, 'ไฟล์นี้ถูกลบไปแล้ว', 400);
-    if (!canDeleteDealFile($user, $file)) jsonResponse(false, null, 'ลบได้เฉพาะผู้แนบไฟล์นี้ หัวหน้า หรือผู้ดูแลระบบ', 403);
+    $quoteLinks = dealFileQuoteLinks($db, (int)$deal['id'])[(int)$file['pipeline_item_file_id']] ?? [];
+    $locked = dealFileLockedByQuote($quoteLinks);
+    if (!canDeleteDealFile($user, $file, $locked)) {
+        jsonResponse(false, null, $locked ? 'ไฟล์นี้ใช้ออกใบเสนอราคาไปแล้ว — ลบได้เฉพาะหัวหน้าหรือผู้ดูแลระบบ' : 'ลบได้เฉพาะผู้แนบไฟล์นี้ หัวหน้า หรือผู้ดูแลระบบ', 403);
+    }
 
     $db->beginTransaction();
     $db->prepare('UPDATE pipeline_item_files SET deleted_at = NOW(), deleted_by = ?, updated_by = ? WHERE pipeline_item_file_id = ?')
@@ -207,6 +179,11 @@ function purgeDealFile(PDO $db, array $user): void {
     $file = findDealFile($db, (int)($body['id'] ?? 0));
     if ($file['deleted_at'] === null) jsonResponse(false, null, 'ต้องลบไฟล์ไปที่ไฟล์ที่ลบแล้วก่อน จึงลบถาวรได้', 400);
     $deal = dealForUser($db, $user, (int)$file['pipeline_item_id']);
+    // ไฟล์ที่ผูกกับคำขอใบเสนอราคา = หลักฐานว่าคำขอนั้นส่งไฟล์อะไรให้ธุรการ — ลบถาวรไม่ได้ (คงไว้ในไฟล์ที่ลบแล้ว)
+    $quoteLinks = dealFileQuoteLinks($db, (int)$deal['id'])[(int)$file['pipeline_item_file_id']] ?? [];
+    if ($quoteLinks) {
+        jsonResponse(false, null, 'ไฟล์นี้ผูกกับคำขอใบเสนอราคา ' . implode(', ', array_column($quoteLinks, 'quote_request_code')) . ' — ลบถาวรไม่ได้ (เก็บไว้ในไฟล์ที่ลบแล้ว)', 400);
+    }
 
     $db->beginTransaction();
     $db->prepare('DELETE FROM pipeline_item_files WHERE pipeline_item_file_id = ?')->execute([$file['pipeline_item_file_id']]);
@@ -329,5 +306,19 @@ function downloadDealFile(PDO $db, array $user): void {
     header('X-Content-Type-Options: nosniff');
     header('Cache-Control: private, no-store');
     readfile($path);
+    exit;
+}
+
+/**
+ * ลิงก์ดาวน์โหลดที่เปิดตอนยังไม่ login (หรือ login หมดอายุ) → หน้า login แล้วกลับไปที่คำขอใบเสนอราคานั้น
+ * ใช้กับลิงก์จากระบบใบเสนอราคา (?qr=QR-…) — ไม่มี qr = กลับหน้ารายการคำขอ / login อยู่แล้ว = ทำงานตามปกติ
+ */
+function redirectDownloadToLogin(): void {
+    $loggedIn = !empty($_SESSION['user'])
+        && (!isset($_SESSION['last_activity']) || (time() - $_SESSION['last_activity']) <= SESSION_TIMEOUT);
+    if ($loggedIn) return;
+    $qr = preg_match('/^QR-\d{6}$/', (string)($_GET['qr'] ?? '')) ? (string)$_GET['qr'] : '';
+    $next = 'quote-requests.html' . ($qr !== '' ? '?code=' . $qr : '');
+    header('Location: ../login.html?next=' . rawurlencode($next));
     exit;
 }
