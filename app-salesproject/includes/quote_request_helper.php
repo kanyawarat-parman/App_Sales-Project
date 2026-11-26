@@ -7,6 +7,7 @@
 require_once __DIR__ . '/code_helper.php';
 require_once __DIR__ . '/notify_helper.php';
 require_once __DIR__ . '/delivery_helper.php';
+require_once __DIR__ . '/phone_helper.php';       // กติกาเบอร์โทร — เติมเบอร์จากใบที่ยืนยันแล้วกลับไปที่ลูกค้า / ผู้ติดต่อ (2026-11-26)
 require_once __DIR__ . '/deal_file_helper.php';   // ไฟล์ที่ส่งให้ธุรการกับคำขอ = ไฟล์ของดีล (2026-11-24)   // thaiShortDate() — วันที่ต้องการใบในข้อความแจ้งเตือน
 
 const QUOTE_REQUEST_DIRECT_STAGES = ['Interest', 'Send PI', 'Negotiating'];
@@ -78,6 +79,7 @@ function canCancelQuoteRequest(array $user, array $req): bool {
 //   ลูกค้าไม่มีที่อยู่ + เป็นงานประมูล = ที่ตั้งหน่วยงานจากประกาศ (กฎเฉพาะระบบนี้) / ไม่มีทั้งคู่ = NULL
 // erp_customer_code = รหัสลูกค้า ERP หลักของลูกค้าในดีล (ไม่มี = NULL) / erp_code_count = จำนวนรหัส ERP ที่ผูกไว้
 //   ระบบใบเสนอราคาใช้ดึงข้อมูลลูกค้าเดิมจาก ERP มาเติมฟอร์มออกใบเอง (ยืนยันจากผู้ใช้ 2026-11-25)
+// erp_customer_codes = รหัส ERP ทุกรหัสของลูกค้า คั่นด้วย , (รหัสหลักก่อน) — ฟอร์มออกใบใช้เทียบว่ารหัสที่ธุรการเลือกตรงกับที่ผูกไว้หรือไม่ (2026-11-26)
 function quoteRequestSelectSql(): string {
     return "
         SELECT qr.quote_request_id, qr.quote_request_code, qr.pipeline_item_id, qr.project_code,
@@ -92,6 +94,8 @@ function quoteRequestSelectSql(): string {
                (SELECT e.erp_customer_code FROM account_erp_codes e WHERE e.account_id = pi.account_id
                  ORDER BY e.is_primary DESC, e.erp_customer_code LIMIT 1) AS erp_customer_code,
                (SELECT COUNT(*) FROM account_erp_codes e WHERE e.account_id = pi.account_id) AS erp_code_count,
+               (SELECT GROUP_CONCAT(e.erp_customer_code ORDER BY e.is_primary DESC, e.erp_customer_code SEPARATOR ',')
+                  FROM account_erp_codes e WHERE e.account_id = pi.account_id) AS erp_customer_codes,
                owner.full_name AS sale_name, owner.sale_id, owner.username AS sale_username,
                ureq.full_name AS requested_by_name, uacc.full_name AS accepted_by_name,
                uiss.full_name AS issued_by_name, ucan.full_name AS cancelled_by_name
@@ -606,8 +610,78 @@ function applyQuoteIssued(PDO $db, array $body): array {
         throw $e;
     }
 
+    // นำรหัสลูกค้า ERP ในใบกลับมาผูกที่ลูกค้าของดีล — เฉพาะบันทึกจริงครั้งแรกของคำขอ (ไม่ทำตอนออก Rev ต่อ) (ยืนยันจากผู้ใช้ 2026-11-26)
+    // ทำหลัง commit และไม่ให้ความผิดพลาดตรงนี้ทำให้ผลออกใบล้ม (ผลออกใบสำคัญกว่า — รหัส ERP ธุรการผูกเองที่หน้าลูกค้าได้)
+    if ($req['status'] !== 'issued') {
+        try {
+            linkErpCodeFromQuote($db, (int)$req['pipeline_item_id'], trim((string)($body['customer_id'] ?? '')), !empty($body['link_erp']),
+                                 $actorId, $quotationId, $code, $issuer['full_name'] ?? null);
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            error_log('linkErpCodeFromQuote: ' . $e->getMessage());
+        }
+    }
+
     $notify = ($req['issue_by'] === 'salesadmin' && (!$issuer || (int)$issuer['id'] !== (int)$req['deal_owner_id'])) ? (int)$req['quote_request_id'] : null;
     return ['ok' => true, 'message' => "บันทึกออกใบ {$quotationId} ตามคำขอ {$code} แล้ว", 'notify' => $notify];
+}
+
+/**
+ * นำรหัสลูกค้า ERP ที่ธุรการเลือกในใบเสนอราคา กลับมาผูกที่ลูกค้าของดีล (account_erp_codes) — ยืนยันจากผู้ใช้ 2026-11-26
+ * กติกา (กฎ Taiyo: 1 รหัส ERP ผูกได้ลูกค้ารายเดียว / ใบเสนอราคาออกในชื่อบริษัทอื่นที่ไม่ใช่ลูกค้าของดีลได้):
+ *   ลูกค้ายังไม่มีรหัส ERP + รหัสนี้ยังไม่ผูกกับใคร + ธุรการติ๊กให้ผูก ($wantLink) → ผูกเป็นรหัสหลัก + ประวัติดีล
+ *   รหัสตรงกับที่ผูกไว้แล้ว → ไม่ทำอะไร
+ *   ลูกค้ามีรหัสอื่นอยู่แล้ว → ไม่ผูก จดในประวัติดีลว่าใบใช้รหัสไม่ตรง (ธุรการตัดสินเองที่หน้าลูกค้า)
+ *   รหัสผูกกับลูกค้ารายอื่นอยู่แล้ว + ธุรการติ๊กให้ผูก → ไม่ผูก จดในประวัติดีลว่ารหัสเป็นของรายใด (อาจเป็นลูกค้าซ้ำ)
+ *   ดีลไม่ผูกลูกค้า / ใบไม่มีรหัสลูกค้า → ไม่ทำอะไร
+ * คืนผล: none | linked | same | mismatch | taken — เรียกนอก transaction ของผู้เรียก
+ */
+function linkErpCodeFromQuote(PDO $db, int $pipelineItemId, string $erpCode, bool $wantLink, int $actorId,
+                              string $quotationId, string $requestCode, ?string $actorName = null): string {
+    if ($erpCode === '' || mb_strlen($erpCode) > 50) return 'none';
+    $st = $db->prepare('SELECT pi.id, pi.project_code, pi.stage, a.id AS account_id, a.account_code, a.name AS account_name
+                        FROM pipeline_items pi JOIN accounts a ON a.id = pi.account_id WHERE pi.id = ?');
+    $st->execute([$pipelineItemId]);
+    $deal = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$deal) return 'none';   // ดีลยังไม่ผูกลูกค้า
+
+    $own = $db->prepare('SELECT erp_customer_code FROM account_erp_codes WHERE account_id = ? ORDER BY is_primary DESC, erp_customer_code');
+    $own->execute([$deal['account_id']]);
+    $ownCodes = $own->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($ownCodes as $c) if (strcasecmp(trim((string)$c), $erpCode) === 0) return 'same';
+
+    $ref = "ใบ {$quotationId} ({$requestCode})";
+    $log = function (string $note) use ($db, $deal, $actorId): void {
+        $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+           ->execute([$deal['id'], $deal['project_code'], $actorId, $deal['stage'], $deal['stage'], $note]);
+    };
+
+    if ($ownCodes) {
+        $log("{$ref} ใช้รหัสลูกค้า ERP {$erpCode} — ไม่ตรงกับรหัสที่ผูกไว้กับลูกค้า {$deal['account_code']} (" . implode(', ', $ownCodes) . ') ไม่ได้ผูกเพิ่ม');
+        return 'mismatch';
+    }
+    if (!$wantLink) return 'none';
+
+    $dup = $db->prepare('SELECT a.account_code, a.name FROM account_erp_codes e JOIN accounts a ON a.id = e.account_id WHERE e.erp_customer_code = ?');
+    $dup->execute([$erpCode]);
+    $taken = $dup->fetch(PDO::FETCH_ASSOC);
+    if ($taken) {
+        $log("{$ref} ใช้รหัสลูกค้า ERP {$erpCode} ซึ่งผูกกับลูกค้า {$taken['account_code']} {$taken['name']} อยู่แล้ว — ไม่ได้ผูกกับ {$deal['account_code']} (ตรวจว่าเป็นลูกค้าซ้ำหรือเลือกผิดราย)");
+        return 'taken';
+    }
+
+    $note = "ผูกจากใบ {$quotationId} ({$requestCode})" . ($actorName ? " โดย {$actorName}" : '');
+    $db->beginTransaction();
+    try {
+        $db->prepare('INSERT INTO account_erp_codes (account_id, account_code, erp_customer_code, erp_role, is_primary, note, created_by, updated_by) VALUES (?, ?, ?, NULL, 1, ?, ?, ?)')
+           ->execute([$deal['account_id'], $deal['account_code'], $erpCode, $note, $actorId, $actorId]);
+        $log("ผูกรหัสลูกค้า ERP {$erpCode} กับลูกค้า {$deal['account_code']} {$deal['account_name']} จาก{$ref}");
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    return 'linked';
 }
 
 /**
@@ -743,7 +817,128 @@ function applyQuoteConfirmed(PDO $db, array $body): array {
                            updated_at = updated_at
                        WHERE quote_request_code = ? AND status <> 'cancelled'");
     $n->execute([$at, $so, $code]);
-    return ['ok' => true, 'message' => $n->rowCount() ? "บันทึกลูกค้ายืนยันตามคำขอ {$code} แล้ว" : "คำขอ {$code} ไม่มีการเปลี่ยนแปลง"];
+    $changed = $n->rowCount();
+
+    // เติมเบอร์โทร / ที่อยู่จากใบที่ยืนยันแล้ว กลับไปที่ผู้ติดต่อและลูกค้าของดีล — เฉพาะช่องที่ยังว่าง (ยืนยันจากผู้ใช้ 2026-11-26)
+    // ไม่ให้ความผิดพลาดตรงนี้ทำให้ผลยืนยันล้ม / ส่งซ้ำได้: ช่องที่เติมแล้วไม่ว่าง จึงไม่เติมซ้ำ
+    try {
+        fillCustomerInfoFromQuote($db, $code, $body);
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        error_log('fillCustomerInfoFromQuote: ' . $e->getMessage());
+    }
+    return ['ok' => true, 'message' => $changed ? "บันทึกลูกค้ายืนยันตามคำขอ {$code} แล้ว" : "คำขอ {$code} ไม่มีการเปลี่ยนแปลง"];
+}
+
+// เบอร์โทรในใบเสนอราคา (ช่องพิมพ์อิสระ) → ตัวเลขล้วนตามกติกาเบอร์ของระบบ (includes/phone_helper.php) — ว่าง / หลายเบอร์ / ผิดรูปแบบ = null (ไม่ตอบ error)
+function quotePhoneDigits($value): ?string {
+    $raw = cleanPhoneChars($value);
+    if ($raw === '' || !preg_match('/^[+]?[0-9\s\-().]+$/u', $raw)) return null;
+    $digits = preg_replace('/[^0-9]/', '', $raw);
+    $phone = str_starts_with($raw, '+')
+        ? ((str_starts_with($digits, '66') && strlen($digits) >= 10) ? '0' . substr($digits, 2) : '+' . $digits)
+        : $digits;
+    return preg_match('/' . PHONE_VALID_REGEX . '/', $phone) ? $phone : null;
+}
+
+// ชื่อคนแบบตัดคำนำหน้า + ช่องว่าง ใช้เทียบชื่อผู้ติดต่อในใบกับผู้ติดต่อในดีล (แนวเดียวกับ contactNameKey() ใน account_helper.php)
+function quoteContactNameKey(string $name): string {
+    $s = mb_strtolower(trim($name), 'UTF-8');
+    $s = preg_replace('/^(คุณ|นางสาว|นาง|นาย|mrs\.?|mr\.?|ms\.?|miss)\s*/u', '', $s);
+    return preg_replace('/\s+/u', '', $s);
+}
+
+/**
+ * ธุรการยืนยันใบเสนอราคา (สถานะ 2) → เติมข้อมูลที่ Sale ยังไม่รู้ตอนสร้างดีล กลับไปที่ระบบงานขาย (ยืนยันจากผู้ใช้ 2026-11-26)
+ * กฎ Taiyo: Sale สร้างดีลตอนลูกค้าขอดูราคา ข้อมูลยังไม่ครบ — ธุรการได้เบอร์ / ที่อยู่ครบตอนยืนยันใบ
+ * เติมเฉพาะช่องที่ยังว่าง ไม่ทับข้อมูลเดิม (ลูกค้ารายเดียวมีหลายดีล ใบของดีลหนึ่งอาจใช้ที่อยู่สาขา / ที่อยู่ส่งของ):
+ *   ที่อยู่ในใบ   → accounts.address (ลูกค้ายังไม่มีที่อยู่)
+ *   เบอร์ในใบ    → ① contacts.phone ของผู้ติดต่อในดีลที่ชื่อตรงกับผู้ติดต่อในใบ และยังไม่มีเบอร์
+ *                  ② ไม่เข้า ① → accounts.mobile (เบอร์มือถือ 06/08/09 สิบหลัก) หรือ accounts.phone (เบอร์อื่น) ที่ยังว่าง
+ *   เบอร์ผิดรูปแบบ / หลายเบอร์ในช่องเดียว = ไม่เติม จดในประวัติดีลให้คนมาใส่เอง
+ * ไม่สร้างผู้ติดต่อใหม่ / ดีลยังไม่ผูกลูกค้า = ไม่ทำอะไร / เติมแล้วจดในประวัติดีล 1 บรรทัด
+ * body จากระบบใบเสนอราคา: quotation_id, username, atten, tel, address
+ */
+function fillCustomerInfoFromQuote(PDO $db, string $requestCode, array $body): void {
+    $telRaw  = trim((string)($body['tel'] ?? ''));
+    $address = trim((string)($body['address'] ?? ''));
+    $atten   = trim((string)($body['atten'] ?? ''));
+    if ($telRaw === '' && $address === '') return;
+
+    $st = $db->prepare("SELECT qr.pipeline_item_id, qr.requested_by, qr.quotation_id, qr.status, pi.project_code, pi.stage,
+                               a.id AS account_id, a.account_code, a.phone, a.mobile, a.address
+                        FROM quote_requests qr
+                        JOIN pipeline_items pi ON pi.id = qr.pipeline_item_id
+                        JOIN accounts a ON a.id = pi.account_id
+                        WHERE qr.quote_request_code = ?");
+    $st->execute([$requestCode]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row || $row['status'] === 'cancelled') return;   // ไม่พบคำขอ / ดีลยังไม่ผูกลูกค้า / คำขอยกเลิกแล้ว
+
+    $actorId = (int)$row['requested_by'];
+    if (!empty($body['username'])) {
+        $u = $db->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+        $u->execute([trim((string)$body['username'])]);
+        $actorId = (int)($u->fetchColumn() ?: $actorId);
+    }
+    $blank = fn($v) => $v === null || trim((string)$v) === '';
+    $digitsOf = fn($v) => preg_replace('/[^0-9+]/', '', (string)$v);
+    $quotationId = trim((string)($body['quotation_id'] ?? '')) ?: (string)$row['quotation_id'];
+    $done = [];    // สิ่งที่เติม → ประวัติดีล
+    $notes = [];   // สิ่งที่เติมไม่ได้ → ประวัติดีล
+
+    $db->beginTransaction();
+    try {
+        if ($address !== '' && $blank($row['address'])) {
+            $db->prepare('UPDATE accounts SET address = ?, updated_by = ? WHERE id = ?')->execute([$address, $actorId, $row['account_id']]);
+            $done[] = 'ที่อยู่ลูกค้า';
+        }
+
+        $tel = quotePhoneDigits($telRaw);
+        if ($telRaw !== '') {
+            // ผู้ติดต่อในดีลที่ชื่อตรงกับผู้ติดต่อในใบ (คนหลักก่อน)
+            $contact = null;
+            $key = quoteContactNameKey($atten);
+            if ($key !== '') {
+                $cs = $db->prepare('SELECT c.id, c.full_name, c.phone FROM pipeline_item_contacts pic JOIN contacts c ON c.id = pic.contact_id
+                                    WHERE pic.pipeline_item_id = ? ORDER BY pic.is_primary DESC, c.id');
+                $cs->execute([$row['pipeline_item_id']]);
+                foreach ($cs->fetchAll(PDO::FETCH_ASSOC) as $c) {
+                    if (quoteContactNameKey((string)$c['full_name']) === $key) { $contact = $c; break; }
+                }
+            }
+            $contactNeedsPhone = $contact && $blank($contact['phone']);
+            $accountHasNoPhone = $blank($row['phone']) && $blank($row['mobile']);
+
+            if ($tel === null) {
+                if ($contactNeedsPhone || $accountHasNoPhone) $notes[] = "เบอร์ในใบ \"{$telRaw}\" ไม่ใช่เบอร์เดียวตามรูปแบบ — ไม่ได้เติม กรุณาใส่เองที่หน้าลูกค้า";
+            } elseif ($contactNeedsPhone) {
+                $db->prepare('UPDATE contacts SET phone = ?, updated_by = ? WHERE id = ?')->execute([$tel, $actorId, $contact['id']]);
+                $done[] = "เบอร์ผู้ติดต่อ {$contact['full_name']} ({$tel})";
+            } elseif ($contact && $digitsOf($contact['phone']) === $tel) {
+                // เบอร์ในใบคือเบอร์ของผู้ติดต่อคนนี้อยู่แล้ว — ไม่ต้องเติมที่ลูกค้า
+            } elseif ($digitsOf($row['phone']) !== $tel && $digitsOf($row['mobile']) !== $tel) {
+                $isMobile = (bool)preg_match('/^0[689][0-9]{8}$/', $tel);
+                $column = $isMobile ? 'mobile' : 'phone';
+                if ($blank($row[$column])) {
+                    $db->prepare("UPDATE accounts SET {$column} = ?, updated_by = ? WHERE id = ?")->execute([$tel, $actorId, $row['account_id']]);
+                    $done[] = ($isMobile ? 'เบอร์มือถือลูกค้า' : 'เบอร์สำนักงานลูกค้า') . " ({$tel})";
+                }
+            }
+        }
+
+        if ($done || $notes) {
+            $ref = "ใบ {$quotationId} ({$requestCode})";
+            $text = ($done ? "เติมข้อมูลลูกค้า {$row['account_code']} จาก{$ref} ที่ยืนยันแล้ว: " . implode(', ', $done) : "ยืนยัน{$ref}")
+                  . ($notes ? ' — ' . implode(' / ', $notes) : '');
+            $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+               ->execute([$row['pipeline_item_id'], $row['project_code'], $actorId, $row['stage'], $row['stage'], $text]);
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
 }
 
 /**

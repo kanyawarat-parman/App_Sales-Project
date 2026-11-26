@@ -328,6 +328,14 @@ function updateAccount(PDO $db, array $user): void {
        ->execute([$type, $role['id'], $role['note'], $industry, $ownerId, $name, $taxId, $phone, $phoneExt, $mobile, ($body['address'] ?? '') ?: null, $note ?: null, $user['id'], $id]);
     // แก้บทบาท/ประเภทลูกค้า ไม่เปลี่ยนดีลเดิม — ดีลเก็บค่าของตัวเอง รายงานย้อนหลังไม่เพี้ยน (2026-11-20)
 
+    // เปลี่ยนชื่อลูกค้า → ชื่อลูกค้าที่สำเนาไว้ในดีลขายตรง (client_name — การ์ด / ค้นหา / Export ใช้) เปลี่ยนตาม (ยืนยันจากผู้ใช้ 2026-11-26)
+    //   กติกาเดียวกับตอนรวมลูกค้า (mergeAccounts): งานประมูลไม่เปลี่ยน — ชื่อหน่วยงานมาจากประกาศ e-GP
+    //   คง updated_at / updated_by ของดีลไว้ — ไม่มีใครแก้ดีล (ไม่ให้ดีลค้างดูเหมือนเพิ่งมีคนแตะ)
+    if ($name !== $oldRow['name']) {
+        $db->prepare("UPDATE pipeline_items SET client_name = ?, updated_at = updated_at WHERE account_id = ? AND source_type <> 'ebidding' AND NOT (client_name <=> ?)")
+           ->execute([$name, $id, $name]);
+    }
+
     // เปลี่ยน Sale ผู้ดูแล → บันทึกประวัติ (หัวหน้าดูย้อนหลังในรายละเอียดลูกค้า) + แจ้ง Sale คนใหม่ (ไม่แจ้งคนเดิม / ไม่แจ้งเมื่อเป็นส่วนกลาง)
     // ตามมาตรฐาน Salesforce Change Owner — ยืนยันจากผู้ใช้ 2026-10-09
     $oldOwnerId = $oldRow['owner_user_id'] !== null ? (int)$oldRow['owner_user_id'] : null;
