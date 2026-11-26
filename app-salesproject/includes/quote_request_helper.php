@@ -74,6 +74,10 @@ function canCancelQuoteRequest(array $user, array $req): bool {
 }
 
 // SELECT รายการคำขอพร้อมข้อมูลดีล/ผู้เกี่ยวข้อง — ใช้ทั้งหน้ารายการ กล่องในดีล และ API ภายนอก
+// customer_address = ที่อยู่ลูกค้า เติมช่องที่อยู่ในฟอร์มออกใบ (ยืนยันจากผู้ใช้ 2026-11-25): ที่อยู่ของลูกค้าก่อน
+//   ลูกค้าไม่มีที่อยู่ + เป็นงานประมูล = ที่ตั้งหน่วยงานจากประกาศ (กฎเฉพาะระบบนี้) / ไม่มีทั้งคู่ = NULL
+// erp_customer_code = รหัสลูกค้า ERP หลักของลูกค้าในดีล (ไม่มี = NULL) / erp_code_count = จำนวนรหัส ERP ที่ผูกไว้
+//   ระบบใบเสนอราคาใช้ดึงข้อมูลลูกค้าเดิมจาก ERP มาเติมฟอร์มออกใบเอง (ยืนยันจากผู้ใช้ 2026-11-25)
 function quoteRequestSelectSql(): string {
     return "
         SELECT qr.quote_request_id, qr.quote_request_code, qr.pipeline_item_id, qr.project_code,
@@ -83,6 +87,11 @@ function quoteRequestSelectSql(): string {
                qr.cancelled_by, qr.cancelled_at, qr.cancel_reason, qr.confirmed_at, qr.confirmed_so_code,
                pi.title, pi.source_type, pi.stage, pi.value, pi.assigned_to AS deal_owner_id,
                COALESCE(acc.name, pi.client_name) AS customer_name, acc.account_code,
+               COALESCE(NULLIF(TRIM(acc.address), ''),
+                        CASE WHEN pi.source_type = 'ebidding' THEN NULLIF(TRIM(ann.unit_address), '') END) AS customer_address,
+               (SELECT e.erp_customer_code FROM account_erp_codes e WHERE e.account_id = pi.account_id
+                 ORDER BY e.is_primary DESC, e.erp_customer_code LIMIT 1) AS erp_customer_code,
+               (SELECT COUNT(*) FROM account_erp_codes e WHERE e.account_id = pi.account_id) AS erp_code_count,
                owner.full_name AS sale_name, owner.sale_id, owner.username AS sale_username,
                ureq.full_name AS requested_by_name, uacc.full_name AS accepted_by_name,
                uiss.full_name AS issued_by_name, ucan.full_name AS cancelled_by_name
@@ -90,6 +99,7 @@ function quoteRequestSelectSql(): string {
         JOIN pipeline_items pi ON pi.id = qr.pipeline_item_id
         JOIN users owner ON owner.id = pi.assigned_to
         LEFT JOIN accounts acc ON acc.id = pi.account_id
+        LEFT JOIN announcements ann ON ann.id = pi.announcement_id
         LEFT JOIN users ureq ON ureq.id = qr.requested_by
         LEFT JOIN users uacc ON uacc.id = qr.accepted_by
         LEFT JOIN users uiss ON uiss.id = qr.issued_by
