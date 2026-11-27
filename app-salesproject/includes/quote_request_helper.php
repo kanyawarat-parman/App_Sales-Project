@@ -7,6 +7,7 @@
 require_once __DIR__ . '/code_helper.php';
 require_once __DIR__ . '/notify_helper.php';
 require_once __DIR__ . '/delivery_helper.php';
+require_once __DIR__ . '/account_helper.php';     // logAccountFieldChange() — ประวัติลูกค้าเมื่อผูกรหัส ERP จากใบเสนอราคา (2026-11-26)
 require_once __DIR__ . '/phone_helper.php';       // กติกาเบอร์โทร — เติมเบอร์จากใบที่ยืนยันแล้วกลับไปที่ลูกค้า / ผู้ติดต่อ (2026-11-26)
 require_once __DIR__ . '/deal_file_helper.php';   // ไฟล์ที่ส่งให้ธุรการกับคำขอ = ไฟล์ของดีล (2026-11-24)   // thaiShortDate() — วันที่ต้องการใบในข้อความแจ้งเตือน
 
@@ -681,6 +682,9 @@ function linkErpCodeFromQuote(PDO $db, int $pipelineItemId, string $erpCode, boo
         $db->rollBack();
         throw $e;
     }
+    // ประวัติลูกค้า (หัวข้อ ⑦ ในหน้ารายละเอียดลูกค้า — 2026-11-26): รู้ได้ว่ารหัสนี้มาจากใบเสนอราคาใบไหน ของดีลไหน ไม่ขึ้นกับข้อความในช่องที่อยู่ออกบิลที่แก้ได้
+    logAccountFieldChange($db, (int)$deal['account_id'], (string)$deal['account_code'], 'erp_code', null, $erpCode . ' (รหัสหลัก)', $actorId,
+                          "ผูกจากใบเสนอราคา {$quotationId} ({$requestCode}) ของดีล {$deal['project_code']}");
     return 'linked';
 }
 

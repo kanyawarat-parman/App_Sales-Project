@@ -235,7 +235,9 @@ function searchAccountsFuzzy(PDO $db, string $q, int $limit = 10): array {
                                  // บทบาทลูกค้า — ฟอร์มดีลใช้ตั้งต้นส่วน "ดีลนี้ขายแบบไหน" (2026-11-20)
                                  'customer_role_id' => $r['customer_role_id'], 'customer_role_name' => $r['customer_role_name'],
                                  'is_intermediary' => $r['is_intermediary'], 'customer_role_note' => $r['customer_role_note'],
-                                 'owner_user_id' => $r['owner_user_id'], 'owner_name' => $r['owner_name'], '_score' => $score];
+                                 'owner_user_id' => $r['owner_user_id'], 'owner_name' => $r['owner_name'],
+                                 // รหัส ERP ที่ผูกไว้ — ฟอร์มดีลแสดงใต้ชื่อลูกค้าที่เลือก (2026-11-26)
+                                 'erp_codes' => str_replace(',', ', ', (string)$r['erp_codes']), '_score' => $score];
     }
     usort($scored, fn($a, $b) => [$b['_score'], $a['name']] <=> [$a['_score'], $b['name']]);
     return array_map(function ($r) { unset($r['_score']); return $r; }, array_slice($scored, 0, $limit));
@@ -408,6 +410,22 @@ function logAccountOwnerChange(PDO $db, int $accountId, string $accountCode, ?in
         $db->prepare("INSERT INTO account_history (account_id, account_code, field_name, old_value, new_value, old_display, new_display, note, changed_by)
                       VALUES (?, ?, 'owner_user_id', ?, ?, ?, ?, ?, ?)")
            ->execute([$accountId, $accountCode, $oldOwner, $newOwner, $name($oldOwner), $name($newOwner), $note, $userId]);
+    } catch (Throwable $e) {
+        error_log('[account_history] ' . $e->getMessage());
+    }
+}
+
+// บันทึกประวัติการเปลี่ยนแปลงของลูกค้า นอกจากผู้ดูแล (ยืนยันจากผู้ใช้ 2026-11-26) — ใช้ตาราง account_history เดิม ไม่แก้โครงสร้าง
+//   field_name: 'erp_code' = รหัสลูกค้า ERP (เพิ่ม: old ว่าง / แก้: old → new / ลบ: new ว่าง) · 'name' = ชื่อลูกค้า (old → new)
+//   เก็บเป็นข้อความใน old_display / new_display (old_value / new_value ปล่อยว่าง — ช่องนั้นใช้กับค่าที่เป็น id เช่น ผู้ดูแล)
+//   note = ที่มา เช่น "ผูกเองที่หน้าลูกค้า" / "ผูกจากใบเสนอราคา QT… (QR…) ของดีล PJ…" / "ตั้งเป็นรหัสหลัก"
+//   บันทึกพลาด = ไม่กระทบงานหลัก (แค่ error_log) / หน้าลูกค้าแสดงที่หัวข้อ ⑦ ประวัติ — แก้ผ่านหน้าจอไม่ได้
+function logAccountFieldChange(PDO $db, int $accountId, string $accountCode, string $fieldName, ?string $oldDisplay, ?string $newDisplay, ?int $userId, ?string $note = null): void {
+    $cut = fn(?string $v) => ($v === null || $v === '') ? null : mb_substr($v, 0, 255);
+    try {
+        $db->prepare('INSERT INTO account_history (account_id, account_code, field_name, old_value, new_value, old_display, new_display, note, changed_by)
+                      VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?)')
+           ->execute([$accountId, $accountCode, $fieldName, $cut($oldDisplay), $cut($newDisplay), $cut($note), $userId]);
     } catch (Throwable $e) {
         error_log('[account_history] ' . $e->getMessage());
     }

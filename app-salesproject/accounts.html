@@ -756,13 +756,25 @@
               <span class="w-7 h-7 rounded-full bg-teal-700 text-white text-sm font-bold flex items-center justify-center shrink-0">7</span>
               <span class="text-base font-bold text-slate-800">ประวัติ</span>
             </div>
-              <div class="text-sm font-semibold text-slate-700">ประวัติผู้ดูแล</div>
-              <div v-if="!accountDetail.history.length" class="text-sm text-slate-400">ยังไม่มีการเปลี่ยนผู้ดูแล</div>
-                <div v-for="h in accountDetail.history" :key="h.account_history_id" class="py-2 border-b border-slate-50 text-sm text-slate-600">
-                  <span class="text-slate-500">{{ formatDateTime(h.changed_at) }}</span> ·
-                  {{ h.old_display || 'ส่วนกลาง' }} → <b class="text-slate-700">{{ h.new_display || 'ส่วนกลาง' }}</b>
-                  <span v-if="h.changed_by_name"> · โดย {{ h.changed_by_name }}</span>
-                  <span v-if="h.note" class="text-slate-500"> — {{ h.note }}</span>
+              <!-- ประวัติการเปลี่ยนแปลง: ผู้ดูแล + รหัส ERP (เพิ่ม / แก้ / ลบ / ตั้งรหัสหลัก) + ชื่อลูกค้า — ป้ายสีแยกประเภท ใหม่สุดอยู่บน (ยืนยันจากผู้ใช้ 2026-11-26)
+                   รหัส ERP และชื่อลูกค้าเริ่มบันทึกตั้งแต่วันที่ขึ้นระบบ รายการก่อนหน้านั้นไม่มีในประวัติ -->
+              <div class="text-sm font-semibold text-slate-700">ประวัติการเปลี่ยนแปลง <span v-if="accountDetail.history.length" class="font-normal text-slate-400">{{ accountDetail.history.length }} รายการ</span></div>
+              <div v-if="!accountDetail.history.length" class="text-sm text-slate-400">ยังไม่มีประวัติ (ผู้ดูแล / รหัส ERP / ชื่อลูกค้า)</div>
+                <div v-for="h in accountDetail.history" :key="h.account_history_id" class="flex gap-2.5 py-2 border-b border-slate-100 text-sm text-slate-600">
+                  <span class="shrink-0 self-start text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" :class="historyBadge(h).cls">{{ historyBadge(h).label }}</span>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-slate-700 break-words">
+                      <template v-if="h.field_name === 'erp_code'">
+                        <template v-if="!h.old_display">เพิ่มรหัส <b class="font-mono">{{ h.new_display }}</b></template>
+                        <template v-else-if="!h.new_display">ลบรหัส <b class="font-mono">{{ h.old_display }}</b></template>
+                        <template v-else><span class="font-mono">{{ h.old_display }}</span> → <b class="font-mono">{{ h.new_display }}</b></template>
+                      </template>
+                      <template v-else-if="h.field_name === 'owner_user_id'">{{ h.old_display || 'ส่วนกลาง' }} → <b>{{ h.new_display || 'ส่วนกลาง' }}</b></template>
+                      <template v-else>{{ h.old_display || '-' }} → <b>{{ h.new_display || '-' }}</b></template>
+                    </div>
+                    <div v-if="h.note" class="text-slate-500 break-words">{{ h.note }}</div>
+                    <div class="text-xs text-slate-400">{{ h.changed_by_name || 'ระบบ' }} · {{ formatDateTime(h.changed_at) }}</div>
+                  </div>
                 </div>
               <div class="text-sm font-semibold text-slate-700 pt-2">ประวัติการรวมลูกค้า</div>
               <div v-if="!accountDetail.merge_logs.length" class="text-sm text-slate-400">ยังไม่เคยรวม</div>
@@ -943,6 +955,14 @@ createApp({
   },
   methods: {
     ...SharedMethods,
+
+    // ป้ายประเภทของประวัติลูกค้า (หัวข้อ ⑦ — 2026-11-26)
+    historyBadge(h) {
+      if (h.field_name === 'erp_code') return { label: 'รหัส ERP', cls: 'bg-blue-100 text-blue-800' };
+      if (h.field_name === 'name')     return { label: 'ชื่อลูกค้า', cls: 'bg-amber-100 text-amber-800' };
+      if (h.field_name === 'owner_user_id') return { label: 'ผู้ดูแล', cls: 'bg-slate-200 text-slate-700' };
+      return { label: 'อื่นๆ', cls: 'bg-slate-100 text-slate-600' };
+    },
 
     async loadAccounts() {
       this.loading = true;

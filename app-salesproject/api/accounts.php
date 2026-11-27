@@ -332,6 +332,8 @@ function updateAccount(PDO $db, array $user): void {
     //   กติกาเดียวกับตอนรวมลูกค้า (mergeAccounts): งานประมูลไม่เปลี่ยน — ชื่อหน่วยงานมาจากประกาศ e-GP
     //   คง updated_at / updated_by ของดีลไว้ — ไม่มีใครแก้ดีล (ไม่ให้ดีลค้างดูเหมือนเพิ่งมีคนแตะ)
     if ($name !== $oldRow['name']) {
+        // ประวัติลูกค้า: ชื่อเดิม → ชื่อใหม่ (2026-11-26) — การแก้ชื่อมีผลถึงชื่อบนดีลขายตรง จึงต้องตรวจย้อนได้
+        logAccountFieldChange($db, $id, (string)$oldRow['account_code'], 'name', (string)$oldRow['name'], $name, (int)$user['id']);
         $db->prepare("UPDATE pipeline_items SET client_name = ?, updated_at = updated_at WHERE account_id = ? AND source_type <> 'ebidding' AND NOT (client_name <=> ?)")
            ->execute([$name, $id, $name]);
     }
@@ -392,6 +394,14 @@ function saveErpCode(PDO $db, array $user): void {
     $hasPrimary->execute([$accountId, $rowId]);
     $isPrimary = (!empty($body['is_primary']) || (int)$hasPrimary->fetchColumn() === 0) ? 1 : 0;
 
+    // ค่าเดิมของรหัสที่กำลังแก้ — ใช้บันทึกประวัติลูกค้า (2026-11-26)
+    $oldErp = null;
+    if ($rowId) {
+        $o = $db->prepare('SELECT erp_customer_code, is_primary FROM account_erp_codes WHERE account_erp_code_id = ? AND account_id = ?');
+        $o->execute([$rowId, $accountId]);
+        $oldErp = $o->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
     $db->beginTransaction();
     try {
         // ตั้งเป็นรหัสหลัก → ยกเลิกรหัสหลักเดิมของลูกค้ารายนี้
@@ -411,6 +421,19 @@ function saveErpCode(PDO $db, array $user): void {
         $db->rollBack();
         throw $e;
     }
+    // ประวัติลูกค้า (หัวข้อ ⑦ ในหน้ารายละเอียดลูกค้า — 2026-11-26): เพิ่มรหัส / แก้รหัส / ตั้งเป็นรหัสหลัก — แก้แค่บทบาทหรือที่อยู่ออกบิล ไม่บันทึก
+    $primaryText = $isPrimary ? ' (รหัสหลัก)' : '';
+    if (!$rowId) {
+        logAccountFieldChange($db, $accountId, (string)$accountCode, 'erp_code', null, $erpCode . $primaryText, (int)$user['id'], 'ผูกเองที่หน้าลูกค้า');
+    } elseif ($oldErp) {
+        $becamePrimary = $isPrimary && (int)$oldErp['is_primary'] !== 1;
+        if ((string)$oldErp['erp_customer_code'] !== $erpCode) {
+            logAccountFieldChange($db, $accountId, (string)$accountCode, 'erp_code', (string)$oldErp['erp_customer_code'], $erpCode . $primaryText, (int)$user['id'],
+                                  $becamePrimary ? 'แก้รหัส และตั้งเป็นรหัสหลัก' : 'แก้รหัส');
+        } elseif ($becamePrimary) {
+            logAccountFieldChange($db, $accountId, (string)$accountCode, 'erp_code', $erpCode, $erpCode . ' (รหัสหลัก)', (int)$user['id'], 'ตั้งเป็นรหัสหลัก');
+        }
+    }
     jsonResponse(true, null, 'บันทึกรหัส ERP แล้ว');
 }
 
@@ -418,11 +441,14 @@ function saveErpCode(PDO $db, array $user): void {
 function deleteErpCode(PDO $db, array $user): void {
     $body  = getJsonBody();
     $rowId = (int)($body['account_erp_code_id'] ?? 0);
-    $row = $db->prepare('SELECT account_id, is_primary FROM account_erp_codes WHERE account_erp_code_id = ?');
+    $row = $db->prepare('SELECT account_id, account_code, erp_customer_code, is_primary FROM account_erp_codes WHERE account_erp_code_id = ?');
     $row->execute([$rowId]);
     $r = $row->fetch();
     if (!$r) jsonResponse(false, null, 'ไม่พบรหัส ERP', 404);
     $db->prepare('DELETE FROM account_erp_codes WHERE account_erp_code_id = ?')->execute([$rowId]);
+    // ประวัติลูกค้า: รหัสที่ลบแล้วยังเห็นว่าเคยมี ใครลบ เมื่อไร (2026-11-26)
+    logAccountFieldChange($db, (int)$r['account_id'], (string)$r['account_code'], 'erp_code',
+                          $r['erp_customer_code'] . ((int)$r['is_primary'] === 1 ? ' (รหัสหลัก)' : ''), null, (int)$user['id'], 'ลบรหัส');
     if ((int)$r['is_primary'] === 1) {
         $db->prepare('UPDATE account_erp_codes SET is_primary = 1, updated_by = ? WHERE account_id = ? ORDER BY erp_customer_code LIMIT 1')
            ->execute([$user['id'], $r['account_id']]);

@@ -808,13 +808,42 @@
               <!-- ลูกค้า = ผู้ซื้อ / ผู้จ่ายเงิน (คนที่ Taiyo เปิดบิล) — ลูกค้าเดิมกดเลือกที่นี่ / ลูกค้าใหม่สร้างในหน้าต่างแยก
                    เลือกแล้ว ส่วน "ดีลนี้ขายแบบไหน" ด้านล่างตั้งต้นค่าจากบทบาทของลูกค้า แล้วปรับได้ต่อดีล (ยืนยันจากผู้ใช้ 2026-11-20) -->
 
-              <!-- เลือกแล้ว (หรือจองชื่อ account ใหม่ไว้ ยังไม่สร้างจริงจนกว่าจะบันทึกดีลสำเร็จ): แสดงเป็น chip -->
-              <div v-if="spForm.account_id" class="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 bg-slate-50">
-                <span v-if="!spForm.account_is_intermediary" class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="spAccountTypeBadgeClass(spForm.account_type)">{{ spAccountTypeLabel(spForm.account_type) }}</span>
-                <span class="text-sm flex-1 truncate">{{ spForm.account_name }}</span>
-                <span v-if="spForm.account_role_name" class="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" :class="spForm.account_is_intermediary ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-600'">{{ spForm.account_is_intermediary ? 'คนกลาง — ' : '' }}{{ spForm.account_role_name }}</span>
-                <button type="button" @click="removeSpAccount"
-                  class="border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-pointer p-1">✕</button>
+              <!-- เลือกลูกค้าแล้ว — จัดเป็นแถว (แบบ ก — ผู้ใช้เลือก 2026-11-26 เหมาะทั้งมือถือและ PC: เพิ่มความสูงน้อย ชื่อเด่น ปุ่มมีข้อความ)
+                   บรรทัด 1 ชื่อลูกค้า + ป้ายประเภท / บทบาท · บรรทัด 2 รหัสลูกค้า AC-… (กดเปิดรายละเอียดลูกค้าในแท็บใหม่) + รหัส ERP ที่ผูกไว้ (ทุก role เห็น)
+                   แถวล่าง ปุ่ม "เปลี่ยนลูกค้า" (เดิมเป็น ✕) / ดีลที่ล็อกลูกค้า = กุญแจ + เหตุผล -->
+              <div v-if="spForm.account_id" class="border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="text-base font-bold text-slate-800 break-words min-w-0">{{ spForm.account_name }}</span>
+                  <span v-if="!spForm.account_is_intermediary" class="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" :class="spAccountTypeBadgeClass(spForm.account_type)">{{ spAccountTypeLabel(spForm.account_type) }}</span>
+                  <span v-if="spForm.account_role_name" class="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" :class="spForm.account_is_intermediary ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-600'">{{ spForm.account_is_intermediary ? 'คนกลาง — ' : '' }}{{ spForm.account_role_name }}</span>
+                </div>
+                <!-- ป้าย AC มีกรอบ = กดได้ / รหัส ERP ตัวอักษรธรรมดา = ข้อมูลให้อ่าน / ยังไม่รู้รหัส ERP (เลือกจากลูกค้าล่าสุด ยังไม่บันทึก) = ไม่แสดงส่วน ERP -->
+                <!-- ดีลที่ไม่ล็อก: ปุ่ม "เปลี่ยนลูกค้า" อยู่ท้ายบรรทัดรหัส ไม่แยกแถว (เดิมแยกแถว มีเส้นคั่น เว้นที่ว่างมากเกิน — ผู้ใช้ทัก 2026-11-26) / มือถือ: ปุ่มลงบรรทัดใหม่เต็มความกว้าง -->
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2 text-sm text-slate-600">
+                  <span v-if="spForm.account_code" class="inline-flex flex-wrap items-center gap-1.5"><span class="whitespace-nowrap">รหัสลูกค้า</span>
+                    <a :href="'accounts.html?account_id=' + spForm.account_id" target="_blank" rel="noopener" title="เปิดรายละเอียดลูกค้าในแท็บใหม่"
+                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg ring-1 ring-teal-300 bg-teal-50 text-teal-800 font-mono text-sm font-semibold no-underline hover:bg-teal-100 whitespace-nowrap">
+                      {{ spForm.account_code }}
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>
+                  </span>
+                  <template v-if="spForm.account_code && spForm.account_erp_codes !== null">
+                    <span v-if="spForm.account_erp_codes">รหัส ERP <span class="font-mono text-slate-800 font-semibold">{{ spForm.account_erp_codes }}</span></span>
+                    <span v-else class="text-slate-400">ยังไม่มีรหัส ERP</span>
+                  </template>
+                  <button v-if="!isViewer && !spAccountLocked" type="button" @click="onRemoveSpAccountClick"
+                    class="w-full sm:w-auto sm:ml-auto px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-400 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">เปลี่ยนลูกค้า</button>
+                </div>
+                <!-- แถวล่าง: เปลี่ยนลูกค้า / ล็อกลูกค้า (ดีลมีคำขอ / ออกใบเสนอราคาแล้ว — กฎ Taiyo ยืนยันจากผู้ใช้ 2026-11-26)
+                     Sale + หัวหน้า: กุญแจ + เหตุผล ไม่มีปุ่ม · ธุรการ + admin: มีปุ่ม กดแล้วต้องยืนยัน · ผู้บริหาร (ดูอย่างเดียว) ไม่มีแถวนี้ -->
+                <div v-if="!isViewer && spAccountLocked" class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2 pt-2 border-t border-slate-200">
+                  <svg class="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="ล็อกลูกค้า"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                  <span class="flex-1 min-w-[180px] text-sm text-slate-500">{{ spCanOverrideAccountLock
+                    ? 'ดีลนี้มีคำขอหรือใบเสนอราคาแล้ว — Sale เปลี่ยนลูกค้าไม่ได้'
+                    : 'เปลี่ยนลูกค้าไม่ได้ เพราะดีลนี้มีคำขอหรือใบเสนอราคาแล้ว ถ้าต้องเปลี่ยน แจ้งธุรการขาย' }}</span>
+                  <button v-if="spCanOverrideAccountLock" type="button" @click="onRemoveSpAccountClick"
+                    class="w-full sm:w-auto px-3 py-1.5 rounded-lg text-sm font-semibold bg-white ring-1 ring-teal-400 text-teal-700 hover:bg-teal-50 border-0 cursor-pointer">เปลี่ยนลูกค้า</button>
+                </div>
               </div>
               <!-- ลูกค้ามี Sale คนอื่นดูแล — แจ้งให้รู้ ไม่บล็อก (Account Owner — ยืนยันจากผู้ใช้ 2026-09-30) -->
               <p v-if="spAccountOwnedByOther" class="mt-1.5 mb-0 text-sm text-amber-700">
@@ -2295,6 +2324,9 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       ];
     },
     isAdmin()      { return this.currentUser?.role === 'admin'; },
+    // ล็อกลูกค้าของดีลขายตรงที่มีคำขอ / ออกใบเสนอราคาแล้ว (กฎ Taiyo — 2026-11-26) / ธุรการ + admin เปลี่ยนได้หลังยืนยัน
+    spAccountLocked() { return !!(this.spForm.id && this.spForm.account_locked && this.spForm.source_type !== 'ebidding'); },
+    spCanOverrideAccountLock() { return ['admin', 'salesadmin'].includes(this.currentUser?.role); },
     isManager()    { return ['admin','manager'].includes(this.currentUser?.role); },
     isSecretary()  { return ['admin','salesadmin','manager','viewer'].includes(this.currentUser?.role); },   // เห็นทั้งทีม (viewer = ผู้บริหาร 2026-10-22)
     // ผู้บริหาร ดูอย่างเดียว — ซ่อนปุ่มเลื่อนขั้น / ลบ / บันทึก (server กันซ้ำอีกชั้น)
@@ -3089,6 +3121,12 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       return {
         account_role_id: item?.account_role_id || '', account_role_note: item?.account_role_note || '',
         account_role_name: item?.account_role_name || '', account_is_intermediary: Number(item?.account_is_intermediary) === 1,
+        // รหัสลูกค้า + รหัส ERP ที่ผูกไว้ (แสดงใต้ชื่อลูกค้า — 2026-11-26) — การ์ดในรายการไม่มีค่านี้ มาจาก api one ตอนเปิดฟอร์ม
+        //   account_erp_codes: null = ยังไม่รู้ (ไม่แสดงส่วน ERP) / '' = ลูกค้ายังไม่มีรหัส ERP
+        account_code: item?.account_code || '',
+        // ล็อกลูกค้าของดีล — มีคำขอ / ออกใบเสนอราคาแล้ว (มาจาก api one — 2026-11-26)
+        account_locked: Number(item?.account_locked) === 1,
+        account_erp_codes: (item && 'account_erp_codes' in item) ? (item.account_erp_codes || '') : null,
       };
     },
     spBaseFromItem(item) {
@@ -3153,6 +3191,9 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spForm.account_owner_name = a.owner_name || '';
       this.spForm.client_name = a.name;
       // บทบาทของลูกค้า = ค่าตั้งต้นของส่วน "ดีลนี้ขายแบบไหน" (2026-11-20) — ดีลเดิมที่ยังไม่ระบุช่องทาง ไม่ตั้งให้จนกว่าจะกดระบุ
+      // รหัสลูกค้า + รหัส ERP ใต้ชื่อลูกค้า (2026-11-26) — ผลค้นหามี erp_codes / รายการลูกค้าล่าสุดไม่มี = ยังไม่รู้ (null)
+      this.spForm.account_code = a.account_code || '';
+      this.spForm.account_erp_codes = ('erp_codes' in a) ? (a.erp_codes || '') : null;
       this.spForm.account_role_id = a.customer_role_id || '';
       this.spForm.account_role_note = a.customer_role_note || '';
       this.spForm.account_role_name = a.customer_role_name || '';
@@ -3162,6 +3203,18 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spAccountQuery = '';
       this.loadSpAccountContacts(a.id);
     },
+    // กด ✕ ที่ลูกค้าของดีล: ดีลที่ล็อกลูกค้า (มีคำขอ / ออกใบแล้ว) ธุรการ + admin ต้องยืนยันก่อน — API ตรวจซ้ำด้วย confirm_change_account (2026-11-26)
+    async onRemoveSpAccountClick() {
+      if (this.spAccountLocked) {
+        if (!this.spCanOverrideAccountLock) return;
+        const ok = await this.showConfirm('เปลี่ยนลูกค้าของดีลนี้?',
+          'ดีลนี้มีคำขอใบเสนอราคาหรือออกใบเสนอราคาแล้ว — ใบที่ออกไปแล้ว รหัส ERP เบอร์ และที่อยู่ที่ระบบเติมจากใบ จะยังอยู่กับลูกค้ารายเดิม ถ้าแค่ชื่อพิมพ์ผิด ให้แก้ที่หน้าลูกค้าแทน ระบบจะบันทึกการเปลี่ยนลูกค้าในประวัติดีล',
+          'เปลี่ยนลูกค้า');
+        if (!ok) return;
+        this.spForm.confirm_change_account = true;
+      }
+      this.removeSpAccount();
+    },
     removeSpAccount() {
       this.spContactRows = [];
       this.spForm.account_id = null;
@@ -3170,6 +3223,8 @@ spForm: { id:null, project_code:'', source_type:'', title:'', client_name:'', ac
       this.spForm.account_type = '';
       this.spForm.account_owner_id = null;
       this.spForm.account_owner_name = '';
+      this.spForm.account_code = '';
+      this.spForm.account_erp_codes = null;
       this.spForm.account_role_id = '';
       this.spForm.account_role_note = '';
       this.spForm.account_role_name = '';

@@ -361,9 +361,10 @@ function getList(PDO $db, array $user): void {
 }
 
 // ─── GET one ─────────────────────────────────────────────────────────────────
+// account_code / account_erp_codes = รหัสลูกค้า AC-… + รหัส ERP ที่ผูกไว้ (รหัสหลักก่อน) แสดงในกล่องลูกค้าของฟอร์มดีล (ยืนยันจากผู้ใช้ 2026-11-26)
 function getOne(PDO $db, array $user, int $id): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
-    $stmt = $db->prepare("SELECT pi.*, a.name AS account_name, a.account_type AS account_type, dcr.customer_role_name AS channel_role_name, a.customer_role_id AS account_role_id, a.customer_role_note AS account_role_note, acr.customer_role_name AS account_role_name, acr.is_intermediary AS account_is_intermediary, u.full_name AS sale_name, wc.competitor_name AS winner_name, COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to LEFT JOIN accounts a ON a.id = pi.account_id LEFT JOIN customer_roles acr ON acr.customer_role_id = a.customer_role_id LEFT JOIN customer_roles dcr ON dcr.customer_role_id = pi.channel_role_id LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id WHERE pi.id = ?");
+    $stmt = $db->prepare("SELECT pi.*, a.name AS account_name, a.account_code AS account_code, (SELECT GROUP_CONCAT(e.erp_customer_code ORDER BY e.is_primary DESC, e.erp_customer_code SEPARATOR ', ') FROM account_erp_codes e WHERE e.account_id = pi.account_id) AS account_erp_codes, a.account_type AS account_type, dcr.customer_role_name AS channel_role_name, a.customer_role_id AS account_role_id, a.customer_role_note AS account_role_note, acr.customer_role_name AS account_role_name, acr.is_intermediary AS account_is_intermediary, u.full_name AS sale_name, wc.competitor_name AS winner_name, COALESCE(wlr.win_loss_reason_name, pi.win_loss_reason) AS win_loss_reason FROM pipeline_items pi JOIN users u ON u.id = pi.assigned_to LEFT JOIN accounts a ON a.id = pi.account_id LEFT JOIN customer_roles acr ON acr.customer_role_id = a.customer_role_id LEFT JOIN customer_roles dcr ON dcr.customer_role_id = pi.channel_role_id LEFT JOIN competitors wc ON wc.competitor_id = pi.winner_competitor_id LEFT JOIN win_loss_reasons wlr ON wlr.win_loss_reason_id = pi.win_loss_reason_id WHERE pi.id = ?");
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     if (!$row) jsonError(404, 'ไม่พบรายการ');
@@ -379,6 +380,8 @@ function getOne(PDO $db, array $user, int $id): void {
     ");
     $hist->execute([$id]);
     $row['history'] = $hist->fetchAll();
+    // ล็อกลูกค้าของดีล (มีคำขอ / ออกใบเสนอราคาแล้ว) — ฟอร์มใช้ซ่อนปุ่มเปลี่ยนลูกค้า (2026-11-26) / งานประมูลไม่ใช้
+    $row['account_locked'] = ($row['source_type'] !== 'ebidding' && $row['account_id'] && dealAccountLocked($db, $id)) ? 1 : 0;
 
     // ผู้ติดต่อหลักของ account ที่ผูกไว้ (ถ้ามี) — ให้หน้าแก้ไขดีลเติมข้อมูลผู้ติดต่อที่เคยบันทึกไว้มาแสดงอัตโนมัติ แทนที่จะเป็นช่องว่างเปล่า
     $row['contact'] = null;
@@ -808,6 +811,17 @@ function validateSalesWinReason(PDO $db, array $body): void {
     requireSalesNoteForReason($r, $body);
 }
 
+// ดีลมีคำขอใบเสนอราคาที่ยังไม่ยกเลิก (รอออกใบ / รับเรื่องแล้ว / ออกใบแล้ว) = ล็อกลูกค้าของดีล (2026-11-26) — ยังไม่มีตารางคำขอ = ไม่ล็อก
+function dealAccountLocked(PDO $db, int $pipelineItemId): bool {
+    try {
+        $st = $db->prepare("SELECT 1 FROM quote_requests WHERE pipeline_item_id = ? AND status <> 'cancelled' LIMIT 1");
+        $st->execute([$pipelineItemId]);
+        return (bool)$st->fetchColumn();
+    } catch (PDOException $e) {
+        return false;
+    }
+}
+
 // ─── PUT update ──────────────────────────────────────────────────────────────
 function updateItem(PDO $db, array $user, int $id, array $body): void {
     if (!$id) jsonError(400, 'กรุณาระบุ id');
@@ -821,6 +835,28 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
     if ($user['role'] === 'sale' && $row['assigned_to'] != $user['id']) jsonError(403, 'ไม่มีสิทธิ์');
     // กันบันทึกทับ: ฟอร์มส่งค่าตอนเปิดหน้าต่างมา (_base) — มีช่องไหนในฐานข้อมูลเปลี่ยนไปแล้ว ตอบ 409 ไม่บันทึก (2026-10-30)
     if (isset($body['_base']) && is_array($body['_base'])) guardDealConflict($db, $id, $body['_base']);
+
+    // ล็อกลูกค้าของดีล (กฎ Taiyo — ยืนยันจากผู้ใช้ 2026-11-26): ดีลขายตรงที่มีคำขอใบเสนอราคาที่ยังไม่ยกเลิก (รอออกใบ / รับเรื่องแล้ว / ออกใบแล้ว)
+    //   เปลี่ยนไปผูกลูกค้ารายอื่นไม่ได้ — ใบเสนอราคา รหัส ERP เบอร์ และที่อยู่ที่เติมกลับจากใบ ผูกกับลูกค้ารายเดิม
+    //   Sale / หัวหน้า = ห้าม · ธุรการขาย / admin = ได้ เมื่อยืนยันในหน้าจอแล้ว (confirm_change_account)
+    //   ดีลเก่าที่ยังไม่ผูกลูกค้า ผูกครั้งแรกได้เสมอ / งานประมูลมีกติกาเปลี่ยนลูกค้าของตัวเอง (api/assignments.php link_account)
+    //   เปลี่ยนลูกค้าทุกครั้ง (ล็อกหรือไม่) จดประวัติดีลหลังบันทึก — ดู $accountChange ด้านล่าง
+    $accountChange = null;
+    if (array_key_exists('account_id', $body) && $row['source_type'] !== 'ebidding') {
+        $oldAccountId = (int)($row['account_id'] ?? 0);
+        $newAccountId = (int)($body['account_id'] ?: 0);
+        if ($newAccountId !== $oldAccountId) {
+            if ($oldAccountId && dealAccountLocked($db, $id)) {
+                if (!in_array($user['role'], ['admin', 'salesadmin'], true)) {
+                    jsonError(403, 'ดีลนี้มีคำขอใบเสนอราคาหรือออกใบเสนอราคาแล้ว — เปลี่ยนลูกค้าไม่ได้ (ชื่อ เบอร์ ที่อยู่ แก้ได้ที่หน้าลูกค้า) ถ้าต้องเปลี่ยนเป็นลูกค้ารายอื่น กรุณาแจ้งธุรการขาย');
+                }
+                if (empty($body['confirm_change_account'])) {
+                    jsonError(400, 'ดีลนี้มีคำขอใบเสนอราคาหรือออกใบเสนอราคาแล้ว — ต้องยืนยันการเปลี่ยนลูกค้าก่อนบันทึก');
+                }
+            }
+            $accountChange = ['old' => $oldAccountId, 'new' => $newAccountId];
+        }
+    }
 
     // ช่องทางของดีล 3 ชั้น (2026-11-20) — ฟอร์มส่ง apply_channel มา = บันทึกช่องทาง / ประเภท / ตลาด / ชื่อลูกค้าปลายทาง
     // ไม่บังคับดีลเดิม (ดีลก่อนกติกานี้ยังไม่ระบุ แก้ช่องอื่นได้) / งานประมูลไม่ใช้
@@ -924,6 +960,20 @@ function updateItem(PDO $db, array $user, int $id, array $body): void {
 
     $params[] = $id;
     $db->prepare("UPDATE pipeline_items SET " . implode(', ', $fields) . " WHERE id = ?")->execute($params);
+    // เปลี่ยนลูกค้าของดีล → บันทึกประวัติดีล (Field History — 2026-11-26) เดิมไม่มีร่องรอยว่าดีลเคยผูกกับลูกค้ารายใด
+    if ($accountChange) {
+        $accLabel = function (int $accId) use ($db): string {
+            if (!$accId) return 'ยังไม่ผูกลูกค้า';
+            $a = $db->prepare('SELECT account_code, name FROM accounts WHERE id = ?');
+            $a->execute([$accId]);
+            $r = $a->fetch(PDO::FETCH_ASSOC);
+            return $r ? "{$r['account_code']} {$r['name']}" : "ลูกค้า id {$accId}";
+        };
+        $stageNow = $body['stage'] ?? $row['stage'];
+        $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+           ->execute([$id, $row['project_code'], $user['id'], $stageNow, $stageNow,
+                      'เปลี่ยนลูกค้า: ' . $accLabel($accountChange['old']) . ' → ' . $accLabel($accountChange['new'])]);
+    }
     // เปลี่ยนช่องทาง / ประเภทคนกลาง / ชื่อลูกค้าปลายทาง → บันทึกประวัติดีล (Field History)
     if ($channel && ($channel['sales_channel'] !== $row['sales_channel']
                      || $channel['channel_role_id'] !== $row['channel_role_id']
