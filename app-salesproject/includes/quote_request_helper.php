@@ -999,3 +999,100 @@ function applyQuoteUnconfirmed(PDO $db, array $body): array {
     }
     return ['ok' => true, 'message' => "ยกเลิกการยืนยันตามคำขอ {$code} แล้ว"];
 }
+
+/**
+ * admin กด "ยกเลิก Rev ล่าสุด" ในระบบใบเสนอราคา (ใบ Rev n ถูกยกเลิก Rev n-1 กลับมาเป็นใบปัจจุบัน — ยืนยันจากผู้ใช้ 2026-11-27)
+ * ที่มา: ธุรการออก Rev 1 แล้ว Sale ขอกลับไปใช้ Rev 0 (ต้องการเลข Rev เดิมจริง) — เดิมต้องแก้ข้อมูลเอง 2 ฐาน
+ * body: quote_request_code (คำขอของ Rev ที่ยกเลิก), quotation_id, cancelled_revision, restored_revision, restored_request_code,
+ *       restored_gross_amount_net, restored_net_amount, restored_issued_by (username), restored_issued_at, username, reason, cancelled_at
+ * ① Rev ที่ยกเลิกออกใต้คำขอเดียวกับ Rev ก่อนหน้า (ธุรการออก Rev ต่อเอง) → คำขอกลับไปชี้ Rev ก่อนหน้า (ยอด / ผู้ออก / เวลาออกของ Rev นั้น)
+ * ② Rev ที่ยกเลิกออกตาม "คำขอแก้ไขใบเดิม" ของ Sale (คนละเลขคำขอ) → คำขอนั้นเป็นยกเลิก พร้อมเหตุผล — คำขอของ Rev ก่อนหน้ายังชี้ Rev เดิมอยู่แล้ว
+ * ทั้ง 2 แบบ: ลบการ์ด Rev ที่ยกเลิก (quote_request_revisions) + ขายตรง: คำนวณมูลค่าดีลใหม่ + ประวัติดีล — สถานะดีลไม่ถอย
+ * ส่งซ้ำได้: คำขอไม่ได้ชี้ Rev ที่ยกเลิกแล้ว = ไม่ทำอะไร
+ */
+function applyQuoteRevisionCancelled(PDO $db, array $body): array {
+    $code = trim($body['quote_request_code'] ?? '');
+    $quotationId = trim($body['quotation_id'] ?? '');
+    $reason = trim($body['reason'] ?? '');
+    if ($code === '' || $quotationId === '' || !isset($body['cancelled_revision'], $body['restored_revision']))
+        return ['ok' => false, 'message' => 'ต้องระบุเลขคำขอ เลขที่ใบ Rev ที่ยกเลิก และ Rev ที่กลับไปใช้'];
+    $cancelledRev = (int)$body['cancelled_revision'];
+    $restoredRev = (int)$body['restored_revision'];
+    if ($restoredRev < 0 || $restoredRev >= $cancelledRev) return ['ok' => false, 'message' => 'เลข Rev ไม่ถูกต้อง'];
+
+    $st = $db->prepare(quoteRequestSelectSql() . ' WHERE qr.quote_request_code = ?');
+    $st->execute([$code]);
+    $req = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$req) return ['ok' => false, 'message' => "ไม่พบคำขอ {$code}"];
+    if ($req['status'] !== 'issued' || $req['quotation_id'] !== $quotationId || (int)$req['quotation_revision'] !== $cancelledRev)
+        return ['ok' => true, 'message' => "คำขอ {$code} ไม่ได้ชี้ใบ {$quotationId} Rev {$cancelledRev} — ไม่มีการเปลี่ยนแปลง"];
+
+    $findUser = function (string $username) use ($db): ?array {
+        if ($username === '') return null;
+        $u = $db->prepare('SELECT id, full_name FROM users WHERE username = ? LIMIT 1');
+        $u->execute([$username]);
+        return $u->fetch(PDO::FETCH_ASSOC) ?: null;
+    };
+    $actor = $findUser(trim($body['username'] ?? ''));
+    $actorId = $actor ? (int)$actor['id'] : (int)$req['requested_by'];   // ประวัติดีลต้องมีผู้ทำ — ไม่พบผู้กด ใช้ผู้ขอ (แบบเดียวกับ applyQuoteIssued)
+    $actorName = $actor ? $actor['full_name'] : trim($body['username'] ?? '');
+    $sameRequest = trim($body['restored_request_code'] ?? '') === $code;
+
+    $db->beginTransaction();
+    try {
+        if ($sameRequest) {
+            $restoredIssuer = $findUser(trim($body['restored_issued_by'] ?? ''));
+            $restoredIssuedAt = !empty($body['restored_issued_at']) ? date('Y-m-d H:i:s', strtotime($body['restored_issued_at'])) : null;
+            $restoredAmount = isset($body['restored_gross_amount_net']) && $body['restored_gross_amount_net'] !== '' ? (float)$body['restored_gross_amount_net'] : null;
+            $restoredNet = isset($body['restored_net_amount']) && $body['restored_net_amount'] !== '' ? (float)$body['restored_net_amount'] : null;
+            // ผู้ออก / เวลาออกของ Rev ก่อนหน้า: ระบบใบเสนอราคาส่งมา — ไม่มีค่า (ใบเก่า) คงค่าเดิมไว้ / ใบถอยแล้วไม่ได้ยืนยัน ล้างป้ายลูกค้ายืนยันด้วย
+            $db->prepare('UPDATE quote_requests SET quotation_revision = ?, quote_amount = ?, quote_net_amount = ?,
+                              issued_by = COALESCE(?, issued_by), issued_at = COALESCE(?, issued_at),
+                              confirmed_at = NULL, confirmed_so_code = NULL, updated_by = COALESCE(?, updated_by)
+                          WHERE quote_request_id = ?')
+               ->execute([$restoredRev, $restoredAmount, $restoredNet, $restoredIssuer['id'] ?? null, $restoredIssuedAt,
+                          $actor['id'] ?? null, $req['quote_request_id']]);
+        } else {
+            $cancelReason = mb_substr("ยกเลิกใบ {$quotationId} Rev {$cancelledRev} ในระบบใบเสนอราคา" . ($reason !== '' ? " — {$reason}" : ''), 0, 255);
+            $db->prepare("UPDATE quote_requests SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW(), cancel_reason = ?,
+                              confirmed_at = NULL, confirmed_so_code = NULL, updated_by = COALESCE(?, updated_by)
+                          WHERE quote_request_id = ?")
+               ->execute([$actor['id'] ?? null, $cancelReason, $actor['id'] ?? null, $req['quote_request_id']]);
+        }
+
+        // ลบการ์ด Rev ที่ยกเลิก — ยังไม่ได้รัน sql/add_quote_request_revisions.sql = ข้าม (แบบเดียวกับ saveQuoteRevision)
+        try {
+            $db->prepare('DELETE FROM quote_request_revisions WHERE quote_request_id = ? AND quotation_id = ? AND quotation_revision = ?')
+               ->execute([$req['quote_request_id'], $quotationId, $cancelledRev]);
+        } catch (Throwable $e) {
+            error_log('[quote] applyQuoteRevisionCancelled (ยังไม่ได้รัน sql/add_quote_request_revisions.sql?): ' . $e->getMessage());
+        }
+
+        // ประวัติดีล + มูลค่าดีล — เฉพาะดีลขายตรง (ดีลคู่งานประมูลไม่แตะ แบบเดียวกับตอนออกใบ)
+        $deal = $db->prepare('SELECT id, project_code, source_type, stage, value FROM pipeline_items WHERE id = ?');
+        $deal->execute([$req['pipeline_item_id']]);
+        $d = $deal->fetch(PDO::FETCH_ASSOC);
+        if ($d && $d['source_type'] !== 'ebidding') {
+            $note = "ยกเลิกใบ {$quotationId} Rev {$cancelledRev} ({$code}) — กลับไปใช้ Rev {$restoredRev}"
+                  . ($sameRequest ? '' : ' · คำขอนี้ถูกยกเลิกตาม')
+                  . ($reason !== '' ? " — เหตุผล: {$reason}" : '')
+                  . (!$actor && $actorName !== '' ? " · โดย {$actorName}" : '');
+            $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+               ->execute([$d['id'], $d['project_code'], $actorId, $d['stage'], $d['stage'], $note]);
+
+            $sum = dealQuoteTotal($db, (int)$d['id']);
+            if ($sum && $sum['total'] > 0 && abs($sum['total'] - (float)$d['value']) >= 0.01) {
+                $db->prepare('UPDATE pipeline_items SET value = ?, updated_by = ? WHERE id = ?')->execute([$sum['total'], $actorId, $d['id']]);
+                $db->prepare('INSERT INTO pipeline_item_history (pipeline_item_id, project_code, changed_by, old_stage, new_stage, note) VALUES (?, ?, ?, ?, ?, ?)')
+                   ->execute([$d['id'], $d['project_code'], $actorId, $d['stage'], $d['stage'],
+                              'มูลค่าดีล ' . number_format((float)$d['value'], 2) . ' → ' . number_format($sum['total'], 2)
+                              . " — ยกเลิกใบ {$quotationId} Rev {$cancelledRev}" . quoteTotalNote($sum) . ' (ก่อน VAT)']);
+            }
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    return ['ok' => true, 'message' => "ยกเลิกใบ {$quotationId} Rev {$cancelledRev} ตามคำขอ {$code} แล้ว — กลับไปใช้ Rev {$restoredRev}"];
+}

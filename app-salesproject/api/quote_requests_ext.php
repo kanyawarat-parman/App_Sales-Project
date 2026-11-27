@@ -10,6 +10,7 @@
 // POST issued          — บันทึกจริงใบตามคำขอ → ปิดคำขอ + ขายตรง Interest→Send PI + มูลค่าดีล = GrossAmountNet + แจ้ง Sale (ระยะ 3)
 // POST confirmed       — ลูกค้ายืนยันสั่งซื้อ (สถานะ 2) → ป้ายบนดีลให้ Sale ปิดดีลเอง (ระยะ 3)
 // POST unconfirmed     — ธุรการ/admin ยกเลิกการยืนยัน (สถานะ 2 → 1) → ล้างป้ายลูกค้ายืนยัน + ประวัติดีล (2026-11-10)
+// POST revision_cancelled — admin ยกเลิก Rev ล่าสุด (ใบกลับไป Rev ก่อนหน้า) → คำขอ / การ์ด Rev / มูลค่าดีลถอยตาม + ประวัติดีล (2026-11-27)
 // ระบบใบเสนอราคาส่งผ่านตาราง Outbox ส่งซ้ำได้ — ทุก action ทำซ้ำแล้วผลเท่าเดิม
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
@@ -37,6 +38,7 @@ switch ($method) {
             case 'issued':    quoteIssued($db);    break;   // ระยะ 3 — บันทึกจริงใบตามคำขอแล้ว
             case 'confirmed': quoteConfirmed($db); break;   // ระยะ 3 — ลูกค้ายืนยันสั่งซื้อ
             case 'unconfirmed': quoteUnconfirmed($db); break;   // ธุรการ/admin ยกเลิกการยืนยัน (ใบกลับเป็นบันทึกจริง — 2026-11-10)
+            case 'revision_cancelled': quoteRevisionCancelled($db); break;   // ยกเลิก Rev ล่าสุด — ใบกลับไป Rev ก่อนหน้า (2026-11-27)
             default: jsonResponse(false, null, 'Unknown action', 400);
         }
         break;
@@ -173,5 +175,12 @@ function quoteConfirmed(PDO $db): void {
 // ยกเลิกการยืนยัน (body: quote_request_code, quotation_id, revision, username, reason, unconfirmed_at) — 2026-11-10
 function quoteUnconfirmed(PDO $db): void {
     $r = applyQuoteUnconfirmed($db, getJsonBody());
+    jsonResponse($r['ok'], null, $r['message'], $r['ok'] ? 200 : 400);
+}
+
+// ยกเลิก Rev ล่าสุด (body: quote_request_code, quotation_id, cancelled_revision, restored_revision, restored_request_code,
+//   restored_gross_amount_net, restored_net_amount, restored_issued_by, restored_issued_at, username, reason, cancelled_at) — 2026-11-27
+function quoteRevisionCancelled(PDO $db): void {
+    $r = applyQuoteRevisionCancelled($db, getJsonBody());
     jsonResponse($r['ok'], null, $r['message'], $r['ok'] ? 200 : 400);
 }
